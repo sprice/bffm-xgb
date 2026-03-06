@@ -1,0 +1,69 @@
+.DS_Store
+# Data (downloaded/generated)
+data/raw/
+data/processed/
+*.csv
+!artifacts/**/*.csv
+*.db
+*.sqlite
+*.parquet
+*.zip
+
+# Models (trained)
+models/*/
+!models/.gitkeep
+
+# Environment
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Node
+node_modules/
+
+# Web app (regenerable)
+web/model/
+web/dist/
+
+# Pipeline outputs (regenerable via make all)
+artifacts/ipip_bffm_norms.meta.json
+artifacts/tuned_params.original.json
+artifacts/research_summary.json
+artifacts/variants/
+
+# Output (published to HuggingFace Hub)
+output/*/
+output/README.md
+!output/.gitkeep
+
+# Figures (regenerable)
+figures/*.png
+figures/*.pdf
+figures/manifest.json
+!figures/.gitkeep
+
+# Remote pipeline
+.git-hash
+pipeline.log
+pipeline-timing.log
+.pipeline-exit-code
+
+# Claude settings
+.claude/settings.local.json
+
+# Terraform
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/.terraform.lock.hcl
+infra/terraform.tfvars
+*.tfstate.lock.info

@@ -1,0 +1,35 @@
+name: reference
+description: "Published model: focused + Mini-IPIP + imbalanced sparsity"
+output_dir: models/reference
+data_dir: data/processed/ext_est
+artifacts_dir: artifacts
+
+sparsity:
+  enabled: true
+  focused: true
+  include_mini_ipip: true
+  include_imbalanced: true
+  n_augmentation_passes: 3
+
+hyperparameters:
+  locked_params: artifacts/tuned_params.json
+  lock_policy: strict_data_hash
+
+training:
+  cv_folds: 5
+  random_state: 42
+  n_jobs: 16
+
+validation:
+  min_pearson_r: 0.90
+  min_coverage_90: 0.88
+  per_domain:
+    min_pearson_r: 0.90
+    min_coverage_90: 0.88
+  sparse_20:
+    enabled: true
+    min_pearson_r: 0.90
+    min_coverage_90: 0.88
+    per_domain:
+      min_pearson_r: 0.85
+      min_coverage_90: 0.84

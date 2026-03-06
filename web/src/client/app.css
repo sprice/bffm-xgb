@@ -1,0 +1,187 @@
+@import "tailwindcss";
+
+/*
+ * @theme inline maps each --color-* utility token to an intermediate
+ * --app-* custom property. The actual light/dark values for --app-*
+ * live in @layer base so they participate in the cascade correctly
+ * (Tailwind v4's @theme output won't clobber them).
+ */
+
+@theme inline {
+  --color-surface: var(--app-surface);
+  --color-bg: var(--app-bg);
+  --color-text: var(--app-text);
+  --color-text-muted: var(--app-text-muted);
+  --color-border: var(--app-border);
+
+  --color-primary: var(--app-primary);
+  --color-primary-hover: var(--app-primary-hover);
+  --color-primary-light: var(--app-primary-light);
+  --color-primary-lighter: var(--app-primary-lighter);
+
+  --color-ext: var(--app-ext);
+  --color-agr: var(--app-agr);
+  --color-csn: var(--app-csn);
+  --color-est: var(--app-est);
+  --color-opn: var(--app-opn);
+
+  --font-display: "Fraunces", "Georgia", serif;
+  --font-body: "Outfit", system-ui, sans-serif;
+}
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+
+    /* Warm neutrals – deepened text for contrast */
+    --app-surface: #fefdfb;
+    --app-bg: #f8f6f3;
+    --app-text: #1a1816;
+    --app-text-muted: #6b6460;
+    --app-border: #e2dfdb;
+
+    /* Primary – warm teal, richer */
+    --app-primary: #0d766e;
+    --app-primary-hover: #095f59;
+    --app-primary-light: #d2eeeb;
+    --app-primary-lighter: #edf7f6;
+
+    /* Domain trait colors – more saturated */
+    --app-ext: #d47a1e;
+    --app-agr: #2e8f5e;
+    --app-csn: #3b6fa3;
+    --app-est: #c44848;
+    --app-opn: #7d52b3;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --app-surface: #252220;
+      --app-bg: #1a1816;
+      --app-text: #f2f0ed;
+      --app-text-muted: #a69e98;
+      --app-border: #3d3835;
+
+      --app-primary: #20ada3;
+      --app-primary-hover: #28c4b9;
+      --app-primary-light: #1a2f2e;
+      --app-primary-lighter: #1f2928;
+
+      --app-ext: #e8922f;
+      --app-agr: #4cb87a;
+      --app-csn: #5a93c5;
+      --app-est: #dc6060;
+      --app-opn: #a07ad0;
+    }
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  body {
+    font-family: var(--font-body);
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Animate theme changes on colored surfaces */
+  .bg-surface,
+  [class*="bg-primary"],
+  [class*="border-"] {
+    transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+  }
+}
+
+/* ── Entrance animations ── */
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scale-in-x {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes dot-pop {
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+  60% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+
+@keyframes progress-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-in {
+  animation: fade-in-up 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-fade {
+  animation: fade-in 0.4s ease both;
+}
+
+.stagger-1 { animation-delay: 0.06s; }
+.stagger-2 { animation-delay: 0.12s; }
+.stagger-3 { animation-delay: 0.18s; }
+.stagger-4 { animation-delay: 0.24s; }
+.stagger-5 { animation-delay: 0.30s; }
+.stagger-6 { animation-delay: 0.36s; }
+.stagger-7 { animation-delay: 0.42s; }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  header,
+  footer,
+  nav,
+  button {
+    display: none !important;
+  }
+
+  [role="region"][aria-label="Assessment results"] {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+}

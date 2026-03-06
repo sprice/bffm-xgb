@@ -1,0 +1,9 @@
+[project]
+name = "bffm-xgb-pipeline"
+version = "1.0.0"
+description = "IPIP-BFFM XGBoost sparse quantile training pipeline"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

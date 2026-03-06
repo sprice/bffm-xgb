@@ -1,0 +1,27 @@
+name: ablation_none
+description: "Ablation: no sparsity augmentation (baseline)"
+output_dir: models/ablation_none
+data_dir: data/processed/ext_est
+artifacts_dir: artifacts
+
+sparsity:
+  enabled: false
+
+hyperparameters:
+  locked_params: artifacts/tuned_params.json
+  lock_policy: reference_model_hash
+  reference_model_dir: models/reference
+
+training:
+  cv_folds: 5
+  random_state: 42
+  n_jobs: 16
+
+validation:
+  min_pearson_r: 0.80
+  min_coverage_90: 0.80
+  per_domain:
+    min_pearson_r: 0.74
+    min_coverage_90: 0.72
+  sparse_20:
+    enabled: false

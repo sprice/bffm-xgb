@@ -1,0 +1,144 @@
+{
+  "name": "Mini-IPIP",
+  "description": "20-item Mini-IPIP scale mapped to IPIP-BFFM-50 item IDs. All domains and keying use our canonical system (Emotional Stability, not Neuroticism).",
+  "source_url": "https://ipip.ori.org/MiniIPIPKey.htm",
+  "citation": "Donnellan, M. B., Oswald, F. L., Baird, B. M., & Lucas, R. E. (2006). The Mini-IPIP scales: Tiny-yet-effective measures of the Big Five factors of personality. Psychological Assessment, 18(2), 192-203.",
+  "reported_reliability": {
+    "Extraversion": 0.77,
+    "Agreeableness": 0.7,
+    "Conscientiousness": 0.69,
+    "EmotionalStability": 0.68,
+    "Intellect": 0.65
+  },
+  "items_per_domain": 4,
+  "total_items": 20,
+  "domains": {
+    "Extraversion": ["ext1", "ext7", "ext2", "ext4"],
+    "Agreeableness": ["agr4", "agr9", "agr7", "agr5"],
+    "Conscientiousness": ["csn5", "csn7", "csn6", "csn4"],
+    "EmotionalStability": ["est8", "est6", "est2", "est4"],
+    "Intellect": ["opn3", "opn2", "opn4", "opn6"]
+  },
+  "items": [
+    {
+      "id": "ext1",
+      "domain": "Extraversion",
+      "text": "I am the life of the party.",
+      "reverse_keyed": false
+    },
+    {
+      "id": "ext7",
+      "domain": "Extraversion",
+      "text": "I talk to a lot of different people at parties.",
+      "reverse_keyed": false
+    },
+    {
+      "id": "ext2",
+      "domain": "Extraversion",
+      "text": "I don't talk a lot.",
+      "reverse_keyed": true
+    },
+    {
+      "id": "ext4",
+      "domain": "Extraversion",
+      "text": "I keep in the background.",
+      "reverse_keyed": true
+    },
+    {
+      "id": "agr4",
+      "domain": "Agreeableness",
+      "text": "I sympathize with others' feelings.",
+      "reverse_keyed": false
+    },
+    {
+      "id": "agr9",
+      "domain": "Agreeableness",
+      "text": "I feel others' emotions.",
+      "reverse_keyed": false
+    },
+    {
+      "id": "agr7",
+      "domain": "Agreeableness",
+      "text": "I am not really interested in others.",
+      "reverse_keyed": true
+    },
+    {
+      "id": "agr5",
+      "domain": "Agreeableness",
+      "text": "I am not interested in other people's problems.",
+      "reverse_keyed": true
+    },
+    {
+      "id": "csn5",
+      "domain": "Conscientiousness",
+      "text": "I get chores done right away.",
+      "reverse_keyed": false
+    },
+    {
+      "id": "csn7",
+      "domain": "Conscientiousness",
+      "text": "I like order.",
+      "reverse_keyed": false
+    },
+    {
+      "id": "csn6",
+      "domain": "Conscientiousness",
+      "text": "I often forget to put things back in their proper place.",
+      "reverse_keyed": true
+    },
+    {
+      "id": "csn4",
+      "domain": "Conscientiousness",
+      "text": "I make a mess of things.",
+      "reverse_keyed": true
+    },
+    {
+      "id": "est8",
+      "domain": "EmotionalStability",
+      "text": "I have frequent mood swings.",
+      "reverse_keyed": true
+    },
+    {
+      "id": "est6",
+      "domain": "EmotionalStability",
+      "text": "I get upset easily.",
+      "reverse_keyed": true
+    },
+    {
+      "id": "est2",
+      "domain": "EmotionalStability",
+      "text": "I am relaxed most of the time.",
+      "reverse_keyed": false
+    },
+    {
+      "id": "est4",
+      "domain": "EmotionalStability",
+      "text": "I seldom feel blue.",
+      "reverse_keyed": false
+    },
+    {
+      "id": "opn3",
+      "domain": "Intellect",
+      "text": "I have a vivid imagination.",
+      "reverse_keyed": false
+    },
+    {
+      "id": "opn2",
+      "domain": "Intellect",
+      "text": "I have difficulty understanding abstract ideas.",
+      "reverse_keyed": true
+    },
+    {
+      "id": "opn4",
+      "domain": "Intellect",
+      "text": "I am not interested in abstract ideas.",
+      "reverse_keyed": true
+    },
+    {
+      "id": "opn6",
+      "domain": "Intellect",
+      "text": "I do not have a good imagination.",
+      "reverse_keyed": true
+    }
+  ]
+}

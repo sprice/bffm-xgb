@@ -1,0 +1,12 @@
+# Required: name of your AWS key pair (must already exist in the target region)
+key_name = "my-keypair"
+
+# Required: restrict SSH to your IP (e.g. curl -s ifconfig.me)
+allowed_ssh_cidr = "YOUR_IP/32"
+
+# Optional overrides
+# aws_region           = "us-west-2"
+# instance_type        = "c7a.24xlarge"
+# spot_max_price       = "1.50"
+# ssh_private_key_path = "~/.ssh/id_rsa"
+# volume_size          = 50
