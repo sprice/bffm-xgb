@@ -315,7 +315,7 @@ def _run_optuna_tuning(
 
     def objective(trial: "optuna.Trial") -> float:
         params = {
-            "n_estimators": trial.suggest_int("n_estimators", 300, 2000),
+            "n_estimators": trial.suggest_int("n_estimators", 300, 10000),
             "max_depth": trial.suggest_int("max_depth", 3, 8),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
             "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 5.0),
