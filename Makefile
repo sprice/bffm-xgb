@@ -520,7 +520,7 @@ remote-all: remote-push remote-setup
 	$(MAKE) infra-down
 	@echo "==> Done. Infrastructure destroyed."
 
-remote-all-1: infra-up remote-push remote-setup
+remote-all-1: remote-push remote-setup
 	@echo "==> Starting phase 1 (download through tune) on $(REMOTE_HOST)..."
 	$(SSH) 'rm -f $(REMOTE_DIR)/.pipeline-exit-code && \
 		tmux kill-session -t pipeline 2>/dev/null || true && \
