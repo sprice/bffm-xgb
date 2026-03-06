@@ -13,6 +13,8 @@ PARALLEL_DOMAINS ?=
 _PARALLEL_DOMAINS_FLAG := $(if $(PARALLEL_DOMAINS),--parallel-domains $(PARALLEL_DOMAINS),)
 TRAIN_PARALLEL ?=
 _TRAIN_PARALLEL_FLAG := $(if $(TRAIN_PARALLEL),-j$(TRAIN_PARALLEL),)
+# train-1 runs alone before train-2/3/4, so give it all cores (N_JOBS × TRAIN_PARALLEL)
+_TRAIN1_NJOBS = $(if $(and $(TRAIN_PARALLEL),$(N_JOBS)),$(shell echo $$(( $(N_JOBS) * $(TRAIN_PARALLEL) ))),$(N_JOBS))
 MODEL_DIR ?= models/reference
 MODEL_DIR_NORM := $(patsubst %/,%,$(MODEL_DIR))
 MODEL_NAME := $(notdir $(MODEL_DIR_NORM))
@@ -120,7 +122,7 @@ ifneq ($(strip $(TRAIN_EXTRA_ARGS)),)
 	@echo "Too many train run arguments: $(TRAIN_ARGS). Use: make train [1|2|3|4]"
 	@exit 2
 else ifeq ($(TRAIN_RUN),)
-	$(MAKE) train-1 PARAMS="$(PARAMS)" N_JOBS="$(N_JOBS)"
+	$(MAKE) train-1 PARAMS="$(PARAMS)" N_JOBS="$(_TRAIN1_NJOBS)"
 	$(MAKE) $(_TRAIN_PARALLEL_FLAG) train-2 train-3 train-4 PARAMS="$(PARAMS)" N_JOBS="$(N_JOBS)"
 else ifeq ($(filter $(TRAIN_RUN),$(VALID_TRAIN_RUNS)),$(TRAIN_RUN))
 	$(MAKE) train-$(TRAIN_RUN) PARAMS="$(PARAMS)" N_JOBS="$(N_JOBS)"
@@ -452,7 +454,7 @@ REMOTE_TRAIN_NJOBS = $(shell echo $$(( $(REMOTE_NJOBS) / $(REMOTE_TRAIN_PARALLEL
 remote-train:
 	@echo "==> Running 'make train' on $(REMOTE_HOST)..."
 	@echo "    Config 1 first, then 2-4 in parallel. Domains train concurrently."
-	@echo "    N_JOBS=$(REMOTE_TRAIN_NJOBS) per config ($(REMOTE_NJOBS) cores / $(REMOTE_TRAIN_PARALLEL) parallel configs, each split across $(REMOTE_PARALLEL_DOMAINS) domains internally)"
+	@echo "    train-1: $(REMOTE_NJOBS) cores (all), train-2/3/4: $(REMOTE_TRAIN_NJOBS) each ($(REMOTE_NJOBS)/$(REMOTE_TRAIN_PARALLEL)), $(REMOTE_PARALLEL_DOMAINS) parallel domains"
 	@echo "    If disconnected, run: make remote-attach"
 	$(SSH) -t 'tmux kill-session -t pipeline 2>/dev/null; \
 		cd $(REMOTE_DIR) && \
