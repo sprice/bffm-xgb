@@ -34,6 +34,8 @@ DEFAULT_PARAMS = {
     "min_child_weight": 1,
 }
 
+DEFAULT_EARLY_STOPPING_ROUNDS = 25
+
 # Reverse-keyed items (1-indexed item numbers within each domain)
 # Source: https://ipip.ori.org/newBigFive5broadKey.htm
 REVERSE_KEYED = {

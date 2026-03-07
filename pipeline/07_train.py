@@ -46,6 +46,7 @@ from lib.constants import (
     QUANTILES,
     QUANTILE_NAMES,
     DEFAULT_PARAMS,
+    DEFAULT_EARLY_STOPPING_ROUNDS,
 )
 from lib.scoring import raw_score_to_percentile
 from lib.provenance import build_provenance, add_provenance_args, relative_to_root
@@ -384,6 +385,9 @@ def _apply_sparsity_single(
         mini_ipip_items=mini_ipip_items,
         include_mini_ipip=sparsity_cfg.get("include_mini_ipip", True),
         include_imbalanced=sparsity_cfg.get("include_imbalanced", False),
+        min_items_per_domain=sparsity_cfg.get("min_items_per_domain", 4),
+        min_total_items=sparsity_cfg.get("min_total_items", 20),
+        max_total_items=sparsity_cfg.get("max_total_items", 40),
         rng=rng,
     )
 
@@ -483,7 +487,7 @@ def _train_single_domain(
         model = _create_xgb_model(
             q, params,
             n_jobs=n_jobs,
-            early_stopping_rounds=15 if use_early_stopping else None,
+            early_stopping_rounds=DEFAULT_EARLY_STOPPING_ROUNDS if use_early_stopping else None,
             gpu=gpu,
         )
 
@@ -494,7 +498,7 @@ def _train_single_domain(
                 eval_set=[(X_eval, y_domain_eval)],
                 verbose=False,
             )
-            best_iter = getattr(model, "best_iteration", params.get("n_estimators", 500))
+            best_iter = getattr(model, "best_iteration", params.get("n_estimators", DEFAULT_PARAMS["n_estimators"]))
             log.info("    %s/%s trained (best_iteration=%d)", DOMAIN_LABELS[domain], q_name, best_iter)
         else:
             model.fit(X_train, y_domain)

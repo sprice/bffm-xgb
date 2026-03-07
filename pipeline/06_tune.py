@@ -42,6 +42,7 @@ from lib.constants import (
     DOMAINS,
     ITEM_COLUMNS,
     DEFAULT_PARAMS,
+    DEFAULT_EARLY_STOPPING_ROUNDS,
 )
 from lib.scoring import raw_score_to_percentile
 from lib.provenance import build_provenance, add_provenance_args
@@ -357,7 +358,7 @@ def _run_optuna_tuning(
                 0.5,
                 params,
                 n_jobs=xgb_n_jobs,
-                early_stopping_rounds=25,
+                early_stopping_rounds=DEFAULT_EARLY_STOPPING_ROUNDS,
                 gpu=gpu,
             )
             model.fit(
