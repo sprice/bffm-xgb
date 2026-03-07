@@ -212,6 +212,25 @@ function verifySha256(filePath: string, expectedSha256: string): void {
 }
 
 /**
+ * Check whether a file exists in a HuggingFace repo using a HEAD request.
+ * Returns false on any network/fetch error so that callers fall through
+ * to the actual download, which will surface a clearer error message.
+ */
+async function hfFileExists(
+  repoId: string,
+  revision: string,
+  filePath: string,
+): Promise<boolean> {
+  try {
+    const url = `https://huggingface.co/${repoId}/resolve/${revision}/${filePath}`;
+    const res = await fetch(url, { method: "HEAD", redirect: "follow" });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Download a file from the HuggingFace Hub (public repos only, no auth needed).
  * Uses the resolve endpoint which handles CDN redirects.
  */
@@ -278,14 +297,22 @@ async function resolveModelDir(): Promise<string> {
       return cacheDir;
     }
 
-    console.log(`Downloading model from HF: ${repoId} (variant: ${variant}, revision: ${revision})`);
+    // Detect repo layout: files in variant subdirectory or at root
+    const variantPrefix = await hfFileExists(repoId, revision, `${variant}/config.json`)
+      ? `${variant}/`
+      : "";
+    if (variantPrefix) {
+      console.log(`Downloading model from HF: ${repoId} (variant: ${variant}, revision: ${revision})`);
+    } else {
+      console.log(`Downloading model from HF: ${repoId} (root layout, revision: ${revision})`);
+    }
     mkdirSync(cacheDir, { recursive: true });
 
     const configSha = process.env.HF_SHA256_CONFIG || undefined;
     const modelSha = process.env.HF_SHA256_MODEL || undefined;
 
-    await downloadHfFile(repoId, revision, `${variant}/config.json`, configPath, configSha);
-    await downloadHfFile(repoId, revision, `${variant}/model.onnx`, modelPath, modelSha);
+    await downloadHfFile(repoId, revision, `${variantPrefix}config.json`, configPath, configSha);
+    await downloadHfFile(repoId, revision, `${variantPrefix}model.onnx`, modelPath, modelSha);
 
     return cacheDir;
   }
@@ -295,11 +322,18 @@ async function resolveModelDir(): Promise<string> {
 }
 
 let _predictor: IPIPBFFMPredictor | null = null;
+let _loading: Promise<IPIPBFFMPredictor> | null = null;
+
+export function isPredictorReady(): boolean {
+  return _predictor !== null;
+}
 
 export async function getPredictor(): Promise<IPIPBFFMPredictor> {
-  if (!_predictor) {
-    const modelDir = await resolveModelDir();
-    _predictor = await IPIPBFFMPredictor.create(modelDir);
+  if (_predictor) return _predictor;
+  if (!_loading) {
+    _loading = resolveModelDir()
+      .then((dir) => IPIPBFFMPredictor.create(dir))
+      .then((p) => { _predictor = p; return p; });
   }
-  return _predictor;
+  return _loading;
 }

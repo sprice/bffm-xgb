@@ -3,14 +3,19 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { resolve } from "node:path";
-import { getPredictor } from "./predictor.js";
+import { getPredictor, isPredictorReady } from "./predictor.js";
 import { reverseScore } from "./reverse-score.js";
 
 const app = new Hono();
 
-app.get("/api/health", (c) => c.json({ status: "ok" }));
+app.get("/api/health", (c) =>
+  c.json({ status: isPredictorReady() ? "ok" : "loading" })
+);
 
 app.post("/api/predict", bodyLimit({ maxSize: 4 * 1024 }), async (c) => {
+  if (!isPredictorReady()) {
+    return c.json({ error: "Model is still loading, please try again shortly" }, 503);
+  }
   let body: { responses: Record<string, number> };
   try {
     body = await c.req.json();
@@ -68,14 +73,15 @@ app.get("/*", async (c) => {
 
 const port = Number(process.env.PORT) || 7860;
 
+// Start server immediately so HF Spaces sees the port bound before its startup timeout.
+// The model loads in the background; /api/predict returns 503 until ready.
+serve({ fetch: app.fetch, port }, (info) => {
+  console.log(`Server running on http://localhost:${info.port}`);
+});
+
 console.log("Loading ONNX model...");
 getPredictor()
-  .then(() => {
-    console.log("Model loaded successfully.");
-    serve({ fetch: app.fetch, port }, (info) => {
-      console.log(`Server running on http://localhost:${info.port}`);
-    });
-  })
+  .then(() => console.log("Model loaded successfully."))
   .catch((err) => {
     console.error("Failed to load model:", err);
     process.exit(1);

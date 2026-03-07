@@ -25,7 +25,9 @@ DATA_DIR ?=
 ARTIFACTS_DIR ?= artifacts
 SKIP_PROVENANCE ?=
 FORCE ?=
+RESET ?=
 _UPLOAD_HF_DEPS := $(if $(SKIP_PROVENANCE),,provenance-check)
+_RESET_FLAG := $(if $(RESET),--reset,)
 ARTIFACTS_VARIANTS_DIR ?= $(ARTIFACTS_DIR)/variants
 EVAL_DIR = $(ARTIFACTS_VARIANTS_DIR)/$(MODEL_NAME)
 RESEARCH_SUMMARY_PATH ?= $(ARTIFACTS_DIR)/research_summary.json
@@ -62,7 +64,7 @@ TRAIN_RUN := $(firstword $(TRAIN_ARGS))
 TRAIN_EXTRA_ARGS := $(wordlist 2,$(words $(TRAIN_ARGS)),$(TRAIN_ARGS))
 VALID_TRAIN_RUNS := 1 2 3 4
 
-.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full prepare prepare-default prepare-stratified correlations correlations-default correlations-stratified tune train train-1 train-2 train-3 train-4 check-model-data-pairing validate baselines simulate export export-all export-repo-readme export-reference export-ablation-none export-ablation-focused export-ablation-stratified figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-eval-ablation-stratified research-summary research-summary-strict notes upload-hf test test-lib test-inference test-web archive clean web-setup web-dev web-build deploy-web
+.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full prepare prepare-default prepare-stratified correlations correlations-default correlations-stratified tune train train-1 train-2 train-3 train-4 check-model-data-pairing validate baselines simulate export export-all export-repo-readme export-reference export-ablation-none export-ablation-focused export-ablation-stratified figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-eval-ablation-stratified research-summary research-summary-strict notes upload-hf upload-hf-reference test test-lib test-inference test-web archive clean web-setup web-dev web-build deploy-web
 
 all: download load norms norms-check prepare correlations tune train research-eval export-all notes figures
 
@@ -215,7 +217,10 @@ notes:
 	$(PY) scripts/generate_notes_data.py
 
 upload-hf: $(_UPLOAD_HF_DEPS)
-	$(PY) pipeline/13_upload_hf.py
+	$(PY) pipeline/13_upload_hf.py $(_RESET_FLAG)
+
+upload-hf-reference: $(_UPLOAD_HF_DEPS)
+	$(PY) pipeline/13_upload_hf.py --variant reference $(_RESET_FLAG)
 
 test: test-lib test-inference test-web
 
@@ -421,9 +426,11 @@ ifdef FILE
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/$(FILE) ./$(FILE)
 else
 	@echo "==> Downloading results from $(REMOTE_HOST)..."
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/ ./data/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/models/ ./models/
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/tuned_params.json ./artifacts/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/tuned_params.original.json ./artifacts/ 2>/dev/null || true
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/ipip_bffm_norms.json ./artifacts/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/ipip_bffm_norms.meta.json ./artifacts/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/variants/ ./artifacts/variants/
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/output/ ./output/ 2>/dev/null || true

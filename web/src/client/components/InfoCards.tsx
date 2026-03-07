@@ -2,7 +2,9 @@ export function InfoCards() {
   return (
     <>
       <div className="bg-surface border border-border rounded-lg p-5 sm:p-6 shadow-sm">
-        <h3 className="font-display text-lg font-semibold text-text mb-4">About the Big Five</h3>
+        <h3 className="font-display text-lg font-semibold text-text mb-4">
+          About the Big Five
+        </h3>
 
         <blockquote className="border-l-2 border-primary/40 pl-4 mb-4">
           <p className="text-base text-text-muted italic leading-relaxed">
@@ -36,16 +38,18 @@ export function InfoCards() {
           >
             International Personality Item Pool
           </a>{" "}
-          (IPIP), a free, open collection of personality questions used
-          by researchers around the world.
+          (IPIP), a public domain collection of personality questions used by
+          researchers around the world.
         </p>
       </div>
 
       <div className="bg-surface border border-border rounded-lg p-5 sm:p-6 shadow-sm">
-        <h3 className="font-display text-lg font-semibold text-text mb-4">How it works</h3>
+        <h3 className="font-display text-lg font-semibold text-text mb-4">
+          How it works
+        </h3>
 
         <p className="text-base text-text-muted leading-relaxed">
-          A machine-learning model called{" "}
+          A custom machine-learning model built for this project,{" "}
           <a
             href="https://github.com/sprice/bffm-xgb"
             target="_blank"
@@ -54,9 +58,10 @@ export function InfoCards() {
           >
             BFFM-XGB
           </a>{" "}
-          scores your answers. It was trained on longer personality tests
-          and can predict your Big Five scores from just 20 questions.
-          And it's more accurate than the standard 20-question Mini Big Five assessment.
+          scores your answers. It was trained on longer personality tests and
+          can predict your Big Five scores from just 20 questions. And it's more
+          accurate than the standard 20-question Mini Big Five assessment
+          (MINI-IPIP).
         </p>
 
         <p className="text-base text-text-muted leading-relaxed mt-3">
@@ -69,8 +74,8 @@ export function InfoCards() {
           >
             GitHub
           </a>
-          : the model, the training code, and this website. The model
-          is also on{" "}
+          : the model, the training code, and this website. The model is public
+          domain on{" "}
           <a
             href="https://huggingface.co/shawnprice/bffm-xgb"
             target="_blank"

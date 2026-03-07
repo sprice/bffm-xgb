@@ -5,16 +5,39 @@ import { LandingPage } from "./pages/LandingPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { ResultsPage } from "./pages/ResultsPage";
 
-const PreAssessmentPage = lazy(() => import("./pages/PreAssessmentPage").then(m => ({ default: m.PreAssessmentPage })));
-const AssessmentQuestionPage = lazy(() => import("./pages/AssessmentQuestionPage").then(m => ({ default: m.AssessmentQuestionPage })));
-const AssessmentDonePage = lazy(() => import("./pages/AssessmentDonePage").then(m => ({ default: m.AssessmentDonePage })));
-const ResultsHashPage = lazy(() => import("./pages/ResultsHashPage").then(m => ({ default: m.ResultsHashPage })));
-const SharedResultsPage = lazy(() => import("./pages/SharedResultsPage").then(m => ({ default: m.SharedResultsPage })));
+const PreAssessmentPage = lazy(() =>
+  import("./pages/PreAssessmentPage").then((m) => ({
+    default: m.PreAssessmentPage,
+  })),
+);
+const AssessmentQuestionPage = lazy(() =>
+  import("./pages/AssessmentQuestionPage").then((m) => ({
+    default: m.AssessmentQuestionPage,
+  })),
+);
+const AssessmentDonePage = lazy(() =>
+  import("./pages/AssessmentDonePage").then((m) => ({
+    default: m.AssessmentDonePage,
+  })),
+);
+const ResultsHashPage = lazy(() =>
+  import("./pages/ResultsHashPage").then((m) => ({
+    default: m.ResultsHashPage,
+  })),
+);
+const SharedResultsPage = lazy(() =>
+  import("./pages/SharedResultsPage").then((m) => ({
+    default: m.SharedResultsPage,
+  })),
+);
 
 export function App() {
   return (
     <div className="min-h-svh flex flex-col items-center bg-bg">
-      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-primary focus:text-white focus:rounded-md focus:text-sm focus:font-medium">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-primary focus:text-white focus:rounded-md focus:text-sm focus:font-medium"
+      >
         Skip to content
       </a>
 
@@ -38,7 +61,10 @@ export function App() {
             <Route path="/start" element={<PreAssessmentPage />} />
             <Route path="/assessment" element={<AssessmentPage />} />
             <Route path="/assessment/done" element={<AssessmentDonePage />} />
-            <Route path="/assessment/:questionNumber" element={<AssessmentQuestionPage />} />
+            <Route
+              path="/assessment/:questionNumber"
+              element={<AssessmentQuestionPage />}
+            />
             <Route path="/results" element={<ResultsPage />} />
             <Route path="/results/:hash" element={<ResultsHashPage />} />
             <Route path="/shared/:hash" element={<SharedResultsPage />} />
@@ -49,26 +75,21 @@ export function App() {
 
       <footer className="text-center py-8 px-4 pb-[calc(2rem+env(safe-area-inset-bottom))] text-text-muted text-sm border-t border-border w-full">
         <p>
-          A{" "}
-          <a
-            className="text-primary hover:underline"
-            href="https://www.centerline.work"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Centerline
-          </a>{" "}
-          project by{" "}
-          <a
-            className="text-primary hover:underline"
-            href="https://shawnprice.com"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Shawn Price
+          <a className="text-primary hover:underline" href="/">
+            Big 5 Personality Assessment
           </a>
         </p>
-        <p className="mt-1 opacity-60">For educational purposes only · Code available on <a href="https://github.com/sprice/bffm-xgb" target="_blank" rel="noopener noreferrer" className="underline hover:opacity-80">GitHub</a></p>
+        <p className="mt-1 opacity-60">
+          For educational purposes only · Code available on{" "}
+          <a
+            href="https://github.com/sprice/bffm-xgb"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:opacity-80"
+          >
+            GitHub
+          </a>
+        </p>
       </footer>
     </div>
   );
