@@ -2635,6 +2635,34 @@ def test_makefile_remote_all_includes_checkpoint_pull_loop() -> None:
     assert '"${MAKE:-make}" remote-pull' in out
 
 
+def test_makefile_remote_push_excludes_backup_dir() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        ["make", "-n", "remote-push"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    out = result.stdout
+    assert "--exclude='.backup/'" in out
+
+
+def test_makefile_remote_gpu_push_excludes_backup_dir() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        ["make", "-n", "remote-1-gpu"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    out = result.stdout
+    assert "--exclude='.backup/'" in out
+
+
 def test_makefile_auto_selects_stratified_data_dir_with_trailing_slash_model_dir() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     result = subprocess.run(

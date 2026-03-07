@@ -442,6 +442,7 @@ else
 		--exclude='output/' \
 		--exclude='figures/' \
 		--exclude='notes/' \
+		--exclude='.backup/' \
 		--exclude='$(LOGS_DIR)/' \
 		--exclude='web/' \
 		--exclude='.pytest_cache/' \
@@ -688,6 +689,7 @@ remote-1-gpu:
 		--exclude='output/' \
 		--exclude='figures/' \
 		--exclude='notes/' \
+		--exclude='.backup/' \
 		--exclude='$(LOGS_DIR)/' \
 		--exclude='web/' \
 		--exclude='.pytest_cache/' \
