@@ -2521,6 +2521,104 @@ def test_run_pipeline_writes_checkpoint_markers_for_major_stages(tmp_path) -> No
     assert not (checkpoint_dir / "tune.done").exists()
 
 
+def test_manage_backup_clean_moves_outputs_and_writes_manifest(tmp_path, monkeypatch, capsys) -> None:
+    backup = _load_paper_module("manage_backup.py")
+    monkeypatch.setattr(backup, "PACKAGE_ROOT", tmp_path)
+    monkeypatch.setattr(backup, "BACKUP_ROOT", tmp_path / ".backup")
+    monkeypatch.setattr(backup, "MANIFEST_PATH", tmp_path / ".backup" / "manifest.json")
+
+    for rel in [
+        "data/.gitkeep",
+        "models/.gitkeep",
+        "figures/.gitkeep",
+        "output/.gitkeep",
+        "data/raw/source.zip",
+        "data/processed/train.parquet",
+        "artifacts/ipip_bffm_norms.json",
+        "artifacts/tuned_params.json",
+        "artifacts/variants/reference/validation_results.json",
+        "models/reference/training_report.json",
+        "output/reference/model.onnx",
+        "notes/NOTES.md",
+        "logs/train-reference.log",
+        "figures/plot.png",
+        "pipeline.log",
+    ]:
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"payload:{rel}", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["manage_backup.py", "clean", "--force"])
+    rc = backup.main()
+    assert rc == 0
+
+    captured = capsys.readouterr()
+    assert "Clean complete." in captured.out
+
+    assert not (tmp_path / "data/raw").exists()
+    assert not (tmp_path / "models/reference").exists()
+    assert not (tmp_path / "notes/NOTES.md").exists()
+    assert (tmp_path / ".backup" / "data/raw/source.zip").exists()
+    assert (tmp_path / ".backup" / "models/reference/training_report.json").exists()
+    assert (tmp_path / ".backup" / "notes/NOTES.md").exists()
+    assert (tmp_path / "data/.gitkeep").exists()
+    assert (tmp_path / "models/.gitkeep").exists()
+
+    manifest = json.loads((tmp_path / ".backup" / "manifest.json").read_text(encoding="utf-8"))
+    assert "data/raw" in manifest["paths"]
+    assert "models/reference" in manifest["paths"]
+    assert "notes/NOTES.md" in manifest["paths"]
+
+
+def test_manage_backup_clean_noop_preserves_existing_backup(tmp_path, monkeypatch, capsys) -> None:
+    backup = _load_paper_module("manage_backup.py")
+    monkeypatch.setattr(backup, "PACKAGE_ROOT", tmp_path)
+    monkeypatch.setattr(backup, "BACKUP_ROOT", tmp_path / ".backup")
+    monkeypatch.setattr(backup, "MANIFEST_PATH", tmp_path / ".backup" / "manifest.json")
+
+    marker = tmp_path / ".backup" / "marker.txt"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("keep", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["manage_backup.py", "clean", "--force"])
+    rc = backup.main()
+    assert rc == 0
+
+    captured = capsys.readouterr()
+    assert "Existing .backup preserved." in captured.out
+    assert marker.exists()
+
+
+def test_manage_backup_restore_fails_on_conflicts_and_force_restores(tmp_path, monkeypatch, capsys) -> None:
+    backup = _load_paper_module("manage_backup.py")
+    monkeypatch.setattr(backup, "PACKAGE_ROOT", tmp_path)
+    monkeypatch.setattr(backup, "BACKUP_ROOT", tmp_path / ".backup")
+    monkeypatch.setattr(backup, "MANIFEST_PATH", tmp_path / ".backup" / "manifest.json")
+
+    src = tmp_path / "artifacts" / "tuned_params.json"
+    src.parent.mkdir(parents=True, exist_ok=True)
+    src.write_text('{"n_estimators": 100}', encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["manage_backup.py", "clean", "--force"])
+    assert backup.main() == 0
+
+    conflict = tmp_path / "artifacts" / "tuned_params.json"
+    conflict.parent.mkdir(parents=True, exist_ok=True)
+    conflict.write_text("conflict", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["manage_backup.py", "restore"])
+    rc = backup.main()
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "ERROR: Restore conflict at artifacts/tuned_params.json" in captured.out
+
+    monkeypatch.setattr(sys, "argv", ["manage_backup.py", "restore", "--force"])
+    rc = backup.main()
+    assert rc == 0
+    assert conflict.read_text(encoding="utf-8") == '{"n_estimators": 100}'
+    assert (tmp_path / ".backup" / "artifacts" / "tuned_params.json").exists()
+
+
 def test_makefile_remote_all_includes_checkpoint_pull_loop() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     result = subprocess.run(

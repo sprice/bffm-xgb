@@ -53,6 +53,7 @@ pipeline-timing.log
 logs/
 .pipeline-exit-code
 .pipeline-checkpoints/
+.backup/
 
 # Claude settings
 .claude/settings.local.json

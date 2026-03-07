@@ -253,9 +253,17 @@ See [`infra/README.md`](infra/README.md)
 ### Cleaning Up
 
 ```bash
-# Remove downloaded data, processed data, and trained models
+# Move generated pipeline outputs into .backup/
 make clean
+
+# Copy the most recent .backup/ payload back into place
+make restore
 ```
+
+`make clean` now preserves repo-relative structure under `.backup/` instead of
+deleting generated outputs outright. Running `make restore` copies that backup
+back into place. `make restore` fails on existing destination conflicts unless
+you pass `FORCE=1`.
 
 ## Directory Structure
 
