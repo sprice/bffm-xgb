@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { AiChatButtons } from "../components/AiChatButtons";
 import { ResultsView } from "../components/ResultsView";
 import { ShareCopyButton } from "../components/ShareCopyButton";
-import { clearSession } from "../hooks/use-assessment";
+import { clearSession, clearResultsHash, saveResultsHash } from "../hooks/use-assessment";
 import { decodeResults } from "../lib/results-codec";
 import { NotFoundPage } from "./NotFoundPage";
 
@@ -14,7 +14,10 @@ export function ResultsHashPage() {
 
   useEffect(() => {
     document.title = "Your Results - Big Five Personality Assessment";
-  }, []);
+    if (hash && results) {
+      saveResultsHash(hash);
+    }
+  }, [hash]);
 
   if (!results) {
     return <NotFoundPage />;
@@ -24,14 +27,15 @@ export function ResultsHashPage() {
 
   function handleRetake() {
     clearSession();
+    clearResultsHash();
     navigate("/start", { replace: true });
   }
 
   return (
-    <div className="max-w-[540px] mx-auto flex flex-col gap-6 animate-in">
+    <div className="flex flex-col gap-6 animate-in">
       <AiChatButtons results={results} mode="self" />
 
-      <div className="flex justify-center gap-3">
+      <div className="flex flex-wrap justify-center gap-3">
         <ShareCopyButton shareUrl={shareUrl} />
         <button
           type="button"
@@ -43,7 +47,9 @@ export function ResultsHashPage() {
         </button>
       </div>
 
-      <ResultsView results={results} />
+      <div className="max-w-[540px] mx-auto w-full">
+        <ResultsView results={results} />
+      </div>
     </div>
   );
 }

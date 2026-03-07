@@ -3,6 +3,7 @@ import { ITEMS } from "../items";
 import type { Item, Likert } from "../types";
 
 const STORAGE_KEY = "bffm-session";
+const RESULTS_KEY = "bffm-results";
 
 let sessionCleared = false;
 
@@ -52,6 +53,22 @@ export function clearSession() {
 
 export function hasSession(): boolean {
   return loadSession() !== null;
+}
+
+export function saveResultsHash(hash: string) {
+  localStorage.setItem(RESULTS_KEY, hash);
+}
+
+export function loadResultsHash(): string | null {
+  try {
+    return localStorage.getItem(RESULTS_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function clearResultsHash() {
+  localStorage.removeItem(RESULTS_KEY);
 }
 
 /**

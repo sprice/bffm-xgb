@@ -20,9 +20,9 @@ export function LandingPage({ onStart, children }: LandingPageProps) {
         </p>
 
         <p className="text-lg max-sm:text-base text-text-muted leading-relaxed max-w-[440px] mx-auto mb-10 text-center animate-in stagger-2">
-          Answer 20 questions and see where you stand on each Big
-          Five personality trait. The Big Five is the most widely
-          studied framework in personality psychology.
+          Answer 20 questions and see where you stand on each Big Five
+          personality trait. The Big Five is the most widely studied framework
+          in personality psychology.
         </p>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 animate-in stagger-3">
@@ -43,14 +43,17 @@ export function LandingPage({ onStart, children }: LandingPageProps) {
       </div>
 
       <div className="py-6 animate-in stagger-5">
-        <h3 className="font-display text-lg font-semibold text-text mb-3">Your privacy</h3>
+        <h3 className="font-display text-lg font-semibold text-text mb-3">
+          Your privacy
+        </h3>
 
         <p className="text-base text-text-muted leading-relaxed">
-          No account, no tracking, no personal data collected. When
-          you finish, your answers are sent to the server for scoring
-          and immediately discarded; nothing is saved on our end.
-          In-progress answers live in your browser so you can pick up
-          where you left off.
+          No account and no personal data collected. When you finish, your
+          answers are sent to the server for scoring and immediately discarded;
+          nothing is saved on our end. In-progress answers live in your browser
+          so you can pick up where you left off. We use cookie-free,
+          privacy-friendly analytics to count visits and understand general
+          usage. No personal information is tracked or stored.
         </p>
       </div>
     </div>

@@ -1,8 +1,3 @@
-// <ai_context>
-// Builds a prompt string for discussing Big Five personality results
-// with an AI chatbot (ChatGPT or Claude). Used by AiChatButtons.
-// </ai_context>
-
 import { DOMAIN_LABELS, DOMAIN_ORDER, type PredictionResult } from "../types";
 import { ordinal } from "./utils";
 

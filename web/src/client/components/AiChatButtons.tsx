@@ -1,8 +1,4 @@
-// <ai_context>
-// Renders "Discuss with ChatGPT" and "Discuss with Claude" buttons that open
-// the respective AI chat with a pre-filled personality-results prompt.
-// </ai_context>
-
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PredictionResult } from "../types";
 import { buildDiscussPrompt } from "../lib/build-discuss-prompt";
 
@@ -28,7 +24,16 @@ interface AiChatButtonsProps {
 }
 
 export function AiChatButtons({ results, mode }: AiChatButtonsProps) {
-  function handleClick(target: "chatgpt" | "claude") {
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const handleClick = useCallback((target: "chatgpt" | "claude") => {
     const prompt = buildDiscussPrompt(results, mode);
     const encoded = encodeURIComponent(prompt);
     const url =
@@ -36,19 +41,54 @@ export function AiChatButtons({ results, mode }: AiChatButtonsProps) {
         ? `https://chatgpt.com/?q=${encoded}`
         : `https://claude.ai/new?q=${encoded}`;
 
-    // Use a temporary anchor element instead of window.open() to avoid
-    // popup blockers. Passing a features string (3rd arg) to window.open
-    // causes browsers to treat the call as a popup request rather than a
-    // new-tab navigation, which blockers are more likely to intercept.
     const a = document.createElement("a");
     a.href = url;
     a.target = "_blank";
     a.rel = "noopener noreferrer";
     a.click();
+  }, [results, mode]);
+
+  function fallbackCopy(text: string) {
+    try {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      showCopiedFeedback();
+    } catch {
+      // Copy failed silently
+    }
   }
 
+  function showCopiedFeedback() {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+    }
+    setCopied(true);
+    timerRef.current = setTimeout(() => {
+      setCopied(false);
+      timerRef.current = null;
+    }, 2000);
+  }
+
+  const handleCopy = useCallback(() => {
+    const prompt = buildDiscussPrompt(results, mode);
+    if (!navigator.clipboard) {
+      fallbackCopy(prompt);
+      return;
+    }
+    navigator.clipboard.writeText(prompt).then(
+      () => showCopiedFeedback(),
+      () => fallbackCopy(prompt)
+    );
+  }, [results, mode]);
+
   return (
-    <div className="flex flex-col sm:flex-row gap-3 justify-center">
+    <div className="flex flex-col sm:flex-row flex-wrap gap-3 justify-center">
       <button
         type="button"
         className="min-h-[36px] px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 transition-opacity hover:opacity-85 active:opacity-75"
@@ -61,12 +101,30 @@ export function AiChatButtons({ results, mode }: AiChatButtonsProps) {
 
       <button
         type="button"
-        className="min-h-[36px] px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 transition-opacity hover:opacity-85 active:opacity-75"
+        className="hidden sm:flex min-h-[36px] px-4 py-2 rounded-md text-sm font-medium items-center gap-2 transition-opacity hover:opacity-85 active:opacity-75"
         style={{ backgroundColor: "#a8614a", color: "#ffffff" }}
         onClick={() => handleClick("claude")}
       >
         <ClaudeIcon className="w-4 h-4" />
         Discuss with Claude
+      </button>
+
+      <button
+        type="button"
+        aria-live="polite"
+        className="min-h-[36px] px-4 py-2 rounded-md bg-primary text-white text-sm font-medium grid transition-opacity hover:opacity-85 active:opacity-75"
+        onClick={handleCopy}
+      >
+        <span className={`col-start-1 row-start-1 flex items-center gap-2 ${copied ? "invisible" : ""}`}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="2" width="8" height="10" rx="1" /><path d="M3 6v8a1 1 0 0 0 1 1h6" /></svg>
+          Copy Discuss Prompt
+        </span>
+        {copied && (
+          <span className="col-start-1 row-start-1 flex items-center justify-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4" /></svg>
+            Prompt Copied!
+          </span>
+        )}
       </button>
     </div>
   );

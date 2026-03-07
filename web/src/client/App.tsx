@@ -1,5 +1,6 @@
-import { lazy, Suspense } from "react";
-import { Route, Routes } from "react-router-dom";
+import { lazy, Suspense, useEffect } from "react";
+import { Link, Route, Routes, useLocation } from "react-router-dom";
+import { trackPageview } from "./lib/analytics";
 import { AssessmentPage } from "./pages/AssessmentPage";
 import { LandingPage } from "./pages/LandingPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
@@ -32,6 +33,11 @@ const SharedResultsPage = lazy(() =>
 );
 
 export function App() {
+  const location = useLocation();
+  useEffect(() => {
+    trackPageview(location.pathname);
+  }, [location.pathname]);
+
   return (
     <div className="min-h-svh flex flex-col items-center bg-bg">
       <a
@@ -75,9 +81,9 @@ export function App() {
 
       <footer className="text-center py-8 px-4 pb-[calc(2rem+env(safe-area-inset-bottom))] text-text-muted text-sm border-t border-border w-full">
         <p>
-          <a className="text-primary hover:underline" href="/">
+          <Link className="text-primary hover:underline" to="/">
             Big 5 Personality Assessment
-          </a>
+          </Link>
         </p>
         <p className="mt-1 opacity-60">
           For educational purposes only · Code available on{" "}

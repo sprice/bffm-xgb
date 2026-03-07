@@ -58,10 +58,14 @@ export function InfoCards() {
           >
             BFFM-XGB
           </a>{" "}
-          scores your answers. It was trained on longer personality tests and
-          can predict your Big Five scores from just 20 questions. And it's more
-          accurate than the standard 20-question Mini Big Five assessment
-          (MINI-IPIP).
+          scores responses.
+        </p>
+
+        <p className="text-base text-text-muted leading-relaxed mt-3">
+          The model was trained on the 50 question IPIP-BFFM question set and
+          predicts Big Five scores with high accuracy from just 20 questions.
+          And it's more accurate than the standard 20-question Mini Big Five
+          assessment (MINI-IPIP).
         </p>
 
         <p className="text-base text-text-muted leading-relaxed mt-3">
