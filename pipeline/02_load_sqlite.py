@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Load IPIP-FFM CSV into a local SQLite database with reverse scoring and domain scores."""
+"""Load IPIP-FFM CSV into a local SQLite database with IPC filtering, reverse scoring, and domain scores."""
 
 import sys
 import json
@@ -94,6 +94,31 @@ def filter_valid_responses(df: pd.DataFrame, item_cols: list[str]) -> pd.DataFra
         dropped / before * 100 if before else 0,
     )
     return df_valid
+
+
+def filter_unique_ip(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep only rows where the IP appears exactly once in the full raw dataset (IPC == 1).
+
+    Per codebook: "For max cleanliness, only use records where [IPC] is 1."
+    IPC is pre-computed over the entire raw dataset, so this is stricter than
+    post-cleaning deduplication — it also removes rows whose IP had other
+    (possibly invalid) submissions. This removes both true repeat submissions
+    and false positives from shared networks (universities, VPNs).
+    """
+    before = len(df)
+    if "IPC" not in df.columns:
+        raise ValueError("IPC column not found in data; cannot apply IP-uniqueness filter")
+    df_unique = df[df["IPC"] == 1].copy()
+    after = len(df_unique)
+    dropped = before - after
+    log.info(
+        "  IP-unique filter: %s -> %s rows (dropped %s, %.1f%%)",
+        f"{before:,}",
+        f"{after:,}",
+        f"{dropped:,}",
+        dropped / before * 100 if before else 0,
+    )
+    return df_unique
 
 
 def compute_domain_scores(df: pd.DataFrame) -> pd.DataFrame:
@@ -219,10 +244,10 @@ def write_load_metadata(
     zip_path: Path,
     db_path: Path,
     n_raw: int,
+    n_valid_items: int,
     n_valid: int,
 ) -> None:
     """Write fail-closed stage-02 provenance metadata."""
-    n_dropped = max(0, n_raw - n_valid)
     payload = {
         "provenance": build_provenance(
             Path(__file__).name,
@@ -245,8 +270,11 @@ def write_load_metadata(
         },
         "row_counts": {
             "n_raw": int(n_raw),
+            "n_valid_items": int(n_valid_items),
             "n_valid": int(n_valid),
-            "n_dropped": int(n_dropped),
+            "n_dropped_invalid_items": int(n_raw - n_valid_items),
+            "n_dropped_ipc_filter": int(n_valid_items - n_valid),
+            "n_dropped": int(n_raw - n_valid),
         },
     }
 
@@ -285,38 +313,44 @@ def main() -> int:
     # Step 3: Filter valid responses (before reverse scoring, on raw values)
     log.info("Step 3: Filtering valid responses (all 50 items must be 1-5)...")
     df = filter_valid_responses(df, csv_item_cols)
+    n_valid_items = len(df)
+
+    # Step 4: Filter to unique IP respondents (IPC == 1)
+    log.info("Step 4: Filtering to unique IP respondents (IPC == 1)...")
+    df = filter_unique_ip(df)
     n_valid = len(df)
 
-    # Step 4: Apply reverse scoring
-    log.info("Step 4: Applying reverse scoring...")
+    # Step 5: Apply reverse scoring
+    log.info("Step 5: Applying reverse scoring...")
     df = apply_reverse_scoring(df)
 
-    # Step 5: Compute domain scores
-    log.info("Step 5: Computing domain scores...")
+    # Step 6: Compute domain scores
+    log.info("Step 6: Computing domain scores...")
     df = compute_domain_scores(df)
     log_domain_stats(df)
 
-    # Step 6: Rename columns to lowercase
-    log.info("Step 6: Renaming columns to lowercase...")
+    # Step 7: Rename columns to lowercase
+    log.info("Step 7: Renaming columns to lowercase...")
     df = rename_columns_to_lowercase(df)
 
-    # Step 7: Select output columns
-    log.info("Step 7: Selecting output columns...")
+    # Step 8: Select output columns
+    log.info("Step 8: Selecting output columns...")
     df = select_output_columns(df)
     log.info("  Output columns (%d): %s", len(df.columns), list(df.columns))
 
-    # Step 8: Write to SQLite
-    log.info("Step 8: Writing to SQLite...")
+    # Step 9: Write to SQLite
+    log.info("Step 9: Writing to SQLite...")
     write_to_sqlite(df, DB_PATH)
 
-    # Step 9: Write provenance metadata
-    log.info("Step 9: Writing load metadata...")
+    # Step 10: Write provenance metadata
+    log.info("Step 10: Writing load metadata...")
     try:
         write_load_metadata(
             csv_path=CSV_PATH,
             zip_path=ZIP_PATH,
             db_path=DB_PATH,
             n_raw=n_raw,
+            n_valid_items=n_valid_items,
             n_valid=n_valid,
         )
     except (FileNotFoundError, OSError, ValueError, TypeError) as e:

@@ -783,7 +783,7 @@ Used for raw-score to percentile conversion via
 | Intellect/Openness  | 3.8989 | 0.6302 |
 <!-- END:norms -->
 
-### Ceiling Check: Full-Model Accuracy (50 Items, 131K Test)
+### Ceiling Check: Full-Model Accuracy (50 Items, 90K Test)
 
 Sanity check with all 50 items present. Near-perfect reconstruction is
 expected; these numbers confirm the model and inference pipeline work
@@ -806,7 +806,7 @@ crossing rates confirm that the nonlinear raw-to-percentile CDF transform
 frequently inverts quantile ordering. The post-transform sort operation catches
 and corrects these inversions.
 
-### Ceiling Check by Quintile (50 Items, 131K Test)
+### Ceiling Check by Quintile (50 Items, 90K Test)
 
 Per-domain performance varies systematically by score quintile (best in tails,
 worst near the center), and interval widths expand near the middle of the
@@ -844,7 +844,7 @@ distribution.
 | **Avg Center (Q3, all domains)**   | ---      | ---    | **1.00** | **97.0%**    | **5.98**      |
 <!-- END:validation_quintiles -->
 
-### Item Selection Strategies (5-50 Items, 131K Test)
+### Item Selection Strategies (5-50 Items, 90K Test)
 
 Pearson r with full 50-item scores. Bootstrap 95% CIs from 1,000 resamples.
 

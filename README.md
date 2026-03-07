@@ -8,7 +8,7 @@ The exported models predict accurate Big Five personality scores from partial it
 
 ### Comparison with the Mini-IPIP
 
-Both approaches use 20 items (4 per domain) to recover the full 50-item IPIP-BFFM scale scores. The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) (Donnellan et al., 2006) uses expert-curated items scored by simple averaging. BFFM-XGB-20 uses correlation-ranked items scored by XGBoost cross-domain ML. All *r* values below are Pearson correlations with the full 50-item scale on a held-out test set (*N* = 131,166).
+Both approaches use 20 items (4 per domain) to recover the full 50-item IPIP-BFFM scale scores. The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) (Donnellan et al., 2006) uses expert-curated items scored by simple averaging. BFFM-XGB-20 uses correlation-ranked items scored by XGBoost cross-domain ML. All *r* values below are Pearson correlations with the full 50-item scale on a held-out test set (*N* = TBD).
 
 |                              | Mini-IPIP                   | BFFM-XGB-20                       |
 |------------------------------|-----------------------------|------------------------------------|
@@ -298,7 +298,7 @@ The pipeline consists of 13 numbered scripts, executed in order. Each script is 
 | #   | Script                       | Make target(s)                                                    | Description                                                                                                                             |
 | --- | ---------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | 01  | `01_download.py`             | `download`                                                        | Downloads the IPIP-FFM dataset ZIP from openpsychometrics.org                                                                           |
-| 02  | `02_load_sqlite.py`          | `load`                                                            | Loads raw CSV, filters valid responses, reverse-scores items, writes to SQLite                                                          |
+| 02  | `02_load_sqlite.py`          | `load`                                                            | Loads raw CSV, filters valid responses and duplicate IPs (IPC=1), reverse-scores items, writes to SQLite                                |
 | 03  | `03_compute_norms.py`        | `norms`, `norms-check`                                            | Computes deterministic full-50 and Mini-IPIP norm stats from stage-02 SQLite; writes lock+meta artifacts; `norms-check` validates drift |
 | 04  | `04_prepare_data.py`         | `prepare`, `prepare-default`, `prepare-stratified`                | Builds isolated train/val/test splits for two regimes (`ext-est`, `ext-est-opn`) and writes Parquet                                     |
 | 05  | `05_compute_correlations.py` | `correlations`, `correlations-default`, `correlations-stratified` | Computes ranking artifacts per isolated data regime (`item_info.json`, `first_item.json`, correlations)                                 |

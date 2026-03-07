@@ -2915,8 +2915,10 @@ def test_load_sqlite_main_writes_provenance_metadata(tmp_path, monkeypatch) -> N
     data: dict[str, list[Any]] = {}
     for col_idx, col in enumerate(csv_item_cols):
         data[col] = [int(((row_idx + col_idx) % 5) + 1) for row_idx in range(n_rows)]
-    # Force one invalid response so filtering is exercised.
+    # Force one invalid response so item filtering is exercised.
     data[csv_item_cols[0]][-1] = 0
+    # IPC column: row 1 has duplicate IP so IPC filter drops it.
+    data["IPC"] = [1, 2, 1]
     data["country"] = ["US", "CA", "GB"]
     pd.DataFrame(data).to_csv(csv_path, sep="\t", index=False)
 
@@ -2935,8 +2937,11 @@ def test_load_sqlite_main_writes_provenance_metadata(tmp_path, monkeypatch) -> N
         payload = json.load(f)
 
     assert payload["row_counts"]["n_raw"] == 3
-    assert payload["row_counts"]["n_valid"] == 2
-    assert payload["row_counts"]["n_dropped"] == 1
+    assert payload["row_counts"]["n_valid_items"] == 2
+    assert payload["row_counts"]["n_valid"] == 1
+    assert payload["row_counts"]["n_dropped_invalid_items"] == 1
+    assert payload["row_counts"]["n_dropped_ipc_filter"] == 1
+    assert payload["row_counts"]["n_dropped"] == 2
     assert payload["inputs"]["zip_sha256"] == load._file_sha256(zip_path)
     assert payload["inputs"]["csv_sha256"] == load._file_sha256(csv_path)
     assert payload["outputs"]["db_sha256"] == load._file_sha256(db_path)
