@@ -482,12 +482,12 @@ ifdef FILE
 else
 	@echo "==> Downloading results from $(REMOTE_HOST)..."
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/ ./data/ 2>/dev/null || true
-	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/models/ ./models/
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/models/ ./models/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/tuned_params.json ./artifacts/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/tuned_params.original.json ./artifacts/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/ipip_bffm_norms.json ./artifacts/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/ipip_bffm_norms.meta.json ./artifacts/ 2>/dev/null || true
-	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/variants/ ./artifacts/variants/
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/variants/ ./artifacts/variants/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/output/ ./output/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/research_summary.json ./artifacts/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/notes/ ./notes/ 2>/dev/null || true
@@ -617,19 +617,12 @@ remote-all-1: remote-push remote-setup
 		echo "    Check: make infra-ssh, then: cat $(REMOTE_DIR)/pipeline.log"; \
 		exit 1; \
 	fi
-	@echo "==> Phase 1 complete. Pulling tuned_params.json..."
-	$(MAKE) remote-pull FILE=artifacts/tuned_params.json
-	$(MAKE) remote-pull FILE=artifacts/tuned_params.original.json
-	@echo ""
-	@echo "============================================================"
-	@echo "  Phase 1 done. Instance is still running."
-	@echo ""
-	@echo "  To adjust hyperparameters before training:"
-	@echo "    1. Edit artifacts/tuned_params.json (e.g., n_estimators, max_depth)"
-	@echo "    2. Push: make remote-push FILE=artifacts/tuned_params.json"
-	@echo ""
-	@echo "  Then continue with: make remote-all-2"
-	@echo "============================================================"
+	@echo "==> Phase 1 complete. Pulling results..."
+	$(MAKE) remote-pull
+	@echo "==> Tearing down infrastructure..."
+	$(MAKE) infra-down
+	@echo "==> Phase 1 done. Infrastructure destroyed."
+	@echo "    To continue: make infra-up && make remote-all-2"
 
 remote-all-2:
 	@echo "==> Starting phase 2 (train through figures) on $(REMOTE_HOST)..."
