@@ -1,6 +1,6 @@
 # BFFM-XGB: Big Five Sparse Quantile Model
 
-**[Take the assessment](https://bffm-xgb.shawnprice.com/)** — try the live Big Five personality assessment powered by this model.
+**[Take the assessment](https://big5.shawnprice.com/)** — try the live Big Five personality assessment powered by this model.
 
 Standalone pipeline for training, evaluating, and exporting sparse-input XGBoost quantile regression models for the 50-item [IPIP Big-Five Factor Markers](https://ipip.ori.org/newBigFive5broadKey.htm) (BFFM) personality assessment.
 
