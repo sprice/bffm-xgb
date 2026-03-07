@@ -296,6 +296,7 @@ def _gen_baselines_from_notes_inputs(notes_inputs: dict) -> str:
 
     strategy_order = [
         ("domain_balanced", "Domain-Balanced"),
+        ("domain_constrained_adaptive", "Constrained-Adaptive"),
         ("mini_ipip", "Mini-IPIP"),
         ("first_n", "First-N"),
         ("random", "Random"),
@@ -751,6 +752,7 @@ def gen_headline_k20() -> str:
 
     k20 = bl["overall"]["20"]
     db = k20["domain_balanced"]
+    ca = k20.get("domain_constrained_adaptive", {})
     mi = k20["mini_ipip"]
     at = k20["adaptive_topk"]
 
@@ -780,6 +782,10 @@ def gen_headline_k20() -> str:
         [
             "Mini-IPIP r",
             f"{fmt_f(mi['pearson_r'], 4)}{ci_str(mi, 'pearson_r')}",
+        ],
+        [
+            "Constrained-adaptive r",
+            f"{fmt_f(ca['pearson_r'], 4)}{ci_str(ca, 'pearson_r')}" if ca else "---",
         ],
         [
             "Adaptive top-K r (greedy)",

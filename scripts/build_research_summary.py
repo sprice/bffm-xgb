@@ -226,6 +226,7 @@ def _collect_variant_summary(
             },
             "k20": {
                 "domain_balanced": baselines.get("overall", {}).get("20", {}).get("domain_balanced", {}),
+                "domain_constrained_adaptive": baselines.get("overall", {}).get("20", {}).get("domain_constrained_adaptive", {}),
                 "mini_ipip": baselines.get("overall", {}).get("20", {}).get("mini_ipip", {}),
                 "adaptive_topk": baselines.get("overall", {}).get("20", {}).get("adaptive_topk", {}),
             },

@@ -5,12 +5,13 @@ strategies at various item budgets (K = 5, 10, 15, 20, 25, 30, 40, 50).
 
 Strategies evaluated:
   1. domain_balanced  - K/5 items per domain, highest correlation items
-  2. mini_ipip        - Standalone Mini-IPIP scoring baseline (only at K=20)
-  3. adaptive_topk    - Greedy top-K by cross-domain info score
-  4. greedy_balanced  - One-per-domain cold start, then greedy top-K
-  5. random           - Random K items (averaged over multiple trials)
-  6. first_n          - First K items in standard interleaved order
-  7. worst_k          - K items with lowest own-domain correlations (negative control)
+  2. domain_constrained_adaptive - K/5 items per domain, highest cross-domain info score
+  3. mini_ipip        - Standalone Mini-IPIP scoring baseline (only at K=20)
+  4. adaptive_topk    - Greedy top-K by cross-domain info score
+  5. greedy_balanced  - One-per-domain cold start, then greedy top-K
+  6. random           - Random K items (averaged over multiple trials)
+  7. first_n          - First K items in standard interleaved order
+  8. worst_k          - K items with lowest own-domain correlations (negative control)
 
 For each strategy x K:
   - Mask test data to keep only the K selected items
@@ -24,6 +25,7 @@ Output files:
   - artifacts/baseline_comparison_per_domain.csv
   - artifacts/baseline_comparison_per_domain.meta.json
   - artifacts/ml_vs_averaging_comparison.json
+  - artifacts/adaptive_item_order_analysis.json
 
 Usage:
     python pipeline/09_baselines.py --data-dir data/processed/ext_est
@@ -236,6 +238,21 @@ def _select_domain_balanced(item_pool: list[dict], n_per_domain: int) -> list[st
     for domain in DOMAINS:
         domain_items = [item for item in item_pool if item["home_domain"] == domain]
         domain_items.sort(key=lambda x: abs(x.get("own_domain_r", 0)), reverse=True)
+        selected.extend([item["id"] for item in domain_items[:n_per_domain]])
+    return selected
+
+
+def _select_domain_constrained_adaptive(item_pool: list[dict], n_per_domain: int) -> list[str]:
+    """Select N items per domain, highest cross-domain info score each.
+
+    This represents the best possible adaptive strategy with domain balance
+    constraints (round-robin + info-ranked), contrasted with domain_balanced
+    which uses own-domain correlation for ranking within each domain.
+    """
+    selected: list[str] = []
+    for domain in DOMAINS:
+        domain_items = [item for item in item_pool if item["home_domain"] == domain]
+        domain_items.sort(key=lambda x: x.get("cross_domain_info", 0), reverse=True)
         selected.extend([item["id"] for item in domain_items[:n_per_domain]])
     return selected
 
@@ -887,6 +904,14 @@ def _run_comparisons_at_k(
             overall_results["domain_balanced"] = ov
             per_domain_results["domain_balanced"] = pd_res
 
+        # --- Domain constrained adaptive (only if divisible by 5) ---
+        items_ca = _select_domain_constrained_adaptive(item_pool, n_per_domain)
+        items_ca = [i for i in items_ca if i in available_items]
+        if len(items_ca) >= n_items:
+            ov, pd_res = _eval(items_ca[:n_items])
+            overall_results["domain_constrained_adaptive"] = ov
+            per_domain_results["domain_constrained_adaptive"] = pd_res
+
     # --- First K ---
     items_first = _select_first_n(n_items)
     items_first = [i for i in items_first if i in available_items][:n_items]
@@ -1191,6 +1216,7 @@ def _print_summary(
         "random",
         "first_n",
         "domain_balanced",
+        "domain_constrained_adaptive",
         "adaptive_topk",
         "greedy_balanced",
         "worst_k",
@@ -1231,6 +1257,70 @@ def _print_ml_vs_avg_summary(comparison: dict) -> None:
         if "delta_r_ci" in row:
             ci = row["delta_r_ci"]
             log.info("    delta CI: [%.4f, %.4f]", ci[0], ci[1])
+
+
+# ============================================================================
+# Adaptive item order analysis (starvation proof artifact)
+# ============================================================================
+
+def _generate_adaptive_item_order_analysis(
+    item_pool: list[dict],
+    artifacts_dir: Path,
+    provenance: dict[str, Any],
+) -> None:
+    """Produce adaptive item ordering analysis showing domain starvation.
+
+    Generates cumulative domain counts at various K checkpoints to prove that
+    pure adaptive (greedy) selection starves low-information domains.
+    """
+    checkpoints = [5, 10, 15, 20, 25]
+
+    # Full ranking by composite score (item_pool is already sorted by rank)
+    ranking = []
+    for item in item_pool:
+        ranking.append({
+            "rank": item.get("rank"),
+            "id": item["id"],
+            "home_domain": item["home_domain"],
+            "cross_domain_info": item.get("cross_domain_info", 0.0),
+            "own_domain_r": item.get("own_domain_r", 0.0),
+        })
+
+    # Cumulative domain counts at each checkpoint
+    cumulative_counts: dict[str, dict[str, int]] = {}
+    for k in checkpoints:
+        top_k = item_pool[:k]
+        counts = {d: 0 for d in DOMAINS}
+        for item in top_k:
+            d = item["home_domain"]
+            if d in counts:
+                counts[d] += 1
+        cumulative_counts[str(k)] = counts
+
+    # Starved domains at K=20
+    k20_counts = cumulative_counts.get("20", {})
+    starved_domains = [d for d in DOMAINS if k20_counts.get(d, 0) == 0]
+
+    # First appearance rank per domain
+    first_appearance: dict[str, int | None] = {d: None for d in DOMAINS}
+    for i, item in enumerate(item_pool):
+        d = item["home_domain"]
+        if d in first_appearance and first_appearance[d] is None:
+            first_appearance[d] = i + 1  # 1-indexed rank
+
+    analysis = {
+        "provenance": provenance,
+        "description": "Adaptive (greedy) item ordering analysis showing domain starvation",
+        "item_ranking": ranking,
+        "cumulative_domain_counts": cumulative_counts,
+        "starved_domains_at_k20": starved_domains,
+        "first_appearance_rank_per_domain": first_appearance,
+    }
+
+    path = artifacts_dir / "adaptive_item_order_analysis.json"
+    with open(path, "w") as f:
+        json.dump(analysis, f, indent=2)
+    log.info("  Saved %s", path)
 
 
 # ============================================================================
@@ -1512,6 +1602,9 @@ def main() -> int:
     with open(ml_avg_path, "w") as f:
         json.dump(ml_avg_output, f, indent=2)
     log.info("  Saved %s", ml_avg_path)
+
+    # Adaptive item order analysis (starvation proof artifact)
+    _generate_adaptive_item_order_analysis(item_pool, artifacts_dir, provenance)
 
     # Final summary
     log.info("=" * 60)
