@@ -1113,5 +1113,5 @@ item pools?
 
 ### Cross-Validation Diagnostics
 
-5-fold nested CV metrics and the leakage fix impact. Document the coverage
+3-fold cross-validation robustness metrics and the leakage fix impact. Document the coverage
 improvement from splitting eval before augmentation.

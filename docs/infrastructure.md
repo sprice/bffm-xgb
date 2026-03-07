@@ -31,6 +31,10 @@ make infra-cpu-up
 make remote-all
 ```
 
+`make remote-all` checkpoint-pulls major artifacts during the run
+(`norms`, `prepare`, `correlations`, `tune`, `train`, `research-eval`, `figures`)
+so expensive outputs are synced locally before final teardown.
+
 Or in two phases with a pause to review tuned hyperparameters:
 
 ```bash
@@ -44,7 +48,7 @@ make remote-all-2          # train through figures, pulls results, tears down
 
 | Target             | Steps                                                        |
 |--------------------|--------------------------------------------------------------|
-| `make remote-all`  | push, setup, download → figures, pull all, infra-cpu-down    |
+| `make remote-all`  | push, setup, download → figures, checkpoint-pull major artifacts, pull all, infra-cpu-down |
 | `make remote-all-1`| push, setup, download → tune, pull tuned_params.json         |
 | `make remote-all-2`| train → figures, pull all, infra-cpu-down                    |
 

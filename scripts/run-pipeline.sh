@@ -5,7 +5,9 @@ TUNE_N_JOBS="${TUNE_N_JOBS:-}"
 TRAIN_N_JOBS="${TRAIN_N_JOBS:-}"
 PARALLEL_TRIALS="${PARALLEL_TRIALS:-}"
 PARALLEL_DOMAINS="${PARALLEL_DOMAINS:-}"
+CV_PARALLEL_FOLDS="${CV_PARALLEL_FOLDS:-}"
 TRAIN_PARALLEL="${TRAIN_PARALLEL:-}"
+RESEARCH_EVAL_PARALLEL="${RESEARCH_EVAL_PARALLEL:-}"
 GPU="${GPU:-}"
 
 # ---------------------------------------------------------------------------
@@ -44,6 +46,8 @@ done
 
 TIMING_LOG="pipeline-timing.log"
 PIPELINE_LOG="pipeline.log"
+CHECKPOINT_DIR=".pipeline-checkpoints"
+CHECKPOINT_STAGES=(norms prepare correlations tune train research-eval figures)
 
 # ---------------------------------------------------------------------------
 # Track the current step so the EXIT trap can record failures
@@ -71,6 +75,17 @@ trap cleanup EXIT
 fmt_duration() {
     local secs="$1"
     printf "%02dh%02dm%02ds" $((secs / 3600)) $(((secs % 3600) / 60)) $((secs % 60))
+}
+
+is_checkpoint_stage() {
+    local stage="$1"
+    local checkpoint
+    for checkpoint in "${CHECKPOINT_STAGES[@]}"; do
+        if [[ "$stage" == "$checkpoint" ]]; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 _STAGE_ACTIVE=0
@@ -102,6 +117,9 @@ run_step() {
     local elapsed=$(( $(date +%s) - _STEP_START ))
     echo "$label | started $start_time | $(fmt_duration "$elapsed")" >> "$TIMING_LOG"
     echo "--- $label done ($(fmt_duration "$elapsed"))" | tee -a "$PIPELINE_LOG"
+    if is_checkpoint_stage "$label"; then
+        : > "$CHECKPOINT_DIR/$label.done"
+    fi
 
     _CURRENT_LABEL=""
 
@@ -123,20 +141,37 @@ fi
 # Reset logs
 > "$TIMING_LOG"
 > "$PIPELINE_LOG"
+rm -rf "$CHECKPOINT_DIR"
+mkdir -p "$CHECKPOINT_DIR"
 PIPELINE_START=$(date +%s)
 
-run_step "download"     make download
-run_step "load"         make load
-run_step "norms"        make norms
-run_step "norms-check"  make norms-check
-run_step "prepare"      make prepare
+run_step "download" make download
+run_step "load" make load
+run_step "norms" make norms
+run_step "norms-check" make norms-check
+run_step "prepare" make prepare
 run_step "correlations" make correlations
-run_step "tune"         make tune N_JOBS="$TUNE_N_JOBS" PARALLEL_TRIALS="$PARALLEL_TRIALS" $_GPU_FLAG
-run_step "train"        make train N_JOBS="$TRAIN_N_JOBS" PARALLEL_DOMAINS="$PARALLEL_DOMAINS" TRAIN_PARALLEL="$TRAIN_PARALLEL" $_GPU_FLAG
-run_step "research-eval" make research-eval
-run_step "export-all"   make export-all
-run_step "notes"        make notes
-run_step "figures"      make figures
+
+tune_cmd=(make tune)
+[[ -n "$TUNE_N_JOBS" ]] && tune_cmd+=("N_JOBS=$TUNE_N_JOBS")
+[[ -n "$PARALLEL_TRIALS" ]] && tune_cmd+=("PARALLEL_TRIALS=$PARALLEL_TRIALS")
+[[ -n "$_GPU_FLAG" ]] && tune_cmd+=("$_GPU_FLAG")
+run_step "tune" "${tune_cmd[@]}"
+
+train_cmd=(make train)
+[[ -n "$TRAIN_N_JOBS" ]] && train_cmd+=("N_JOBS=$TRAIN_N_JOBS")
+[[ -n "$PARALLEL_DOMAINS" ]] && train_cmd+=("PARALLEL_DOMAINS=$PARALLEL_DOMAINS")
+[[ -n "$CV_PARALLEL_FOLDS" ]] && train_cmd+=("CV_PARALLEL_FOLDS=$CV_PARALLEL_FOLDS")
+[[ -n "$TRAIN_PARALLEL" ]] && train_cmd+=("TRAIN_PARALLEL=$TRAIN_PARALLEL")
+[[ -n "$_GPU_FLAG" ]] && train_cmd+=("$_GPU_FLAG")
+run_step "train" "${train_cmd[@]}"
+
+research_eval_cmd=(make research-eval)
+[[ -n "$RESEARCH_EVAL_PARALLEL" ]] && research_eval_cmd+=("RESEARCH_EVAL_PARALLEL=$RESEARCH_EVAL_PARALLEL")
+run_step "research-eval" "${research_eval_cmd[@]}"
+run_step "export-all" make export-all
+run_step "notes" make notes
+run_step "figures" make figures
 
 TOTAL=$(( $(date +%s) - PIPELINE_START ))
 echo "total | $(fmt_duration "$TOTAL")" >> "$TIMING_LOG"

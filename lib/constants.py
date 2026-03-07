@@ -36,6 +36,12 @@ DEFAULT_PARAMS = {
 
 DEFAULT_EARLY_STOPPING_ROUNDS = 25
 
+# Pipeline execution defaults
+DEFAULT_STAGE07_CV_FOLDS = 3
+DEFAULT_RESEARCH_EVAL_PARALLEL = 4
+DEFAULT_LOCAL_CV_PARALLEL_FOLDS = 1
+DEFAULT_REMOTE_CV_PARALLEL_FOLDS = 2
+
 # Reverse-keyed items (1-indexed item numbers within each domain)
 # Source: https://ipip.ori.org/newBigFive5broadKey.htm
 REVERSE_KEYED = {

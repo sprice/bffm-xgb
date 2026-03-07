@@ -7,6 +7,7 @@ import importlib.util
 import hashlib
 import json
 import logging
+import os
 import sqlite3
 import subprocess
 import sys
@@ -18,7 +19,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from lib.constants import DOMAINS, ITEM_COLUMNS
+from lib.constants import DEFAULT_STAGE07_CV_FOLDS, DOMAINS, ITEM_COLUMNS
 from lib.item_info import file_sha256
 from lib.provenance_checks import build_split_signature as _build_split_signature
 
@@ -266,6 +267,7 @@ def test_tune_loads_item_info_for_sparse20_even_when_sparsity_disabled(
         config,
         mini_ipip_items=None,
         parallel_trials=1,
+        gpu=False,
     ):
         captured["item_info"] = item_info
         captured["config"] = config
@@ -1602,6 +1604,7 @@ def test_tune_main_allows_explicit_full50_only_fallback(
         config,
         mini_ipip_items=None,
         parallel_trials=1,
+        gpu=False,
     ):
         captured["item_info"] = item_info
         captured["sparsity_enabled"] = config.get("sparsity", {}).get("enabled", None)
@@ -1659,6 +1662,7 @@ def test_tune_main_honors_data_dir_cli_override(tmp_path, monkeypatch) -> None:
         config,
         mini_ipip_items=None,
         parallel_trials=1,
+        gpu=False,
     ):
         captured["train_rows"] = len(X_train)
         captured["val_rows"] = len(X_val)
@@ -1729,6 +1733,7 @@ def test_tune_main_resolves_xgb_n_jobs_from_config(tmp_path, monkeypatch) -> Non
         config,
         mini_ipip_items=None,
         parallel_trials=1,
+        gpu=False,
     ):
         captured["xgb_n_jobs"] = config.get("_xgb_n_jobs")
         return tune.DEFAULT_PARAMS.copy()
@@ -2105,7 +2110,7 @@ def test_train_main_records_xgb_n_jobs_from_cli(
     assert report["provenance"]["xgb_n_jobs"] == 5
 
 
-def test_train_nested_cv_uses_stratified_split_when_strata_provided(monkeypatch) -> None:
+def test_train_cross_validation_uses_stratified_split_when_strata_provided(monkeypatch) -> None:
     train = _load_pipeline_module("07_train.py")
 
     frame = _make_dataset(n_rows=8)
@@ -2130,7 +2135,7 @@ def test_train_nested_cv_uses_stratified_split_when_strata_provided(monkeypatch)
     monkeypatch.setattr(train, "_train_domain_models", lambda *_args, **_kwargs: _dummy_domain_models())
     monkeypatch.setattr(train, "_evaluate_domain_models", lambda *_args, **_kwargs: _make_eval_metrics(r=0.9, coverage=0.9))
 
-    result = train._nested_cross_validation(
+    result = train._run_cross_validation_robustness(
         X=X,
         y=y,
         y_pct=y_pct,
@@ -2146,6 +2151,82 @@ def test_train_nested_cv_uses_stratified_split_when_strata_provided(monkeypatch)
     assert captured["n_splits"] == 2
     assert captured["shuffle"] is True
     assert set(captured["y_split"]) == {0, 1}
+
+
+def test_train_main_defaults_cv_folds_from_constants_when_config_omits_it(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    train = _load_pipeline_module("07_train.py")
+    monkeypatch.setattr(train, "PACKAGE_ROOT", tmp_path)
+
+    data_dir = tmp_path / "data" / "processed"
+    data_dir.mkdir(parents=True)
+    frame = _make_dataset()
+    frame.to_parquet(data_dir / "train.parquet", index=False)
+    frame.to_parquet(data_dir / "val.parquet", index=False)
+
+    cfg_path = tmp_path / "cfg_default_cv.yaml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "name: unit_default_cv",
+                "output_dir: models/unit_default_cv",
+                "sparsity:",
+                "  enabled: false",
+                "validation:",
+                "  min_pearson_r: 0.0",
+                "  min_coverage_90: 0.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    captured: dict[str, Any] = {}
+
+    def _fake_cv(*_args, **kwargs):
+        captured["n_folds"] = kwargs["n_folds"]
+        return {
+            "fold_results": [],
+            "aggregate": {
+                "overall": {
+                    "pearson_r": {"mean": 0.9, "std": 0.0, "min": 0.9, "max": 0.9},
+                    "coverage_90": {"mean": 0.9, "std": 0.0, "min": 0.9, "max": 0.9},
+                    "within_5_pct": {"mean": 0.9, "std": 0.0, "min": 0.9, "max": 0.9},
+                }
+            },
+            "n_folds": DEFAULT_STAGE07_CV_FOLDS,
+            "parallel_folds": 1,
+            "xgb_n_jobs_total": 1,
+            "xgb_n_jobs_per_fold": 1,
+        }
+
+    monkeypatch.setattr(train, "_run_cross_validation_robustness", _fake_cv)
+    monkeypatch.setattr(train, "_load_item_info", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(train, "_load_mini_ipip_mapping", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(train, "_train_domain_models", lambda *_args, **_kwargs: _dummy_domain_models())
+    monkeypatch.setattr(train, "_validate_model_outputs", lambda *_args, **_kwargs: {"ok": {"passed": True}})
+    monkeypatch.setattr(train, "_evaluate_domain_models", lambda *_args, **_kwargs: _make_eval_metrics(r=0.92, coverage=0.9))
+    monkeypatch.setattr(
+        train,
+        "_compute_calibration_params",
+        lambda *_args, **_kwargs: {
+            domain: {"observed_coverage": 0.9, "scale_factor": 1.0}
+            for domain in DOMAINS
+        },
+    )
+    monkeypatch.setattr(train.joblib, "dump", lambda *_args, **_kwargs: None)
+
+    monkeypatch.setattr(sys, "argv", ["07_train.py", "--config", str(cfg_path)])
+    rc = train.main()
+    assert rc == 0
+    assert captured["n_folds"] == DEFAULT_STAGE07_CV_FOLDS
+
+    report_path = tmp_path / "models" / "unit_default_cv" / "training_report.json"
+    with open(report_path) as f:
+        report = json.load(f)
+    assert report["config"]["training"]["cv_folds"] == DEFAULT_STAGE07_CV_FOLDS
+    assert report["provenance"]["cv_folds"] == DEFAULT_STAGE07_CV_FOLDS
 
 
 def test_baselines_loader_fails_closed_when_mini_ipip_mapping_missing(tmp_path) -> None:
@@ -2284,6 +2365,69 @@ def test_makefile_train_runs_reference_then_parallel_ablations() -> None:
     assert "train-2 train-3 train-4" in out
 
 
+def test_makefile_research_eval_defaults_to_parallel_submake(tmp_path) -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    calls_path = tmp_path / "make_calls.log"
+    fake_make = tmp_path / "fake-make.sh"
+    fake_make.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                f'printf "%s\\n" "$*" >> "{calls_path}"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    fake_make.chmod(0o755)
+    env = os.environ.copy()
+    env["MAKE"] = str(fake_make)
+    result = subprocess.run(
+        ["make", "research-eval"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0
+    calls = calls_path.read_text(encoding="utf-8").splitlines()
+    assert len(calls) == 1
+    assert calls[0].startswith("-j4 research-eval-reference research-eval-ablation-none")
+
+
+def test_makefile_research_eval_respects_explicit_parent_parallelism(tmp_path) -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    calls_path = tmp_path / "make_calls.log"
+    fake_make = tmp_path / "fake-make.sh"
+    fake_make.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                f'printf "%s\\n" "$*" >> "{calls_path}"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    fake_make.chmod(0o755)
+    env = os.environ.copy()
+    env["MAKE"] = str(fake_make)
+    result = subprocess.run(
+        ["make", "-j2", "research-eval"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0
+    calls = calls_path.read_text(encoding="utf-8").splitlines()
+    assert len(calls) == 1
+    assert calls[0].startswith("research-eval-reference research-eval-ablation-none")
+    assert not calls[0].startswith("-j4")
+
+
 def test_makefile_train_invalid_run_reports_single_actionable_error() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     result = subprocess.run(
@@ -2310,6 +2454,87 @@ def test_makefile_auto_selects_stratified_data_dir_for_stratified_model() -> Non
     )
     assert result.returncode == 0
     assert "--data-dir data/processed/ext_est_opn" in result.stdout
+
+
+def test_run_pipeline_omits_empty_make_overrides(tmp_path) -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir(parents=True)
+    calls_path = tmp_path / "make_calls.log"
+    make_stub = fake_bin / "make"
+    make_stub.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                f'printf \"%s\\n\" \"$*\" >> \"{calls_path}\"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    make_stub.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    result = subprocess.run(
+        ["bash", "scripts/run-pipeline.sh", "--end-stage", "research-eval"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0
+    calls = calls_path.read_text(encoding="utf-8").splitlines()
+    train_call = next(line for line in calls if line.startswith("train"))
+    research_eval_call = next(line for line in calls if line.startswith("research-eval"))
+    assert "CV_PARALLEL_FOLDS=" not in train_call
+    assert "RESEARCH_EVAL_PARALLEL=" not in research_eval_call
+
+
+def test_run_pipeline_writes_checkpoint_markers_for_major_stages(tmp_path) -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    script_path = repo_root / "scripts" / "run-pipeline.sh"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir(parents=True)
+    make_stub = fake_bin / "make"
+    make_stub.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    make_stub.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    result = subprocess.run(
+        ["bash", str(script_path), "--end-stage", "correlations"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0
+
+    checkpoint_dir = tmp_path / ".pipeline-checkpoints"
+    assert (checkpoint_dir / "norms.done").exists()
+    assert (checkpoint_dir / "prepare.done").exists()
+    assert (checkpoint_dir / "correlations.done").exists()
+    assert not (checkpoint_dir / "download.done").exists()
+    assert not (checkpoint_dir / "tune.done").exists()
+
+
+def test_makefile_remote_all_includes_checkpoint_pull_loop() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        ["make", "-n", "remote-all"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    out = result.stdout
+    assert ".pipeline-checkpoints" in out
+    assert "Checkpoint '$STAGE' reached. Pulling intermediate results..." in out
+    assert '"${MAKE:-make}" remote-pull' in out
 
 
 def test_makefile_auto_selects_stratified_data_dir_with_trailing_slash_model_dir() -> None:

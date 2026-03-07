@@ -47,6 +47,8 @@ from lib.constants import (
     QUANTILE_NAMES,
     DEFAULT_PARAMS,
     DEFAULT_EARLY_STOPPING_ROUNDS,
+    DEFAULT_STAGE07_CV_FOLDS,
+    DEFAULT_LOCAL_CV_PARALLEL_FOLDS,
 )
 from lib.scoring import raw_score_to_percentile
 from lib.provenance import build_provenance, add_provenance_args, relative_to_root
@@ -61,7 +63,7 @@ from lib.sparsity import apply_sparsity_single
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(asctime)s [%(levelname)s] [%(threadName)s] %(message)s",
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger(__name__)
@@ -539,7 +541,7 @@ def _train_domain_models(
             + ", ".join(missing_score_cols)
         )
 
-    n_parallel = min(parallel_domains, len(DOMAINS))
+    n_parallel = min(parallel_domains, len(DOMAINS), max(1, n_jobs))
     if gpu:
         n_parallel = 1
     xgb_threads_per_domain = max(1, n_jobs // max(n_parallel, 1))
@@ -550,7 +552,10 @@ def _train_domain_models(
             n_parallel, xgb_threads_per_domain, n_jobs,
         )
         domain_models: dict[str, dict[str, Any]] = {}
-        with ThreadPoolExecutor(max_workers=n_parallel) as executor:
+        with ThreadPoolExecutor(
+            max_workers=n_parallel,
+            thread_name_prefix="train-domain",
+        ) as executor:
             futures = {
                 executor.submit(
                     _train_single_domain,
@@ -773,24 +778,114 @@ def _calibration_from_metrics(
 
 
 # ============================================================================
-# Nested cross-validation
+# Cross-validation
 # ============================================================================
 
-def _nested_cross_validation(
+def _run_cv_fold(
+    *,
+    fold: int,
+    n_folds: int,
+    train_idx: np.ndarray,
+    test_idx: np.ndarray,
     X: pd.DataFrame,
     y: pd.DataFrame,
     y_pct: pd.DataFrame,
     item_info: dict,
     config: dict,
     params: dict,
-    n_folds: int = 5,
+    n_jobs: int,
+    mini_ipip_items: Optional[dict[str, list[str]]],
+    parallel_domains: int,
+    random_state: int,
+    augment_sparsity: bool,
+    n_augmentation_passes: int,
+    gpu: bool,
+) -> dict:
+    """Train and evaluate a single CV fold."""
+    fold_label = f"[CV fold {fold + 1}/{n_folds}]"
+
+    log.info("%s Starting", fold_label)
+
+    X_train_fold = X.iloc[train_idx].copy()
+    X_test_fold = X.iloc[test_idx].copy()
+    y_train_fold = y.iloc[train_idx].copy()
+    y_pct_test_fold = y_pct.iloc[test_idx].copy()
+
+    # Split early-stopping eval set BEFORE augmentation.
+    X_eval_es: Optional[pd.DataFrame] = None
+    y_eval_es: Optional[pd.DataFrame] = None
+    X_fit_pre = X_train_fold
+    y_fit_pre = y_train_fold
+
+    if augment_sparsity and n_augmentation_passes > 1:
+        X_fit_pre, X_eval_es, y_fit_pre, y_eval_es = train_test_split(
+            X_train_fold, y_train_fold, test_size=0.15, random_state=random_state + fold
+        )
+
+    # Apply sparsity augmentation.
+    if augment_sparsity:
+        if n_augmentation_passes > 1:
+            X_train_aug, y_train_fold = _apply_multipass_sparsity(
+                X_fit_pre, y_fit_pre, item_info, config,
+                n_passes=n_augmentation_passes,
+                base_seed=random_state,
+                mini_ipip_items=mini_ipip_items,
+            )
+            if X_eval_es is not None:
+                eval_rng = np.random.default_rng(999 + fold)
+                X_eval_es = _apply_sparsity_single(
+                    X_eval_es.copy(), item_info, config,
+                    mini_ipip_items=mini_ipip_items,
+                    rng=eval_rng,
+                )
+        else:
+            X_train_aug = _apply_sparsity_single(
+                X_train_fold.copy(), item_info, config,
+                mini_ipip_items=mini_ipip_items,
+            )
+    else:
+        X_train_aug = X_train_fold
+
+    log.info("%s Train: %d rows (after augmentation)", fold_label, len(X_train_aug))
+
+    domain_models = _train_domain_models(
+        X_train_aug, y_train_fold, params,
+        n_jobs=n_jobs,
+        X_eval=X_eval_es, y_eval=y_eval_es,
+        parallel_domains=parallel_domains,
+        gpu=gpu,
+    )
+
+    metrics = _evaluate_domain_models(domain_models, X_test_fold, y_pct_test_fold)
+
+    if "overall" in metrics:
+        log.info(
+            "%s Overall r = %.3f, Coverage = %.1f%%, Within 5 pct = %.1f%%",
+            fold_label,
+            metrics["overall"]["pearson_r"],
+            metrics["overall"]["coverage_90"] * 100,
+            metrics["overall"]["within_5_pct"] * 100,
+        )
+
+    return {"fold": fold + 1, "metrics": metrics}
+
+
+def _run_cross_validation_robustness(
+    X: pd.DataFrame,
+    y: pd.DataFrame,
+    y_pct: pd.DataFrame,
+    item_info: dict,
+    config: dict,
+    params: dict,
+    n_folds: int = DEFAULT_STAGE07_CV_FOLDS,
     n_jobs: int = 1,
     mini_ipip_items: Optional[dict[str, list[str]]] = None,
     strata: Optional[pd.Series] = None,
     parallel_domains: int = 1,
+    parallel_folds: int = 1,
     gpu: bool = False,
 ) -> dict:
-    """Run nested cross-validation for unbiased performance estimation.
+    """Run fixed-hyperparameter cross-validation for robustness estimation.
 
     Split BEFORE augmentation to prevent respondent leakage.
     """
@@ -804,19 +899,19 @@ def _nested_cross_validation(
         strata_values = np.asarray(strata)
         if len(strata_values) != len(X):
             raise ValueError(
-                "Strata length mismatch for nested CV: "
+                "Strata length mismatch for cross-validation: "
                 f"len(strata)={len(strata_values)}, len(X)={len(X)}"
             )
         unique, counts = np.unique(strata_values, return_counts=True)
         if len(unique) < 2:
             raise ValueError(
-                "Nested CV stratification requires at least 2 strata, "
+                "Cross-validation stratification requires at least 2 strata, "
                 f"found {len(unique)}."
             )
         min_count = int(np.min(counts))
         if min_count < n_folds:
             raise ValueError(
-                "Nested CV stratification requires each stratum to appear at least "
+                "Cross-validation stratification requires each stratum to appear at least "
                 f"n_folds times (n_folds={n_folds}, min_count={min_count})."
             )
         outer_cv = StratifiedKFold(
@@ -829,76 +924,107 @@ def _nested_cross_validation(
         outer_cv = KFold(n_splits=n_folds, shuffle=True, random_state=random_state)
         split_iter = outer_cv.split(X)
 
-    fold_results: list[dict] = []
+    split_plan = list(split_iter)
+    requested_parallel_folds = max(parallel_folds, 1)
+    n_parallel_folds = min(requested_parallel_folds, n_folds)
+    if gpu:
+        n_parallel_folds = 1
+    fold_n_jobs = max(1, n_jobs // max(n_parallel_folds, 1))
+    effective_parallel_domains = min(max(parallel_domains, 1), len(DOMAINS), fold_n_jobs)
 
-    for fold, (train_idx, test_idx) in enumerate(split_iter):
-        log.info("=" * 40)
-        log.info("Outer Fold %d/%d", fold + 1, n_folds)
-        log.info("=" * 40)
-
-        X_train_fold = X.iloc[train_idx].copy()
-        X_test_fold = X.iloc[test_idx].copy()
-        y_train_fold = y.iloc[train_idx].copy()
-        y_pct_test_fold = y_pct.iloc[test_idx].copy()
-
-        # Split early-stopping eval set BEFORE augmentation
-        X_eval_es: Optional[pd.DataFrame] = None
-        y_eval_es: Optional[pd.DataFrame] = None
-        X_fit_pre = X_train_fold
-        y_fit_pre = y_train_fold
-
-        if augment_sparsity and n_augmentation_passes > 1:
-            X_fit_pre, X_eval_es, y_fit_pre, y_eval_es = train_test_split(
-                X_train_fold, y_train_fold, test_size=0.15, random_state=random_state + fold
-            )
-
-        # Apply sparsity augmentation
-        if augment_sparsity:
-            if n_augmentation_passes > 1:
-                X_train_aug, y_train_fold = _apply_multipass_sparsity(
-                    X_fit_pre, y_fit_pre, item_info, config,
-                    n_passes=n_augmentation_passes,
-                    base_seed=random_state,
-                    mini_ipip_items=mini_ipip_items,
-                )
-                if X_eval_es is not None:
-                    eval_rng = np.random.default_rng(999 + fold)
-                    X_eval_es = _apply_sparsity_single(
-                        X_eval_es.copy(), item_info, config,
-                        mini_ipip_items=mini_ipip_items,
-                        rng=eval_rng,
-                    )
-            else:
-                X_train_aug = _apply_sparsity_single(
-                    X_train_fold.copy(), item_info, config,
-                    mini_ipip_items=mini_ipip_items,
-                )
-        else:
-            X_train_aug = X_train_fold
-
-        log.info("  Train: %d rows (after augmentation)", len(X_train_aug))
-
-        # Train models
-        domain_models = _train_domain_models(
-            X_train_aug, y_train_fold, params,
-            n_jobs=n_jobs,
-            X_eval=X_eval_es, y_eval=y_eval_es,
-            parallel_domains=parallel_domains,
-            gpu=gpu,
+    if requested_parallel_folds != n_parallel_folds:
+        log.info(
+            "  CV fold parallelism request clamped from %d to %d.",
+            requested_parallel_folds,
+            n_parallel_folds,
+        )
+    if parallel_domains > effective_parallel_domains:
+        log.warning(
+            "  Requested parallel_domains=%d with %d XGBoost thread(s) per fold; "
+            "domain-level training will clamp to %d worker(s) per fold.",
+            parallel_domains,
+            fold_n_jobs,
+            effective_parallel_domains,
         )
 
-        # Evaluate on test fold
-        metrics = _evaluate_domain_models(domain_models, X_test_fold, y_pct_test_fold)
-
-        fold_results.append({"fold": fold + 1, "metrics": metrics})
-
-        log.info("Fold %d Results:", fold + 1)
-        if "overall" in metrics:
-            log.info("  Overall r = %.3f", metrics["overall"]["pearson_r"])
-            log.info("  Coverage = %.1f%%", metrics["overall"]["coverage_90"] * 100)
-            log.info("  Within 5 pct = %.1f%%", metrics["overall"]["within_5_pct"] * 100)
-
-        gc.collect()
+    if n_parallel_folds > 1:
+        log.info(
+            "  Parallel CV folds: %d (%d XGBoost threads budget per fold, %d total cores)",
+            n_parallel_folds,
+            fold_n_jobs,
+            n_jobs,
+        )
+        fold_results_by_idx: dict[int, dict] = {}
+        errors: list[tuple[int, Exception]] = []
+        with ThreadPoolExecutor(
+            max_workers=n_parallel_folds,
+            thread_name_prefix="cv-fold",
+        ) as executor:
+            futures = {
+                executor.submit(
+                    _run_cv_fold,
+                    fold=fold,
+                    n_folds=n_folds,
+                    train_idx=train_idx,
+                    test_idx=test_idx,
+                    X=X,
+                    y=y,
+                    y_pct=y_pct,
+                    item_info=item_info,
+                    config=config,
+                    params=params,
+                    n_jobs=fold_n_jobs,
+                    mini_ipip_items=mini_ipip_items,
+                    parallel_domains=parallel_domains,
+                    random_state=random_state,
+                    augment_sparsity=augment_sparsity,
+                    n_augmentation_passes=n_augmentation_passes,
+                    gpu=gpu,
+                ): fold
+                for fold, (train_idx, test_idx) in enumerate(split_plan)
+            }
+            for future in as_completed(futures):
+                fold = futures[future]
+                try:
+                    fold_results_by_idx[fold] = future.result()
+                    gc.collect()
+                except Exception as exc:
+                    errors.append((fold, exc))
+                    log.error("CV fold %d failed: %s", fold + 1, exc)
+        if errors:
+            failed = ", ".join(
+                f"fold {fold + 1} ({type(exc).__name__}: {exc})"
+                for fold, exc in errors
+            )
+            raise RuntimeError(
+                f"{len(errors)}/{len(split_plan)} cross-validation fold(s) failed: {failed}"
+            )
+        fold_results = [fold_results_by_idx[idx] for idx in range(len(split_plan))]
+    else:
+        fold_results = []
+        for fold, (train_idx, test_idx) in enumerate(split_plan):
+            fold_results.append(
+                _run_cv_fold(
+                    fold=fold,
+                    n_folds=n_folds,
+                    train_idx=train_idx,
+                    test_idx=test_idx,
+                    X=X,
+                    y=y,
+                    y_pct=y_pct,
+                    item_info=item_info,
+                    config=config,
+                    params=params,
+                    n_jobs=n_jobs,
+                    mini_ipip_items=mini_ipip_items,
+                    parallel_domains=parallel_domains,
+                    random_state=random_state,
+                    augment_sparsity=augment_sparsity,
+                    n_augmentation_passes=n_augmentation_passes,
+                    gpu=gpu,
+                )
+            )
+            gc.collect()
 
     # Aggregate results
     aggregate: dict[str, dict[str, dict[str, float]]] = {"overall": {}}
@@ -932,6 +1058,9 @@ def _nested_cross_validation(
         "fold_results": fold_results,
         "aggregate": aggregate,
         "n_folds": n_folds,
+        "parallel_folds": n_parallel_folds,
+        "xgb_n_jobs_total": n_jobs,
+        "xgb_n_jobs_per_fold": fold_n_jobs,
     }
 
 
@@ -1132,6 +1261,16 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--cv-parallel-folds",
+        type=int,
+        default=None,
+        help=(
+            "Number of CV folds to run concurrently during stage-07 cross-validation. "
+            "Each fold gets a share of the total XGBoost thread budget. "
+            f"(default: {DEFAULT_LOCAL_CV_PARALLEL_FOLDS} on CPU, forced to 1 on GPU)"
+        ),
+    )
+    parser.add_argument(
         "--gpu",
         action="store_true",
         default=False,
@@ -1319,9 +1458,50 @@ def main() -> int:
     training_cfg_raw = config.get("training", {})
     training_cfg = training_cfg_raw if isinstance(training_cfg_raw, dict) else {}
     validation_cfg = config.get("validation", {})
-    cv_folds = training_cfg.get("cv_folds", 0)
+    cv_folds_raw = training_cfg.get("cv_folds")
+    if cv_folds_raw is None:
+        cv_folds = DEFAULT_STAGE07_CV_FOLDS
+        cv_folds_source = "lib.constants.DEFAULT_STAGE07_CV_FOLDS"
+    else:
+        try:
+            cv_folds = int(cv_folds_raw)
+        except (TypeError, ValueError):
+            log.error("Invalid training.cv_folds in %s: %r", config_path, cv_folds_raw)
+            return 1
+        if cv_folds < 0:
+            log.error("Invalid training.cv_folds in %s: expected >= 0, got %r", config_path, cv_folds_raw)
+            return 1
+        cv_folds_source = "config.training.cv_folds"
     random_state = training_cfg.get("random_state", 42)
     n_augmentation_passes = sparsity_cfg.get("n_augmentation_passes", 1)
+    try:
+        if args.cv_parallel_folds is not None:
+            cv_parallel_folds = coerce_positive_int(
+                args.cv_parallel_folds,
+                label="--cv-parallel-folds",
+            )
+            cv_parallel_folds_source = "cli"
+        else:
+            cv_parallel_folds = DEFAULT_LOCAL_CV_PARALLEL_FOLDS
+            cv_parallel_folds_source = "lib.constants.DEFAULT_LOCAL_CV_PARALLEL_FOLDS"
+    except ValueError as e:
+        log.error("Invalid CV fold parallelism setting: %s", e)
+        return 1
+    if args.gpu and cv_parallel_folds > 1:
+        log.warning("GPU mode disables fold-level CV parallelism; forcing cv_parallel_folds=1.")
+        cv_parallel_folds = 1
+        cv_parallel_folds_source = "forced_for_gpu"
+    if cv_folds <= 1:
+        cv_parallel_folds = 1
+        cv_parallel_folds_source = "disabled_without_cv"
+    else:
+        requested_cv_parallel_folds = cv_parallel_folds
+        cv_parallel_folds = min(cv_parallel_folds, cv_folds)
+        if cv_parallel_folds != requested_cv_parallel_folds:
+            cv_parallel_folds_source = f"{cv_parallel_folds_source}_clamped_to_cv_folds"
+    training_cfg_effective = dict(training_cfg)
+    training_cfg_effective["cv_folds"] = cv_folds
+    training_cfg_effective["cv_parallel_folds"] = cv_parallel_folds
     xgb_n_jobs_source = "cpu_count"
     try:
         if args.n_jobs is not None:
@@ -1352,7 +1532,12 @@ def main() -> int:
         log.info("  Mini-IPIP: %s", sparsity_cfg.get("include_mini_ipip", True))
         log.info("  Imbalanced: %s", sparsity_cfg.get("include_imbalanced", False))
         log.info("  Augmentation passes: %d", n_augmentation_passes)
-    log.info("CV folds: %s", cv_folds if cv_folds > 0 else "None")
+    log.info("CV folds: %s (source=%s)", cv_folds if cv_folds > 0 else "None", cv_folds_source)
+    log.info(
+        "CV parallel folds: %d (source=%s)",
+        cv_parallel_folds,
+        cv_parallel_folds_source,
+    )
     log.info("XGBoost n_jobs: %d (source=%s)", xgb_n_jobs, xgb_n_jobs_source)
     if args.gpu:
         log.info("GPU mode: enabled (device=cuda)")
@@ -1366,6 +1551,24 @@ def main() -> int:
             return 1
     if args.parallel_domains > 1:
         log.info("Parallel domains: %d (%d XGBoost threads each)", args.parallel_domains, max(1, xgb_n_jobs // args.parallel_domains))
+    if cv_folds > 1:
+        fold_thread_budget = max(1, xgb_n_jobs // max(cv_parallel_folds, 1))
+        effective_domain_workers_per_fold = min(
+            max(args.parallel_domains, 1),
+            len(DOMAINS),
+            fold_thread_budget,
+        )
+        if args.parallel_domains > effective_domain_workers_per_fold:
+            log.warning(
+                "Requested parallel_domains=%d with cv_parallel_folds=%d and n_jobs=%d; "
+                "each fold has %d XGBoost thread(s), so domain-level training will clamp "
+                "to %d worker(s) per fold.",
+                args.parallel_domains,
+                cv_parallel_folds,
+                xgb_n_jobs,
+                fold_thread_budget,
+                effective_domain_workers_per_fold,
+            )
     log.info("Hyperparameters:")
     for k, v in params.items():
         log.info("  %s: %s", k, v)
@@ -1511,10 +1714,10 @@ def main() -> int:
             return 1
         log.info("  Mini-IPIP mapping loaded (%d domains)", len(mini_ipip_items))
 
-    # Nested cross-validation
+    # Cross-validation robustness analysis
     cv_results = None
     if cv_folds > 1:
-        log.info("Step 2: Nested %d-fold cross-validation...", cv_folds)
+        log.info("Step 2: %d-fold cross-validation robustness analysis...", cv_folds)
         X_trainval = pd.concat([X_train, X_val]).reset_index(drop=True)
         y_trainval = pd.concat([y_train, y_val]).reset_index(drop=True)
         y_trainval_pct = pd.concat([y_train_pct, y_val_pct]).reset_index(drop=True)
@@ -1522,19 +1725,19 @@ def main() -> int:
         if train_strata is not None and val_strata is not None:
             strata_trainval = pd.concat([train_strata, val_strata]).reset_index(drop=True)
             log.info(
-                "  Using stratified nested CV via split_stratum (%d strata)",
+                "  Using stratified cross-validation via split_stratum (%d strata)",
                 int(strata_trainval.nunique()),
             )
         elif train_strata is None and val_strata is None:
-            log.warning("  split_stratum unavailable; falling back to unstratified nested CV.")
+            log.warning("  split_stratum unavailable; falling back to unstratified cross-validation.")
         else:
             log.error(
                 "split_stratum presence mismatch between train/val; "
-                "cannot safely run nested CV. Re-run stage 04 prepare."
+                "cannot safely run cross-validation. Re-run stage 04 prepare."
             )
             return 1
 
-        cv_results = _nested_cross_validation(
+        cv_results = _run_cross_validation_robustness(
             X_trainval, y_trainval, y_trainval_pct,
             item_info, config, params,
             n_folds=cv_folds,
@@ -1542,6 +1745,7 @@ def main() -> int:
             mini_ipip_items=mini_ipip_items,
             strata=strata_trainval,
             parallel_domains=args.parallel_domains,
+            parallel_folds=cv_parallel_folds,
             gpu=args.gpu,
         )
 
@@ -1868,6 +2072,8 @@ def main() -> int:
             "xgb_n_jobs": xgb_n_jobs,
             "xgb_n_jobs_source": xgb_n_jobs_source,
             "parallel_domains": args.parallel_domains,
+            "cv_folds": cv_folds,
+            "cv_parallel_folds": cv_parallel_folds,
             "gpu": args.gpu,
             "hyperparameters_source_mode": params_source.get("mode"),
             "hyperparameters_sha256": params_source.get("hyperparameters_sha256"),
@@ -1881,7 +2087,7 @@ def main() -> int:
             "name": config_name,
             "config_path": relative_to_root(config_path),
             "sparsity": sparsity_cfg,
-            "training": training_cfg,
+            "training": training_cfg_effective,
             "hyperparameters_lock_policy": lock_policy,
             "hyperparameters_reference_model_dir": (
                 relative_to_root(reference_model_dir) if reference_model_dir is not None else None

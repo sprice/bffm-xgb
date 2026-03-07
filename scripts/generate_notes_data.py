@@ -22,6 +22,10 @@ from typing import Any
 import yaml
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PACKAGE_ROOT))
+
+from lib.constants import DEFAULT_STAGE07_CV_FOLDS
+
 ARTIFACTS_DIR = PACKAGE_ROOT / "artifacts"
 CONFIGS_DIR = PACKAGE_ROOT / "configs"
 NOTES_TEMPLATE_PATH = PACKAGE_ROOT / "templates" / "NOTES.md"
@@ -698,6 +702,7 @@ def gen_training_config() -> str:
     ref = load_yaml(CONFIGS_DIR / "reference.yaml")
     sp = ref["sparsity"]
     tr = ref["training"]
+    cv_folds = tr.get("cv_folds", DEFAULT_STAGE07_CV_FOLDS)
     va = ref["validation"]
     rows = [
         ["Setting", "Value"],
@@ -707,7 +712,7 @@ def gen_training_config() -> str:
         ["Include Mini-IPIP patterns", str(sp["include_mini_ipip"])],
         ["Include imbalanced patterns", str(sp["include_imbalanced"])],
         ["Augmentation passes", str(sp["n_augmentation_passes"])],
-        ["CV folds", str(tr["cv_folds"])],
+        ["CV folds", str(cv_folds)],
         ["Random state", str(tr["random_state"])],
         ["Min Pearson r gate", fmt_f(va["min_pearson_r"], 2)],
         ["Min 90% coverage gate", fmt_f(va["min_coverage_90"], 2)],

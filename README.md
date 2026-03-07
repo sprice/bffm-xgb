@@ -141,7 +141,11 @@ make train 4
 
 # Control ablation fan-out after train-1 (inherits outer make parallelism by default)
 make train TRAIN_PARALLEL=3
+make train CV_PARALLEL_FOLDS=2
 make -j1 train
+
+# Force research-eval serially if needed
+make research-eval RESEARCH_EVAL_PARALLEL=1
 
 # Override training split paths
 make train DATA_DIR=data/processed/ext_est
@@ -154,6 +158,7 @@ make train TRAIN_DATA_DIR=data/processed/ext_est TRAIN_DATA_DIR_STRATIFIED=data/
 | --------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `PARAMS`                    | *(none)*                                                                                                    | Hyperparameter JSON override; when unset, each config uses its own `locked_params` path |
 | `N_JOBS`                    | *(none)*                                                                                                    | XGBoost thread count; when unset, uses `training.n_jobs` from config                    |
+| `CV_PARALLEL_FOLDS`         | `1`                                                                                                         | Number of stage-07 CV folds to run concurrently on CPU (`1` on GPU)                     |
 | `TRAIN_DATA_DIR`            | `DATA_DIR`                                                                                                  | Training data for runs 1--3                                                             |
 | `TRAIN_DATA_DIR_STRATIFIED` | `data/processed/ext_est_opn` (falls back to `TRAIN_DATA_DIR` if it differs from the default `ext_est` path) | Training data for run 4 (stratified split)                                              |
 | `TRAIN_PARALLEL`            | *(inherit outer make)*                                                                                      | Fan-out for ablation runs 2--4                                                          |
@@ -201,6 +206,9 @@ All auto-generated NOTES data sections read from
 `models/*/training_report.json` plus per-variant evaluation outputs under
 `artifacts/variants/*/`.
 
+Parallel train/eval targets also write prefixed per-task logs under `logs/`
+(`train-*.log`, `eval-*.log`) to make concurrent AWS runs easier to follow.
+
 ### Norm Reproducibility
 
 ```bash
@@ -238,7 +246,7 @@ make infra-up      # provision spot instance (~60s)
 make remote-all    # push, setup, run full pipeline, pull results, tear down
 ```
 
-`remote-all` attaches to a live tmux view of the pipeline. If you detach (Ctrl+B D) or lose connection, the run continues remotely and the local process polls until completion, pulls results, and destroys the infrastructure.
+`remote-all` attaches to a live tmux view of the pipeline. If you detach (Ctrl+B D) or lose connection, the run continues remotely and the local process polls until completion, checkpoint-pulls major artifacts (norms, prepared data, correlations, tuned params, models, eval outputs), then pulls final results and destroys the infrastructure.
 
 See [`infra/README.md`](infra/README.md)
 
@@ -311,21 +319,22 @@ The pipeline consists of 13 numbered scripts, executed in order. Each script is 
 | 12  | `12_generate_figures.py`     | `figures`                                                         | Generates publication figures from artifacts (efficiency curves, heatmaps, etc.)                                                        |
 | 13  | `13_upload_hf.py`            | `upload-hf`                                                       | Uploads exported model and model card to HuggingFace Hub (requires `HF_TOKEN`)                                                          |
 
-`make all` runs: download, load, norms, norms-check, prepare, correlations, tune, train, research-eval, export, notes, and figures. It excludes stage 13 (upload-hf). Evaluation stages (08-10) run via `research-eval`, which evaluates all four model variants and writes results to `artifacts/variants/<variant>/`.
+`make all` runs: download, load, norms, norms-check, prepare, correlations, tune, train, research-eval, export, notes, and figures. It excludes stage 13 (upload-hf). Evaluation stages (08-10) run via `research-eval`, which evaluates all four model variants in parallel by default and writes results to `artifacts/variants/<variant>/`.
 
 ### Cross-Variant Research Evaluation
 
 After training all 4 model variants, `make research-eval` runs the full evaluation pipeline (validate + baselines + simulate) for each variant, writing results to isolated artifact directories:
 
 ```
-make research-eval          # runs all 4 variants sequentially
+make research-eval          # runs all 4 variants in parallel by default
 make research-eval-reference
 make research-eval-ablation-none
 make research-eval-ablation-focused
 make research-eval-ablation-stratified
 ```
 
-Each `research-eval-*` target runs `validate`, `baselines`, and `simulate` with the correct model/data pairing. Output is automatically routed to `artifacts/variants/<variant>/` via the `EVAL_DIR` Makefile variable.
+Each `research-eval-*` target runs `validate`, `baselines`, and `simulate` with the correct model/data pairing. Output is automatically routed to `artifacts/variants/<variant>/` via the `EVAL_DIR` Makefile variable, and each variant also writes a labeled logfile under `logs/`.
+Override variant parallelism with `RESEARCH_EVAL_PARALLEL=<n>` if needed. Use `RESEARCH_EVAL_PARALLEL=1` for explicit serial execution.
 
 After all variants complete:
 
@@ -385,7 +394,7 @@ These artifacts allow `12_generate_figures.py` to produce publication figures wi
 - **Models:** 15 total (5 domains x 3 quantiles: q05, q50, q95)
 - **Input:** 50 features (float32 at inference; float64 during training), one per IPIP-BFFM item; NaN for unanswered items
 - **Output:** Raw domain score (1--5 scale), converted to percentile via z-score norms
-- **Cross-validation:** 5-fold nested CV with evaluation split before augmentation
+- **Cross-validation:** 3-fold cross-validation robustness analysis with evaluation split before augmentation
 - **Hyperparameters:** Tuned via Optuna TPE search (stage 06); stored in `artifacts/tuned_params.json`
 
 ### Sparsity Augmentation

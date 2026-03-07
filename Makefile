@@ -11,8 +11,12 @@ PARALLEL_TRIALS ?=
 _PARALLEL_TRIALS_FLAG := $(if $(PARALLEL_TRIALS),--parallel-trials $(PARALLEL_TRIALS),)
 PARALLEL_DOMAINS ?=
 _PARALLEL_DOMAINS_FLAG := $(if $(PARALLEL_DOMAINS),--parallel-domains $(PARALLEL_DOMAINS),)
+CV_PARALLEL_FOLDS ?= 1
+_CV_PARALLEL_FOLDS_FLAG := $(if $(CV_PARALLEL_FOLDS),--cv-parallel-folds $(CV_PARALLEL_FOLDS),)
 TRAIN_PARALLEL ?=
 _TRAIN_PARALLEL_FLAG := $(if $(TRAIN_PARALLEL),-j$(TRAIN_PARALLEL),)
+RESEARCH_EVAL_PARALLEL ?= 4
+_RESEARCH_EVAL_PARALLEL_FLAG := $(if $(RESEARCH_EVAL_PARALLEL),-j$(RESEARCH_EVAL_PARALLEL),)
 GPU ?=
 _GPU_FLAG := $(if $(GPU),--gpu,)
 # train-1 runs alone before train-2/3/4, so give it all cores (N_JOBS × TRAIN_PARALLEL)
@@ -33,6 +37,7 @@ _RESET_FLAG := $(if $(RESET),--reset,)
 ARTIFACTS_VARIANTS_DIR ?= $(ARTIFACTS_DIR)/variants
 EVAL_DIR = $(ARTIFACTS_VARIANTS_DIR)/$(MODEL_NAME)
 RESEARCH_SUMMARY_PATH ?= $(ARTIFACTS_DIR)/research_summary.json
+LOGS_DIR ?= logs
 
 TRAIN_DATA_DIR ?=
 TRAIN_DATA_DIR_STRATIFIED ?=
@@ -65,6 +70,8 @@ TRAIN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 TRAIN_RUN := $(firstword $(TRAIN_ARGS))
 TRAIN_EXTRA_ARGS := $(wordlist 2,$(words $(TRAIN_ARGS)),$(TRAIN_ARGS))
 VALID_TRAIN_RUNS := 1 2 3 4
+RESEARCH_EVAL_TARGETS := research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-eval-ablation-stratified
+_CALLER_PARALLEL_MAKEFLAGS = $(filter -j% -j --jobserver-auth=% --jobserver-fds=%,$(MAKEFLAGS))
 
 .PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full prepare prepare-default prepare-stratified correlations correlations-default correlations-stratified tune train train-1 train-2 train-3 train-4 check-model-data-pairing validate baselines simulate export export-all export-repo-readme export-reference export-ablation-none export-ablation-focused export-ablation-stratified figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-eval-ablation-stratified research-summary research-summary-strict notes upload-hf upload-hf-reference test test-lib test-inference test-web archive clean web-setup web-dev web-build deploy-web
 
@@ -126,26 +133,34 @@ ifneq ($(strip $(TRAIN_EXTRA_ARGS)),)
 	@echo "Too many train run arguments: $(TRAIN_ARGS). Use: make train [1|2|3|4]"
 	@exit 2
 else ifeq ($(TRAIN_RUN),)
-	$(MAKE) train-1 PARAMS="$(PARAMS)" N_JOBS="$(_TRAIN1_NJOBS)"
-	$(MAKE) $(_TRAIN_PARALLEL_FLAG) train-2 train-3 train-4 PARAMS="$(PARAMS)" N_JOBS="$(N_JOBS)"
+	@$(MAKE) train-1 PARAMS="$(PARAMS)" N_JOBS="$(_TRAIN1_NJOBS)"
+	@$(MAKE) $(_TRAIN_PARALLEL_FLAG) train-2 train-3 train-4 PARAMS="$(PARAMS)" N_JOBS="$(N_JOBS)"
 else ifeq ($(filter $(TRAIN_RUN),$(VALID_TRAIN_RUNS)),$(TRAIN_RUN))
-	$(MAKE) train-$(TRAIN_RUN) PARAMS="$(PARAMS)" N_JOBS="$(N_JOBS)"
+	@$(MAKE) train-$(TRAIN_RUN) PARAMS="$(PARAMS)" N_JOBS="$(N_JOBS)"
 else
 	@echo "Invalid train run index: $(TRAIN_RUN). Use: make train [1|2|3|4]"
 	@exit 2
 endif
 
 train-1:
-	$(PY) pipeline/07_train.py --config configs/reference.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_GPU_FLAG)
+	@mkdir -p $(LOGS_DIR)
+	@$(PY) scripts/run_labeled.py --label "train reference" --log-file "$(LOGS_DIR)/train-reference.log" -- \
+		$(PY) pipeline/07_train.py --config configs/reference.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG)
 
 train-2:
-	$(PY) pipeline/07_train.py --config configs/ablation_none.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_GPU_FLAG)
+	@mkdir -p $(LOGS_DIR)
+	@$(PY) scripts/run_labeled.py --label "train ablation_none" --log-file "$(LOGS_DIR)/train-ablation-none.log" -- \
+		$(PY) pipeline/07_train.py --config configs/ablation_none.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG)
 
 train-3:
-	$(PY) pipeline/07_train.py --config configs/ablation_focused.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_GPU_FLAG)
+	@mkdir -p $(LOGS_DIR)
+	@$(PY) scripts/run_labeled.py --label "train ablation_focused" --log-file "$(LOGS_DIR)/train-ablation-focused.log" -- \
+		$(PY) pipeline/07_train.py --config configs/ablation_focused.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG)
 
 train-4:
-	$(PY) pipeline/07_train.py --config configs/ablation_stratified.yaml --data-dir $(TRAIN_DATA_DIR_STRATIFIED) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_GPU_FLAG)
+	@mkdir -p $(LOGS_DIR)
+	@$(PY) scripts/run_labeled.py --label "train ablation_stratified" --log-file "$(LOGS_DIR)/train-ablation-stratified.log" -- \
+		$(PY) pipeline/07_train.py --config configs/ablation_stratified.yaml --data-dir $(TRAIN_DATA_DIR_STRATIFIED) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG)
 
 check-model-data-pairing:
 	@expected=""; \
@@ -194,19 +209,32 @@ export-ablation-stratified:
 figures:
 	$(PY) pipeline/12_generate_figures.py --artifacts-dir $(EVAL_DIR)
 
-research-eval: research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-eval-ablation-stratified
+research-eval:
+	@if [ -n "$(_CALLER_PARALLEL_MAKEFLAGS)" ]; then \
+		"$${MAKE:-make}" $(RESEARCH_EVAL_TARGETS); \
+	else \
+		"$${MAKE:-make}" $(_RESEARCH_EVAL_PARALLEL_FLAG) $(RESEARCH_EVAL_TARGETS); \
+	fi
 
 research-eval-reference:
-	$(MAKE) validate baselines simulate MODEL_DIR=models/reference DATA_DIR=$(DATA_DIR_DEFAULT)
+	@mkdir -p $(LOGS_DIR)
+	@$(PY) scripts/run_labeled.py --label "eval reference" --log-file "$(LOGS_DIR)/eval-reference.log" -- \
+		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/reference DATA_DIR=$(DATA_DIR_DEFAULT)
 
 research-eval-ablation-none:
-	$(MAKE) validate baselines simulate MODEL_DIR=models/ablation_none DATA_DIR=$(DATA_DIR_DEFAULT)
+	@mkdir -p $(LOGS_DIR)
+	@$(PY) scripts/run_labeled.py --label "eval ablation_none" --log-file "$(LOGS_DIR)/eval-ablation-none.log" -- \
+		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/ablation_none DATA_DIR=$(DATA_DIR_DEFAULT)
 
 research-eval-ablation-focused:
-	$(MAKE) validate baselines simulate MODEL_DIR=models/ablation_focused DATA_DIR=$(DATA_DIR_DEFAULT)
+	@mkdir -p $(LOGS_DIR)
+	@$(PY) scripts/run_labeled.py --label "eval ablation_focused" --log-file "$(LOGS_DIR)/eval-ablation-focused.log" -- \
+		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/ablation_focused DATA_DIR=$(DATA_DIR_DEFAULT)
 
 research-eval-ablation-stratified:
-	$(MAKE) validate baselines simulate MODEL_DIR=models/ablation_stratified DATA_DIR=$(DATA_DIR_STRATIFIED)
+	@mkdir -p $(LOGS_DIR)
+	@$(PY) scripts/run_labeled.py --label "eval ablation_stratified" --log-file "$(LOGS_DIR)/eval-ablation-stratified.log" -- \
+		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/ablation_stratified DATA_DIR=$(DATA_DIR_STRATIFIED)
 
 research-summary:
 	$(PY) scripts/build_research_summary.py --output $(RESEARCH_SUMMARY_PATH) --artifacts-variants-dir $(ARTIFACTS_VARIANTS_DIR)
@@ -332,12 +360,12 @@ deploy-web: web-build
 SSH_KEY       ?= ~/.ssh/id_rsa
 SSH_OPTS       = -i $(SSH_KEY) -o StrictHostKeyChecking=no -o ConnectTimeout=10
 CPU_USER      := ec2-user
-CPU_HOST       = $(shell cd infra/cpu && terraform output -raw instance_ip 2>/dev/null)
+CPU_HOST       = $(shell cd infra/cpu && terraform output -raw instance_ip 2>/dev/null | grep -m1 -E '^[0-9]+(\.[0-9]+){3}$$')
 CPU_DIR        = /home/$(CPU_USER)/bffm-xgb
 CPU_SSH        = ssh $(SSH_OPTS) $(CPU_USER)@$(CPU_HOST)
 CPU_RSYNC      = rsync -avz --progress -e "ssh $(SSH_OPTS)"
 GPU_USER      := ubuntu
-GPU_HOST       = $(shell cd infra/gpu && terraform output -raw instance_ip 2>/dev/null)
+GPU_HOST       = $(shell cd infra/gpu && terraform output -raw instance_ip 2>/dev/null | grep -m1 -E '^[0-9]+(\.[0-9]+){3}$$')
 GPU_DIR        = /home/$(GPU_USER)/bffm-xgb
 GPU_SSH        = ssh $(SSH_OPTS) $(GPU_USER)@$(GPU_HOST)
 GPU_RSYNC      = rsync -avz --progress -e "ssh $(SSH_OPTS)"
@@ -351,6 +379,8 @@ REMOTE_NJOBS  ?= 96
 REMOTE_POLL_MAX ?= 360
 REMOTE_PARALLEL_TRIALS ?= 4
 REMOTE_PARALLEL_DOMAINS ?= 5
+REMOTE_CV_PARALLEL_FOLDS ?= 2
+REMOTE_RESEARCH_EVAL_PARALLEL ?= $(RESEARCH_EVAL_PARALLEL)
 
 FILE ?=
 
@@ -469,6 +499,7 @@ else
 		--exclude='output/' \
 		--exclude='figures/' \
 		--exclude='notes/' \
+		--exclude='$(LOGS_DIR)/' \
 		--exclude='web/' \
 		--exclude='.pytest_cache/' \
 		./ $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/
@@ -492,6 +523,7 @@ else
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/research_summary.json ./artifacts/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/notes/ ./notes/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/figures/ ./figures/ 2>/dev/null || true
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/$(LOGS_DIR)/ ./$(LOGS_DIR)/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/pipeline.log ./pipeline.log 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/pipeline-timing.log ./pipeline-timing.log 2>/dev/null || true
 endif
@@ -516,21 +548,22 @@ REMOTE_TRAIN_NJOBS = $(shell echo $$(( $(REMOTE_NJOBS) / $(REMOTE_TRAIN_PARALLEL
 remote-train:
 	@echo "==> Running 'make train' on $(REMOTE_HOST)..."
 	@echo "    Config 1 first, then 2-4 in parallel. Domains train concurrently."
-	@echo "    train-1: $(REMOTE_NJOBS) cores (all), train-2/3/4: $(REMOTE_TRAIN_NJOBS) each ($(REMOTE_NJOBS)/$(REMOTE_TRAIN_PARALLEL)), $(REMOTE_PARALLEL_DOMAINS) parallel domains"
+	@echo "    train-1: $(REMOTE_NJOBS) cores (all), train-2/3/4: $(REMOTE_TRAIN_NJOBS) each ($(REMOTE_NJOBS)/$(REMOTE_TRAIN_PARALLEL)), $(REMOTE_PARALLEL_DOMAINS) parallel domains, $(REMOTE_CV_PARALLEL_FOLDS) parallel CV folds"
 	@echo "    If disconnected, run: make remote-attach"
 	$(SSH) -t 'tmux kill-session -t pipeline 2>/dev/null; \
 		cd $(REMOTE_DIR) && \
 		tmux new-session -s pipeline \
-			"make train N_JOBS=$(REMOTE_TRAIN_NJOBS) PARALLEL_DOMAINS=$(REMOTE_PARALLEL_DOMAINS) TRAIN_PARALLEL=$(REMOTE_TRAIN_PARALLEL) 2>&1; \
+			"make train N_JOBS=$(REMOTE_TRAIN_NJOBS) PARALLEL_DOMAINS=$(REMOTE_PARALLEL_DOMAINS) CV_PARALLEL_FOLDS=$(REMOTE_CV_PARALLEL_FOLDS) TRAIN_PARALLEL=$(REMOTE_TRAIN_PARALLEL) 2>&1; \
 			 echo; echo \">>> Done. Press Enter to close.\"; read"'
 
 remote-research-eval:
 	@echo "==> Running 'make research-eval' on $(REMOTE_HOST)..."
+	@echo "    Variant parallelism: $(REMOTE_RESEARCH_EVAL_PARALLEL)"
 	@echo "    Logs stream live. If disconnected, run: make remote-attach"
 	$(SSH) -t 'tmux kill-session -t pipeline 2>/dev/null; \
 		cd $(REMOTE_DIR) && \
 		tmux new-session -s pipeline \
-			"make research-eval 2>&1; \
+			"make research-eval RESEARCH_EVAL_PARALLEL=$(REMOTE_RESEARCH_EVAL_PARALLEL) 2>&1; \
 			 echo; echo \">>> Done. Press Enter to close.\"; read"'
 
 remote-attach:
@@ -543,32 +576,47 @@ remote-status:
 
 remote-all: remote-push remote-setup
 	@echo "==> Starting full pipeline on $(REMOTE_HOST) (detached tmux)..."
-	$(SSH) 'rm -f $(REMOTE_DIR)/.pipeline-exit-code && \
+	$(SSH) 'rm -f $(REMOTE_DIR)/.pipeline-exit-code && rm -rf $(REMOTE_DIR)/.pipeline-checkpoints && \
 		tmux kill-session -t pipeline 2>/dev/null || true && \
 		tmux new-session -d -s pipeline \
-			"cd $(REMOTE_DIR) && \
-			 TUNE_N_JOBS=$(REMOTE_NJOBS) \
-			 TRAIN_N_JOBS=$(REMOTE_TRAIN_NJOBS) \
-			 PARALLEL_TRIALS=$(REMOTE_PARALLEL_TRIALS) \
-			 PARALLEL_DOMAINS=$(REMOTE_PARALLEL_DOMAINS) \
-			 TRAIN_PARALLEL=$(REMOTE_TRAIN_PARALLEL) \
-			 bash scripts/run-pipeline.sh; echo \$$? > .pipeline-exit-code"'
+				"cd $(REMOTE_DIR) && \
+				 TUNE_N_JOBS=$(REMOTE_NJOBS) \
+				 TRAIN_N_JOBS=$(REMOTE_TRAIN_NJOBS) \
+				 PARALLEL_TRIALS=$(REMOTE_PARALLEL_TRIALS) \
+				 PARALLEL_DOMAINS=$(REMOTE_PARALLEL_DOMAINS) \
+				 CV_PARALLEL_FOLDS=$(REMOTE_CV_PARALLEL_FOLDS) \
+				 RESEARCH_EVAL_PARALLEL=$(REMOTE_RESEARCH_EVAL_PARALLEL) \
+				 TRAIN_PARALLEL=$(REMOTE_TRAIN_PARALLEL) \
+				 bash scripts/run-pipeline.sh; echo \$$? > .pipeline-exit-code"'
 	@echo "==> Attaching to live pipeline output (Ctrl+B D to detach)..."
 	@sleep 2
 	-$(SSH) -t 'tmux attach -t pipeline'
 	@echo "==> Polling for completion every 60s (timeout: $(REMOTE_POLL_MAX) min)..."
 	@POLL_N=0; \
+	CHECKPOINTS="norms prepare correlations tune train research-eval figures"; \
+	PULLED_CHECKPOINTS=""; \
 	while true; do \
-		sleep 60; \
-		POLL_N=$$((POLL_N + 1)); \
+			for STAGE in $$CHECKPOINTS; do \
+				case " $$PULLED_CHECKPOINTS " in *" $$STAGE "*) continue ;; esac; \
+				if $(SSH) 'test -f $(REMOTE_DIR)/.pipeline-checkpoints/'"$$STAGE"'.done' 2>/dev/null; then \
+					echo "==> Checkpoint '$$STAGE' reached. Pulling intermediate results..."; \
+					if "$${MAKE:-make}" remote-pull; then \
+						PULLED_CHECKPOINTS="$$PULLED_CHECKPOINTS $$STAGE"; \
+					else \
+						echo "==> WARNING: Intermediate pull for '$$STAGE' failed. Will retry."; \
+					fi; \
+				fi; \
+		done; \
 		if $(SSH) 'test -f $(REMOTE_DIR)/.pipeline-exit-code' 2>/dev/null; then \
 			break; \
 		fi; \
+		POLL_N=$$((POLL_N + 1)); \
 		if [ "$$POLL_N" -ge "$(REMOTE_POLL_MAX)" ]; then \
 			echo "==> ERROR: Polling timed out after $(REMOTE_POLL_MAX) minutes."; \
 			echo "    Instance still running — check: make infra-ssh"; \
 			exit 1; \
 		fi; \
+		sleep 60; \
 	done
 	@EXIT_CODE=$$($(SSH) 'cat $(REMOTE_DIR)/.pipeline-exit-code'); \
 	if [ "$$EXIT_CODE" != "0" ]; then \
@@ -577,9 +625,9 @@ remote-all: remote-push remote-setup
 		exit 1; \
 	fi
 	@echo "==> Pipeline succeeded. Pulling results..."
-	$(MAKE) remote-pull
+	@"$${MAKE:-make}" remote-pull
 	@echo "==> Tearing down infrastructure..."
-	$(MAKE) infra-down
+	@"$${MAKE:-make}" infra-down
 	@echo "==> Done. Infrastructure destroyed."
 
 remote-all-1: remote-push remote-setup
@@ -587,13 +635,15 @@ remote-all-1: remote-push remote-setup
 	$(SSH) 'rm -f $(REMOTE_DIR)/.pipeline-exit-code && \
 		tmux kill-session -t pipeline 2>/dev/null || true && \
 		tmux new-session -d -s pipeline \
-			"cd $(REMOTE_DIR) && \
-			 TUNE_N_JOBS=$(REMOTE_NJOBS) \
-			 TRAIN_N_JOBS=$(REMOTE_TRAIN_NJOBS) \
-			 PARALLEL_TRIALS=$(REMOTE_PARALLEL_TRIALS) \
-			 PARALLEL_DOMAINS=$(REMOTE_PARALLEL_DOMAINS) \
-			 TRAIN_PARALLEL=$(REMOTE_TRAIN_PARALLEL) \
-			 bash scripts/run-pipeline.sh --end-stage tune; echo \$$? > .pipeline-exit-code"'
+				"cd $(REMOTE_DIR) && \
+				 TUNE_N_JOBS=$(REMOTE_NJOBS) \
+				 TRAIN_N_JOBS=$(REMOTE_TRAIN_NJOBS) \
+				 PARALLEL_TRIALS=$(REMOTE_PARALLEL_TRIALS) \
+				 PARALLEL_DOMAINS=$(REMOTE_PARALLEL_DOMAINS) \
+				 CV_PARALLEL_FOLDS=$(REMOTE_CV_PARALLEL_FOLDS) \
+				 RESEARCH_EVAL_PARALLEL=$(REMOTE_RESEARCH_EVAL_PARALLEL) \
+				 TRAIN_PARALLEL=$(REMOTE_TRAIN_PARALLEL) \
+				 bash scripts/run-pipeline.sh --end-stage tune; echo \$$? > .pipeline-exit-code"'
 	@echo "==> Attaching to live pipeline output (Ctrl+B D to detach)..."
 	@sleep 2
 	-$(SSH) -t 'tmux attach -t pipeline'
@@ -618,9 +668,9 @@ remote-all-1: remote-push remote-setup
 		exit 1; \
 	fi
 	@echo "==> Phase 1 complete. Pulling results..."
-	$(MAKE) remote-pull
+	@"$${MAKE:-make}" remote-pull
 	@echo "==> Tearing down infrastructure..."
-	$(MAKE) infra-down
+	@"$${MAKE:-make}" infra-down
 	@echo "==> Phase 1 done. Infrastructure destroyed."
 	@echo "    To continue: make infra-up && make remote-all-2"
 
@@ -629,13 +679,15 @@ remote-all-2:
 	$(SSH) 'rm -f $(REMOTE_DIR)/.pipeline-exit-code && \
 		tmux kill-session -t pipeline 2>/dev/null || true && \
 		tmux new-session -d -s pipeline \
-			"cd $(REMOTE_DIR) && \
-			 TUNE_N_JOBS=$(REMOTE_NJOBS) \
-			 TRAIN_N_JOBS=$(REMOTE_TRAIN_NJOBS) \
-			 PARALLEL_TRIALS=$(REMOTE_PARALLEL_TRIALS) \
-			 PARALLEL_DOMAINS=$(REMOTE_PARALLEL_DOMAINS) \
-			 TRAIN_PARALLEL=$(REMOTE_TRAIN_PARALLEL) \
-			 bash scripts/run-pipeline.sh --start-stage train; echo \$$? > .pipeline-exit-code"'
+				"cd $(REMOTE_DIR) && \
+				 TUNE_N_JOBS=$(REMOTE_NJOBS) \
+				 TRAIN_N_JOBS=$(REMOTE_TRAIN_NJOBS) \
+				 PARALLEL_TRIALS=$(REMOTE_PARALLEL_TRIALS) \
+				 PARALLEL_DOMAINS=$(REMOTE_PARALLEL_DOMAINS) \
+				 CV_PARALLEL_FOLDS=$(REMOTE_CV_PARALLEL_FOLDS) \
+				 RESEARCH_EVAL_PARALLEL=$(REMOTE_RESEARCH_EVAL_PARALLEL) \
+				 TRAIN_PARALLEL=$(REMOTE_TRAIN_PARALLEL) \
+				 bash scripts/run-pipeline.sh --start-stage train; echo \$$? > .pipeline-exit-code"'
 	@echo "==> Attaching to live pipeline output (Ctrl+B D to detach)..."
 	@sleep 2
 	-$(SSH) -t 'tmux attach -t pipeline'
@@ -660,9 +712,9 @@ remote-all-2:
 		exit 1; \
 	fi
 	@echo "==> Phase 2 succeeded. Pulling results..."
-	$(MAKE) remote-pull
+	@"$${MAKE:-make}" remote-pull
 	@echo "==> Tearing down infrastructure..."
-	$(MAKE) infra-down
+	@"$${MAKE:-make}" infra-down
 	@echo "==> Done. Infrastructure destroyed."
 
 # ---------------------------------------------------------------------------
@@ -693,6 +745,7 @@ remote-1-gpu:
 		--exclude='output/' \
 		--exclude='figures/' \
 		--exclude='notes/' \
+		--exclude='$(LOGS_DIR)/' \
 		--exclude='web/' \
 		--exclude='.pytest_cache/' \
 		./ $(GPU_USER)@$(GPU_HOST):$(GPU_DIR)/
@@ -702,12 +755,13 @@ remote-1-gpu:
 	$(GPU_SSH) 'rm -f $(GPU_DIR)/.pipeline-exit-code && \
 		tmux kill-session -t pipeline 2>/dev/null || true && \
 		tmux new-session -d -s pipeline \
-			"cd $(GPU_DIR) && \
-			 GPU=1 \
-			 PARALLEL_TRIALS=1 \
-			 PARALLEL_DOMAINS=1 \
-			 TRAIN_PARALLEL=1 \
-			 bash scripts/run-pipeline.sh --end-stage train --gpu; echo \$$? > .pipeline-exit-code"'
+				"cd $(GPU_DIR) && \
+				 GPU=1 \
+				 PARALLEL_TRIALS=1 \
+				 PARALLEL_DOMAINS=1 \
+				 CV_PARALLEL_FOLDS=1 \
+				 TRAIN_PARALLEL=1 \
+				 bash scripts/run-pipeline.sh --end-stage train --gpu; echo \$$? > .pipeline-exit-code"'
 	@echo "==> Attaching to live pipeline output (Ctrl+B D to detach)..."
 	@sleep 2
 	-$(GPU_SSH) -t 'tmux attach -t pipeline'
@@ -736,10 +790,11 @@ remote-1-gpu:
 	$(GPU_RSYNC) $(GPU_USER)@$(GPU_HOST):$(GPU_DIR)/artifacts/tuned_params.json ./artifacts/ 2>/dev/null || true
 	$(GPU_RSYNC) $(GPU_USER)@$(GPU_HOST):$(GPU_DIR)/artifacts/tuned_params.original.json ./artifacts/ 2>/dev/null || true
 	$(GPU_RSYNC) $(GPU_USER)@$(GPU_HOST):$(GPU_DIR)/artifacts/ipip_bffm_norms.json ./artifacts/ 2>/dev/null || true
+	$(GPU_RSYNC) $(GPU_USER)@$(GPU_HOST):$(GPU_DIR)/$(LOGS_DIR)/ ./$(LOGS_DIR)/ 2>/dev/null || true
 	$(GPU_RSYNC) $(GPU_USER)@$(GPU_HOST):$(GPU_DIR)/pipeline.log ./pipeline-gpu.log 2>/dev/null || true
 	$(GPU_RSYNC) $(GPU_USER)@$(GPU_HOST):$(GPU_DIR)/pipeline-timing.log ./pipeline-timing-gpu.log 2>/dev/null || true
 	@echo "==> Tearing down GPU infrastructure..."
-	$(MAKE) infra-gpu-down
+	@"$${MAKE:-make}" infra-gpu-down
 	@echo "==> Phase 1 (GPU) complete. Models and artifacts pulled locally."
 	@echo "    Continue with: make infra-cpu-up && make remote-2-cpu"
 
@@ -748,11 +803,12 @@ remote-2-cpu: remote-push remote-setup
 	$(SSH) 'rm -f $(REMOTE_DIR)/.pipeline-exit-code && \
 		tmux kill-session -t pipeline 2>/dev/null || true && \
 		tmux new-session -d -s pipeline \
-			"cd $(REMOTE_DIR) && \
-			 . .venv/bin/activate && \
-			 make download load norms norms-check prepare correlations && \
-			 make research-eval export-all notes figures; \
-			 echo \$$? > .pipeline-exit-code"'
+				"cd $(REMOTE_DIR) && \
+				 . .venv/bin/activate && \
+				 make download load norms norms-check prepare correlations && \
+				 make research-eval RESEARCH_EVAL_PARALLEL=$(REMOTE_RESEARCH_EVAL_PARALLEL) && \
+				 make export-all notes figures; \
+				 echo \$$? > .pipeline-exit-code"'
 	@echo "==> Attaching to live pipeline output (Ctrl+B D to detach)..."
 	@sleep 2
 	-$(SSH) -t 'tmux attach -t pipeline'
@@ -777,7 +833,7 @@ remote-2-cpu: remote-push remote-setup
 		exit 1; \
 	fi
 	@echo "==> CPU pipeline succeeded. Pulling results..."
-	$(MAKE) remote-pull
+	@"$${MAKE:-make}" remote-pull
 	@echo "==> Tearing down CPU infrastructure..."
-	$(MAKE) infra-cpu-down
+	@"$${MAKE:-make}" infra-cpu-down
 	@echo "==> Phase 2 (CPU) complete. All results pulled locally."

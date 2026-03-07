@@ -50,7 +50,9 @@ figures/manifest.json
 .git-hash
 pipeline.log
 pipeline-timing.log
+logs/
 .pipeline-exit-code
+.pipeline-checkpoints/
 
 # Claude settings
 .claude/settings.local.json

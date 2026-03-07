@@ -1133,7 +1133,7 @@ session.release();
 - **Training data:** {training_data_line}
 - **Sparsity augmentation:** Training samples are randomly masked to simulate adaptive (partial) responses, teaching the model to handle missing items
 - **Hyperparameters:** n_estimators={n_est}, max_depth={max_d}, learning_rate={lr_str}
-- **Cross-validation:** 5-fold nested CV with evaluation split before augmentation
+- **Cross-validation:** 3-fold cross-validation robustness analysis with evaluation split before augmentation
 
 ## Performance
 
