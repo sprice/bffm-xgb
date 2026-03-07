@@ -1,6 +1,11 @@
 # AWS Spot Instance Infrastructure
 
-Provisions a spot instance for running the IPIP-BFFM XGBoost pipeline (~1-2 hours on a 96-vCPU instance vs ~2+ days on a laptop).
+Two Terraform configurations for running the IPIP-BFFM XGBoost pipeline on AWS spot instances.
+
+| Directory | Instance | AMI | User | Purpose |
+|-----------|----------|-----|------|---------|
+| `cpu/` | `c7a.24xlarge` | Amazon Linux 2023 | `ec2-user` | Full pipeline or eval-only |
+| `gpu/` | `g5.xlarge` | AWS Deep Learning (Ubuntu) | `ubuntu` | Tune + train (GPU-accelerated) |
 
 ## Prerequisites
 
@@ -11,54 +16,34 @@ Provisions a spot instance for running the IPIP-BFFM XGBoost pipeline (~1-2 hour
 ## Setup
 
 ```bash
-cd infra
+# CPU instance
+cd infra/cpu
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars — set key_name and allowed_ssh_cidr at minimum
+
+# GPU instance
+cd infra/gpu
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars — set key_name and allowed_ssh_cidr at minimum
 ```
 
 ## Usage
 
-Run everything from the project root via Make:
+Run everything from the project root via Make. See [docs/infrastructure.md](../docs/infrastructure.md) for the full guide.
 
 ```bash
-# Full unattended run (push, setup, pipeline, pull, tear down)
-make infra-up
+# Option A: Full pipeline on CPU
+make infra-cpu-up
 make remote-all
-```
 
-Or run stages individually:
+# Option B: GPU tune/train + CPU eval (two-phase)
+make infra-gpu-up
+make remote-1-gpu       # tune+train on GPU, pulls models, tears down GPU
 
-```bash
-make infra-up
-make remote-push
-make remote-setup
-make remote-tune           # 200 Optuna trials (live logs)
-make remote-train          # 4 configs x 15 models (live logs)
-make remote-research-eval  # validate + baselines + simulate
-make remote-pull
-make infra-down
-```
-
-## Reconnecting
-
-If your SSH session drops, the pipeline keeps running in tmux:
-
-```bash
-make remote-attach    # reattach to the tmux session
+make infra-cpu-up
+make remote-2-cpu       # eval+export on CPU, pulls results, tears down CPU
 ```
 
 ## Troubleshooting
 
-### SSH connection timeout
-- Check that your `allowed_ssh_cidr` includes your current IP
-- Verify the security group allows port 22
-- Run `make remote-status` to check if the instance is up
-
-### Spot capacity unavailable
-- Try a different region or instance type in `terraform.tfvars`
-- Increase `spot_max_price`
-- Try `c7i.16xlarge` (64 vCPUs) as a fallback
-
-### Instance terminated unexpectedly
-- Spot instances can be reclaimed; check AWS console for termination reason
-- Re-run `make infra-up` and `make remote-push` to restart
+See [docs/infrastructure.md](../docs/infrastructure.md) for detailed troubleshooting.

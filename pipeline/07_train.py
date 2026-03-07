@@ -433,6 +433,7 @@ def _create_xgb_model(
     params: dict,
     n_jobs: int = 1,
     early_stopping_rounds: Optional[int] = None,
+    gpu: bool = False,
 ) -> xgb.XGBRegressor:
     """Create XGBoost quantile regression model."""
     kwargs = dict(
@@ -450,6 +451,9 @@ def _create_xgb_model(
         n_jobs=n_jobs,
         missing=np.nan,
     )
+    if gpu:
+        kwargs["device"] = "cuda"
+        kwargs["n_jobs"] = 1
     if early_stopping_rounds is not None:
         kwargs["early_stopping_rounds"] = early_stopping_rounds
     return xgb.XGBRegressor(**kwargs)
@@ -463,6 +467,7 @@ def _train_single_domain(
     n_jobs: int = 1,
     X_eval: Optional[pd.DataFrame] = None,
     y_eval: Optional[pd.DataFrame] = None,
+    gpu: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     """Train q05/q50/q95 models for a single domain. Thread-safe."""
     use_early_stopping = X_eval is not None and y_eval is not None
@@ -479,6 +484,7 @@ def _train_single_domain(
             q, params,
             n_jobs=n_jobs,
             early_stopping_rounds=15 if use_early_stopping else None,
+            gpu=gpu,
         )
 
         if use_early_stopping:
@@ -509,6 +515,7 @@ def _train_domain_models(
     X_eval: Optional[pd.DataFrame] = None,
     y_eval: Optional[pd.DataFrame] = None,
     parallel_domains: int = 1,
+    gpu: bool = False,
 ) -> dict[str, dict[str, Any]]:
     """Train XGBoost models for each domain on raw scores (1-5 scale).
 
@@ -529,6 +536,8 @@ def _train_domain_models(
         )
 
     n_parallel = min(parallel_domains, len(DOMAINS))
+    if gpu:
+        n_parallel = 1
     xgb_threads_per_domain = max(1, n_jobs // max(n_parallel, 1))
 
     if n_parallel > 1:
@@ -544,6 +553,7 @@ def _train_domain_models(
                     domain, X_train, y_train, params,
                     n_jobs=xgb_threads_per_domain,
                     X_eval=X_eval, y_eval=y_eval,
+                    gpu=gpu,
                 ): domain
                 for domain in DOMAINS
             }
@@ -571,6 +581,7 @@ def _train_domain_models(
         _, models = _train_single_domain(
             domain, X_train, y_train, params,
             n_jobs=n_jobs, X_eval=X_eval, y_eval=y_eval,
+            gpu=gpu,
         )
         domain_models[domain] = models
 
@@ -773,6 +784,7 @@ def _nested_cross_validation(
     mini_ipip_items: Optional[dict[str, list[str]]] = None,
     strata: Optional[pd.Series] = None,
     parallel_domains: int = 1,
+    gpu: bool = False,
 ) -> dict:
     """Run nested cross-validation for unbiased performance estimation.
 
@@ -868,6 +880,7 @@ def _nested_cross_validation(
             n_jobs=n_jobs,
             X_eval=X_eval_es, y_eval=y_eval_es,
             parallel_domains=parallel_domains,
+            gpu=gpu,
         )
 
         # Evaluate on test fold
@@ -1114,6 +1127,12 @@ def main() -> int:
             "(default: 1)"
         ),
     )
+    parser.add_argument(
+        "--gpu",
+        action="store_true",
+        default=False,
+        help="Use GPU acceleration (device='cuda')",
+    )
     add_provenance_args(parser)
     args = parser.parse_args()
 
@@ -1331,6 +1350,16 @@ def main() -> int:
         log.info("  Augmentation passes: %d", n_augmentation_passes)
     log.info("CV folds: %s", cv_folds if cv_folds > 0 else "None")
     log.info("XGBoost n_jobs: %d (source=%s)", xgb_n_jobs, xgb_n_jobs_source)
+    if args.gpu:
+        log.info("GPU mode: enabled (device=cuda)")
+        try:
+            xgb.XGBRegressor(n_estimators=1, device="cuda").fit(
+                np.zeros((2, 1)), np.zeros(2),
+            )
+        except Exception as e:
+            log.error("GPU check failed: %s", e)
+            log.error("Ensure CUDA is installed and a GPU is available, or remove --gpu.")
+            return 1
     if args.parallel_domains > 1:
         log.info("Parallel domains: %d (%d XGBoost threads each)", args.parallel_domains, max(1, xgb_n_jobs // args.parallel_domains))
     log.info("Hyperparameters:")
@@ -1509,6 +1538,7 @@ def main() -> int:
             mini_ipip_items=mini_ipip_items,
             strata=strata_trainval,
             parallel_domains=args.parallel_domains,
+            gpu=args.gpu,
         )
 
         log.info("CV Results:")
@@ -1578,6 +1608,7 @@ def main() -> int:
         n_jobs=xgb_n_jobs,
         X_eval=X_eval_es, y_eval=y_eval_es,
         parallel_domains=args.parallel_domains,
+        gpu=args.gpu,
     )
 
     t_train = time.time() - t_start
@@ -1833,6 +1864,7 @@ def main() -> int:
             "xgb_n_jobs": xgb_n_jobs,
             "xgb_n_jobs_source": xgb_n_jobs_source,
             "parallel_domains": args.parallel_domains,
+            "gpu": args.gpu,
             "hyperparameters_source_mode": params_source.get("mode"),
             "hyperparameters_sha256": params_source.get("hyperparameters_sha256"),
             "hyperparameters_source_sha256": params_source.get("file_sha256"),

@@ -188,6 +188,7 @@ def _create_xgb_model(
     params: dict,
     n_jobs: int = 1,
     early_stopping_rounds: Optional[int] = None,
+    gpu: bool = False,
 ) -> xgb.XGBRegressor:
     """Create an XGBoost quantile regression model."""
     kwargs = dict(
@@ -205,6 +206,9 @@ def _create_xgb_model(
         n_jobs=n_jobs,
         missing=np.nan,
     )
+    if gpu:
+        kwargs["device"] = "cuda"
+        kwargs["n_jobs"] = 1
     if early_stopping_rounds is not None:
         kwargs["early_stopping_rounds"] = early_stopping_rounds
     return xgb.XGBRegressor(**kwargs)
@@ -225,6 +229,7 @@ def _run_optuna_tuning(
     config: dict,
     mini_ipip_items: Optional[dict[str, list[str]]] = None,
     parallel_trials: int = 1,
+    gpu: bool = False,
 ) -> dict:
     """Run Optuna hyperparameter optimization.
 
@@ -245,6 +250,9 @@ def _run_optuna_tuning(
         label="config._xgb_n_jobs",
     )
     xgb_n_jobs = max(1, configured_n_jobs // max(parallel_trials, 1))
+    if gpu:
+        xgb_n_jobs = 1
+        parallel_trials = 1
     if parallel_trials > 1:
         log.info(
             "Parallel trials: %d (XGBoost n_jobs per trial: %d, total cores: %d)",
@@ -350,6 +358,7 @@ def _run_optuna_tuning(
                 params,
                 n_jobs=xgb_n_jobs,
                 early_stopping_rounds=25,
+                gpu=gpu,
             )
             model.fit(
                 X_tr, y_train_tune[score_col],
@@ -493,6 +502,12 @@ def main() -> int:
             "config.training.n_jobs, then $BFFM_XGB_N_JOBS, then os.cpu_count()."
         ),
     )
+    parser.add_argument(
+        "--gpu",
+        action="store_true",
+        default=False,
+        help="Use GPU acceleration (device='cuda')",
+    )
     add_provenance_args(parser)
     args = parser.parse_args()
 
@@ -567,6 +582,16 @@ def main() -> int:
         return 1
     config["_xgb_n_jobs"] = xgb_n_jobs
     log.info("XGBoost n_jobs: %d (source=%s)", xgb_n_jobs, n_jobs_source)
+    if args.gpu:
+        log.info("GPU mode: enabled (device=cuda)")
+        try:
+            xgb.XGBRegressor(n_estimators=1, device="cuda").fit(
+                np.zeros((2, 1)), np.zeros(2),
+            )
+        except Exception as e:
+            log.error("GPU check failed: %s", e)
+            log.error("Ensure CUDA is installed and a GPU is available, or remove --gpu.")
+            return 1
 
     # Load data
     log.info("Loading data...")
@@ -668,6 +693,7 @@ def main() -> int:
             config=config,
             mini_ipip_items=mini_ipip_items,
             parallel_trials=args.parallel_trials,
+            gpu=args.gpu,
         )
     except RuntimeError as e:
         log.error("%s", e)
@@ -684,6 +710,7 @@ def main() -> int:
             "parallel_trials": args.parallel_trials,
             "config": args.config,
             "xgb_n_jobs": xgb_n_jobs,
+            "gpu": args.gpu,
             "xgb_n_jobs_source": n_jobs_source,
             "train_sha256": train_sha256,
             "val_sha256": val_sha256,

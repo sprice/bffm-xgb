@@ -6,6 +6,7 @@ TRAIN_N_JOBS="${TRAIN_N_JOBS:-}"
 PARALLEL_TRIALS="${PARALLEL_TRIALS:-}"
 PARALLEL_DOMAINS="${PARALLEL_DOMAINS:-}"
 TRAIN_PARALLEL="${TRAIN_PARALLEL:-}"
+GPU="${GPU:-}"
 
 # ---------------------------------------------------------------------------
 # Stage range flags
@@ -17,6 +18,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --start-stage) START_STAGE="$2"; shift 2 ;;
         --end-stage)   END_STAGE="$2";   shift 2 ;;
+        --gpu)         GPU=1;            shift   ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
@@ -113,6 +115,11 @@ run_step() {
     fi
 }
 
+_GPU_FLAG=""
+if [[ -n "$GPU" ]]; then
+    _GPU_FLAG="GPU=1"
+fi
+
 # Reset logs
 > "$TIMING_LOG"
 > "$PIPELINE_LOG"
@@ -124,8 +131,8 @@ run_step "norms"        make norms
 run_step "norms-check"  make norms-check
 run_step "prepare"      make prepare
 run_step "correlations" make correlations
-run_step "tune"         make tune N_JOBS="$TUNE_N_JOBS" PARALLEL_TRIALS="$PARALLEL_TRIALS"
-run_step "train"        make train N_JOBS="$TRAIN_N_JOBS" PARALLEL_DOMAINS="$PARALLEL_DOMAINS" TRAIN_PARALLEL="$TRAIN_PARALLEL"
+run_step "tune"         make tune N_JOBS="$TUNE_N_JOBS" PARALLEL_TRIALS="$PARALLEL_TRIALS" $_GPU_FLAG
+run_step "train"        make train N_JOBS="$TRAIN_N_JOBS" PARALLEL_DOMAINS="$PARALLEL_DOMAINS" TRAIN_PARALLEL="$TRAIN_PARALLEL" $_GPU_FLAG
 run_step "research-eval" make research-eval
 run_step "export-all"   make export-all
 run_step "notes"        make notes

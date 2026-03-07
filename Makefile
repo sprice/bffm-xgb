@@ -13,6 +13,8 @@ PARALLEL_DOMAINS ?=
 _PARALLEL_DOMAINS_FLAG := $(if $(PARALLEL_DOMAINS),--parallel-domains $(PARALLEL_DOMAINS),)
 TRAIN_PARALLEL ?=
 _TRAIN_PARALLEL_FLAG := $(if $(TRAIN_PARALLEL),-j$(TRAIN_PARALLEL),)
+GPU ?=
+_GPU_FLAG := $(if $(GPU),--gpu,)
 # train-1 runs alone before train-2/3/4, so give it all cores (N_JOBS × TRAIN_PARALLEL)
 _TRAIN1_NJOBS = $(if $(and $(TRAIN_PARALLEL),$(N_JOBS)),$(shell echo $$(( $(N_JOBS) * $(TRAIN_PARALLEL) ))),$(N_JOBS))
 MODEL_DIR ?= models/reference
@@ -117,7 +119,7 @@ correlations-stratified:
 	$(PY) pipeline/05_compute_correlations.py --data-dir $(DATA_DIR_STRATIFIED)
 
 tune:
-	$(PY) pipeline/06_tune.py --config configs/reference.yaml --data-dir $(DATA_DIR_DEFAULT) --artifacts-dir $(ARTIFACTS_DIR) $(_N_JOBS_FLAG) $(_PARALLEL_TRIALS_FLAG)
+	$(PY) pipeline/06_tune.py --config configs/reference.yaml --data-dir $(DATA_DIR_DEFAULT) --artifacts-dir $(ARTIFACTS_DIR) $(_N_JOBS_FLAG) $(_PARALLEL_TRIALS_FLAG) $(_GPU_FLAG)
 
 train:
 ifneq ($(strip $(TRAIN_EXTRA_ARGS)),)
@@ -134,16 +136,16 @@ else
 endif
 
 train-1:
-	$(PY) pipeline/07_train.py --config configs/reference.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG)
+	$(PY) pipeline/07_train.py --config configs/reference.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_GPU_FLAG)
 
 train-2:
-	$(PY) pipeline/07_train.py --config configs/ablation_none.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG)
+	$(PY) pipeline/07_train.py --config configs/ablation_none.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_GPU_FLAG)
 
 train-3:
-	$(PY) pipeline/07_train.py --config configs/ablation_focused.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG)
+	$(PY) pipeline/07_train.py --config configs/ablation_focused.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_GPU_FLAG)
 
 train-4:
-	$(PY) pipeline/07_train.py --config configs/ablation_stratified.yaml --data-dir $(TRAIN_DATA_DIR_STRATIFIED) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG)
+	$(PY) pipeline/07_train.py --config configs/ablation_stratified.yaml --data-dir $(TRAIN_DATA_DIR_STRATIFIED) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_GPU_FLAG)
 
 check-model-data-pairing:
 	@expected=""; \
@@ -327,13 +329,24 @@ deploy-web: web-build
 # ---------------------------------------------------------------------------
 # Remote AWS targets
 # ---------------------------------------------------------------------------
-REMOTE_USER   ?= ec2-user
 SSH_KEY       ?= ~/.ssh/id_rsa
-REMOTE_HOST    = $(shell cd infra && terraform output -raw instance_ip 2>/dev/null)
 SSH_OPTS       = -i $(SSH_KEY) -o StrictHostKeyChecking=no -o ConnectTimeout=10
-SSH            = ssh $(SSH_OPTS) $(REMOTE_USER)@$(REMOTE_HOST)
-RSYNC          = rsync -avz --progress -e "ssh $(SSH_OPTS)"
-REMOTE_DIR     = /home/ec2-user/bffm-xgb
+CPU_USER      := ec2-user
+CPU_HOST       = $(shell cd infra/cpu && terraform output -raw instance_ip 2>/dev/null)
+CPU_DIR        = /home/$(CPU_USER)/bffm-xgb
+CPU_SSH        = ssh $(SSH_OPTS) $(CPU_USER)@$(CPU_HOST)
+CPU_RSYNC      = rsync -avz --progress -e "ssh $(SSH_OPTS)"
+GPU_USER      := ubuntu
+GPU_HOST       = $(shell cd infra/gpu && terraform output -raw instance_ip 2>/dev/null)
+GPU_DIR        = /home/$(GPU_USER)/bffm-xgb
+GPU_SSH        = ssh $(SSH_OPTS) $(GPU_USER)@$(GPU_HOST)
+GPU_RSYNC      = rsync -avz --progress -e "ssh $(SSH_OPTS)"
+# Backward compat defaults (point to CPU)
+REMOTE_USER   ?= $(CPU_USER)
+REMOTE_HOST    = $(CPU_HOST)
+SSH            = $(CPU_SSH)
+RSYNC          = $(CPU_RSYNC)
+REMOTE_DIR     = $(CPU_DIR)
 REMOTE_NJOBS  ?= 96
 REMOTE_POLL_MAX ?= 360
 REMOTE_PARALLEL_TRIALS ?= 4
@@ -341,16 +354,16 @@ REMOTE_PARALLEL_DOMAINS ?= 5
 
 FILE ?=
 
-.PHONY: infra-up infra-down infra-ssh remote-push remote-pull remote-setup remote-tune remote-train remote-research-eval remote-attach remote-status remote-all remote-all-1 remote-all-2
+.PHONY: infra-up infra-down infra-ssh infra-cpu-up infra-cpu-down infra-cpu-ssh infra-gpu-up infra-gpu-down infra-gpu-ssh remote-push remote-pull remote-setup remote-tune remote-train remote-research-eval remote-attach remote-status remote-all remote-all-1 remote-all-2 remote-1-gpu remote-2-cpu
 
-infra-up:
-	@echo "==> Initializing and applying Terraform..."
-	cd infra && terraform init -input=false && terraform apply -auto-approve
+infra-cpu-up:
+	@echo "==> Initializing and applying Terraform (CPU)..."
+	cd infra/cpu && terraform init -input=false && terraform apply -auto-approve
 	@echo "==> Waiting for SSH to become available..."
-	@IP=$$(cd infra && terraform output -raw instance_ip); \
+	@IP=$$(cd infra/cpu && terraform output -raw instance_ip); \
 	SSH_OK=0; \
 	for i in $$(seq 1 30); do \
-		ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no -o ConnectTimeout=10 $(REMOTE_USER)@$$IP exit 2>/dev/null && SSH_OK=1 && break; \
+		ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no -o ConnectTimeout=10 $(CPU_USER)@$$IP exit 2>/dev/null && SSH_OK=1 && break; \
 		echo "    Attempt $$i/30 — waiting 10s..."; \
 		sleep 10; \
 	done; \
@@ -361,8 +374,8 @@ infra-up:
 	echo "==> SSH available. Waiting for user-data (cloud-init) to finish..."; \
 	SETUP_OK=0; \
 	for i in $$(seq 1 60); do \
-		ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no -o ConnectTimeout=10 $(REMOTE_USER)@$$IP \
-			'test -f /home/ec2-user/.setup-done' 2>/dev/null && SETUP_OK=1 && break; \
+		ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no -o ConnectTimeout=10 $(CPU_USER)@$$IP \
+			'test -f /home/$(CPU_USER)/.setup-done' 2>/dev/null && SETUP_OK=1 && break; \
 		echo "    cloud-init attempt $$i/60 — waiting 5s..."; \
 		sleep 5; \
 	done; \
@@ -373,22 +386,67 @@ infra-up:
 	echo ""; \
 	echo "==> Instance ready!"; \
 	echo "    IP:  $$IP"; \
-	echo "    SSH: ssh -i $(SSH_KEY) $(REMOTE_USER)@$$IP"; \
+	echo "    SSH: ssh -i $(SSH_KEY) $(CPU_USER)@$$IP"; \
 	echo ""
 
-infra-down:
-	@echo "==> Destroying infrastructure..."
-	cd infra && terraform destroy -auto-approve
+infra-cpu-down:
+	@echo "==> Destroying CPU infrastructure..."
+	cd infra/cpu && terraform destroy -auto-approve
 
-infra-ssh:
-	$(SSH) -t
+infra-cpu-ssh:
+	$(CPU_SSH) -t
+
+infra-gpu-up:
+	@echo "==> Initializing and applying Terraform (GPU)..."
+	cd infra/gpu && terraform init -input=false && terraform apply -auto-approve
+	@echo "==> Waiting for SSH to become available..."
+	@IP=$$(cd infra/gpu && terraform output -raw instance_ip); \
+	SSH_OK=0; \
+	for i in $$(seq 1 30); do \
+		ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no -o ConnectTimeout=10 $(GPU_USER)@$$IP exit 2>/dev/null && SSH_OK=1 && break; \
+		echo "    Attempt $$i/30 — waiting 10s..."; \
+		sleep 10; \
+	done; \
+	if [ "$$SSH_OK" -ne 1 ]; then \
+		echo "ERROR: SSH not available after 30 attempts. Aborting."; \
+		exit 1; \
+	fi; \
+	echo "==> SSH available. Waiting for user-data (cloud-init) to finish..."; \
+	SETUP_OK=0; \
+	for i in $$(seq 1 60); do \
+		ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no -o ConnectTimeout=10 $(GPU_USER)@$$IP \
+			'test -f /home/$(GPU_USER)/.setup-done' 2>/dev/null && SETUP_OK=1 && break; \
+		echo "    cloud-init attempt $$i/60 — waiting 5s..."; \
+		sleep 5; \
+	done; \
+	if [ "$$SETUP_OK" -ne 1 ]; then \
+		echo "ERROR: user-data setup did not complete after 60 attempts. Aborting."; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	echo "==> GPU instance ready!"; \
+	echo "    IP:  $$IP"; \
+	echo "    SSH: ssh -i $(SSH_KEY) $(GPU_USER)@$$IP"; \
+	echo ""
+
+infra-gpu-down:
+	@echo "==> Destroying GPU infrastructure..."
+	cd infra/gpu && terraform destroy -auto-approve
+
+infra-gpu-ssh:
+	$(GPU_SSH) -t
+
+# Backward compat aliases
+infra-up: infra-cpu-up
+infra-down: infra-cpu-down
+infra-ssh: infra-cpu-ssh
 
 remote-push:
 ifdef FILE
 	@echo "==> Uploading $(FILE) to $(REMOTE_HOST):$(REMOTE_DIR)/$(FILE)..."
 	$(RSYNC) ./$(FILE) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/$(FILE)
 else
-	@git rev-parse HEAD > .git-hash 2>/dev/null || true
+	@printf '%s\n' '$(shell git rev-parse HEAD 2>/dev/null || echo unknown)' > .git-hash
 	@echo "==> Uploading project to $(REMOTE_HOST):$(REMOTE_DIR)..."
 	$(RSYNC) \
 		--exclude='.venv/' \
@@ -405,10 +463,7 @@ else
 		--exclude='.DS_Store' \
 		--exclude='.claude/settings.local.json' \
 		--exclude='data/' \
-		--exclude='models/' \
 		--exclude='artifacts/variants/' \
-		--exclude='artifacts/tuned_params.json' \
-		--exclude='artifacts/tuned_params.original.json' \
 		--exclude='artifacts/ipip_bffm_norms.meta.json' \
 		--exclude='artifacts/research_summary.json' \
 		--exclude='output/' \
@@ -616,3 +671,120 @@ remote-all-2:
 	@echo "==> Tearing down infrastructure..."
 	$(MAKE) infra-down
 	@echo "==> Done. Infrastructure destroyed."
+
+# ---------------------------------------------------------------------------
+# Two-phase GPU/CPU workflow
+# ---------------------------------------------------------------------------
+
+remote-1-gpu:
+	@echo "==> Phase 1 (GPU): Pushing source + artifacts to GPU instance..."
+	@printf '%s\n' '$(shell git rev-parse HEAD 2>/dev/null || echo unknown)' > .git-hash
+	$(GPU_RSYNC) \
+		--exclude='.venv/' \
+		--exclude='__pycache__/' \
+		--exclude='node_modules/' \
+		--exclude='.git/' \
+		--exclude='*.pyc' \
+		--exclude='.terraform/' \
+		--exclude='*.tfstate' \
+		--exclude='*.tfstate.backup' \
+		--exclude='.terraform.lock.hcl' \
+		--exclude='terraform.tfvars' \
+		--exclude='.env' \
+		--exclude='.DS_Store' \
+		--exclude='.claude/settings.local.json' \
+		--exclude='data/' \
+		--exclude='artifacts/variants/' \
+		--exclude='artifacts/ipip_bffm_norms.meta.json' \
+		--exclude='artifacts/research_summary.json' \
+		--exclude='output/' \
+		--exclude='figures/' \
+		--exclude='notes/' \
+		--exclude='web/' \
+		--exclude='.pytest_cache/' \
+		./ $(GPU_USER)@$(GPU_HOST):$(GPU_DIR)/
+	@echo "==> Setting up venv on GPU instance..."
+	$(GPU_SSH) -t 'cd $(GPU_DIR) && make setup-python'
+	@echo "==> Starting pipeline (download through train, GPU) in tmux..."
+	$(GPU_SSH) 'rm -f $(GPU_DIR)/.pipeline-exit-code && \
+		tmux kill-session -t pipeline 2>/dev/null || true && \
+		tmux new-session -d -s pipeline \
+			"cd $(GPU_DIR) && \
+			 GPU=1 \
+			 PARALLEL_TRIALS=1 \
+			 PARALLEL_DOMAINS=1 \
+			 TRAIN_PARALLEL=1 \
+			 bash scripts/run-pipeline.sh --end-stage train --gpu; echo \$$? > .pipeline-exit-code"'
+	@echo "==> Attaching to live pipeline output (Ctrl+B D to detach)..."
+	@sleep 2
+	-$(GPU_SSH) -t 'tmux attach -t pipeline'
+	@echo "==> Polling for completion every 60s (timeout: $(REMOTE_POLL_MAX) min)..."
+	@POLL_N=0; \
+	while true; do \
+		sleep 60; \
+		POLL_N=$$((POLL_N + 1)); \
+		if $(GPU_SSH) 'test -f $(GPU_DIR)/.pipeline-exit-code' 2>/dev/null; then \
+			break; \
+		fi; \
+		if [ "$$POLL_N" -ge "$(REMOTE_POLL_MAX)" ]; then \
+			echo "==> ERROR: Polling timed out after $(REMOTE_POLL_MAX) minutes."; \
+			echo "    Instance still running — check: make infra-gpu-ssh"; \
+			exit 1; \
+		fi; \
+	done
+	@EXIT_CODE=$$($(GPU_SSH) 'cat $(GPU_DIR)/.pipeline-exit-code'); \
+	if [ "$$EXIT_CODE" != "0" ]; then \
+		echo "==> ERROR: GPU pipeline failed (exit code $$EXIT_CODE)."; \
+		echo "    Instance left running for debugging: make infra-gpu-ssh"; \
+		exit 1; \
+	fi
+	@echo "==> GPU pipeline succeeded. Pulling models and artifacts..."
+	$(GPU_RSYNC) $(GPU_USER)@$(GPU_HOST):$(GPU_DIR)/models/ ./models/
+	$(GPU_RSYNC) $(GPU_USER)@$(GPU_HOST):$(GPU_DIR)/artifacts/tuned_params.json ./artifacts/ 2>/dev/null || true
+	$(GPU_RSYNC) $(GPU_USER)@$(GPU_HOST):$(GPU_DIR)/artifacts/tuned_params.original.json ./artifacts/ 2>/dev/null || true
+	$(GPU_RSYNC) $(GPU_USER)@$(GPU_HOST):$(GPU_DIR)/artifacts/ipip_bffm_norms.json ./artifacts/ 2>/dev/null || true
+	$(GPU_RSYNC) $(GPU_USER)@$(GPU_HOST):$(GPU_DIR)/pipeline.log ./pipeline-gpu.log 2>/dev/null || true
+	$(GPU_RSYNC) $(GPU_USER)@$(GPU_HOST):$(GPU_DIR)/pipeline-timing.log ./pipeline-timing-gpu.log 2>/dev/null || true
+	@echo "==> Tearing down GPU infrastructure..."
+	$(MAKE) infra-gpu-down
+	@echo "==> Phase 1 (GPU) complete. Models and artifacts pulled locally."
+	@echo "    Continue with: make infra-cpu-up && make remote-2-cpu"
+
+remote-2-cpu: remote-push remote-setup
+	@echo "==> Phase 2 (CPU): Starting eval + export pipeline..."
+	$(SSH) 'rm -f $(REMOTE_DIR)/.pipeline-exit-code && \
+		tmux kill-session -t pipeline 2>/dev/null || true && \
+		tmux new-session -d -s pipeline \
+			"cd $(REMOTE_DIR) && \
+			 . .venv/bin/activate && \
+			 make download load norms norms-check prepare correlations && \
+			 make research-eval export-all notes figures; \
+			 echo \$$? > .pipeline-exit-code"'
+	@echo "==> Attaching to live pipeline output (Ctrl+B D to detach)..."
+	@sleep 2
+	-$(SSH) -t 'tmux attach -t pipeline'
+	@echo "==> Polling for completion every 60s (timeout: $(REMOTE_POLL_MAX) min)..."
+	@POLL_N=0; \
+	while true; do \
+		sleep 60; \
+		POLL_N=$$((POLL_N + 1)); \
+		if $(SSH) 'test -f $(REMOTE_DIR)/.pipeline-exit-code' 2>/dev/null; then \
+			break; \
+		fi; \
+		if [ "$$POLL_N" -ge "$(REMOTE_POLL_MAX)" ]; then \
+			echo "==> ERROR: Polling timed out after $(REMOTE_POLL_MAX) minutes."; \
+			echo "    Instance still running — check: make infra-cpu-ssh"; \
+			exit 1; \
+		fi; \
+	done
+	@EXIT_CODE=$$($(SSH) 'cat $(REMOTE_DIR)/.pipeline-exit-code'); \
+	if [ "$$EXIT_CODE" != "0" ]; then \
+		echo "==> ERROR: CPU pipeline failed (exit code $$EXIT_CODE)."; \
+		echo "    Instance left running for debugging: make infra-cpu-ssh"; \
+		exit 1; \
+	fi
+	@echo "==> CPU pipeline succeeded. Pulling results..."
+	$(MAKE) remote-pull
+	@echo "==> Tearing down CPU infrastructure..."
+	$(MAKE) infra-cpu-down
+	@echo "==> Phase 2 (CPU) complete. All results pulled locally."
