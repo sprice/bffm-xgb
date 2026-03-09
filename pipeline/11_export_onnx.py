@@ -1253,7 +1253,7 @@ def generate_repo_readme(variants: list[tuple[str, Path]]) -> str:
         "median predictions with uncertainty bounds that are explicitly calibrated "
         "for full_50 and sparse_20_balanced runtime regimes",
         "- **Norms-based percentiles** -- raw predictions are converted to population "
-        "percentiles using z-score norms derived from 874k respondents",
+        "percentiles using z-score norms derived from ~603k respondents",
         "",
         "## Variants",
         "",

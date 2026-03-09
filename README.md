@@ -8,30 +8,30 @@ The exported models predict Big Five personality scores from partial item respon
 
 ### Comparison with the Mini-IPIP
 
-Both approaches use 20 items (4 per domain) to recover the full 50-item IPIP-BFFM scale scores. The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) (Donnellan et al., 2006) uses expert-curated items scored by simple averaging. BFFM-XGB-20 uses correlation-ranked items scored by XGBoost cross-domain ML. All *r* values below are Pearson correlations with the full 50-item scale on a held-out test set (*N* = TBD).
+Both approaches use 20 items (4 per domain) to recover the full 50-item IPIP-BFFM scale scores. The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) (Donnellan et al., 2006) uses expert-curated items scored by simple averaging. BFFM-XGB-20 uses correlation-ranked items scored by XGBoost cross-domain ML. All *r* values below are Pearson correlations with the full 50-item scale on a held-out test set (*N* = 90,499).
 
-|                              | Mini-IPIP                   | BFFM-XGB-20                       |
-|------------------------------|-----------------------------|------------------------------------|
-| **Items**                    | 20 (4 per domain)           | 20 (4 per domain)                  |
-| **Item selection**           | Expert-curated brevity      | Top-4 by within-domain *r*         |
-| **Scoring**                  | Simple scale averaging      | XGBoost quantile regression        |
-| **Overall *r***              | .906                        | **.926**                           |
-| **MAE (percentile pts)**     | 9.2                         | **8.2**                            |
-| **90% prediction intervals** | —                           | ✓ (90.1% coverage)                |
+|                              | Mini-IPIP              | BFFM-XGB-20                 |
+| ---------------------------- | ---------------------- | --------------------------- |
+| **Items**                    | 20 (4 per domain)      | 20 (4 per domain)           |
+| **Item selection**           | Expert-curated brevity | Top-4 by within-domain *r*  |
+| **Scoring**                  | Simple scale averaging | XGBoost quantile regression |
+| **Overall *r***              | .906                   | **.927**                    |
+| **MAE (percentile pts)**     | 9.2                    | **8.2**                     |
+| **90% prediction intervals** | —                      | ✓ (90.2% coverage)          |
 
 **Per-domain accuracy at *K* = 20:**
 
-| Domain              | Mini-IPIP *α* | Mini-IPIP *r* | BFFM-XGB-20 *r* |
-|---------------------|---------------|---------------|------------------|
-| Extraversion        | .77           | .937          | **.946**         |
-| Agreeableness       | .70           | .910          | **.918**         |
-| Conscientiousness   | .69           | .910          | **.919**         |
-| Emotional Stability | .68           | .925          | **.936**         |
-| Intellect/Openness  | .65           | .844          | **.910**         |
+| Domain                | Mini-IPIP *α* | Mini-IPIP *r* | BFFM-XGB-20 *r* |
+| --------------------- | ------------- | ------------- | --------------- |
+| Extraversion          | .77           | .939          | **.947**        |
+| Agreeableness         | .70           | .911          | **.920**        |
+| Conscientiousness     | .69           | .909          | **.919**        |
+| Emotional Stability   | .68           | .929          | **.937**        |
+| Intellect/Imagination | .65           | .842          | **.910**        |
 
-Mini-IPIP *α* from [Donnellan et al. (2006)](https://doi.org/10.1037/1040-3590.18.2.192). Mini-IPIP *r* uses ML scoring on Mini-IPIP items (a drop-in upgrade; simple averaging yields overall *r* = .906). The largest gain is on Intellect/Openness (+.066), where the Mini-IPIP items were selected for brevity rather than discrimination.
+Mini-IPIP *α* from [Donnellan et al. (2006)](https://doi.org/10.1037/1040-3590.18.2.192). Mini-IPIP *r* uses simple averaging on the standard Mini-IPIP item set (a drop-in ML scoring upgrade yields overall *r* = .917). The largest gain is on Intellect/Imagination (+.068), where the Mini-IPIP items were selected for brevity rather than discrimination.
 
-At 15 items, BFFM-XGB already matches the Mini-IPIP's 20-item accuracy (*r* = .907 vs .906).
+At 15 items, BFFM-XGB already matches the Mini-IPIP's 20-item accuracy (*r* = .908 vs .906).
 
 ## Quick Start: Inference Only
 
@@ -312,6 +312,7 @@ bffm-xgb/
 ├── scripts/            Research summary and notes generation scripts
 ├── tests/              Unit tests for lib/ modules (pytest)
 ├── typescript/         TypeScript inference package with tests (vitest)
+├── web/                React + Hono web assessment app (deployed to HuggingFace Spaces)
 ├── .env.example        Template for HF_TOKEN (required for `make upload-hf`)
 ├── .gitignore
 ├── LICENSE.md          MIT License

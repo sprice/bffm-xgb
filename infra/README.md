@@ -4,10 +4,10 @@ Two Terraform configurations for running the IPIP-BFFM XGBoost pipeline on AWS.
 Both use spot by default, and both can be switched to on-demand with
 `TF_VAR_use_spot=false`.
 
-| Directory | Instance | AMI | User | Purpose |
-|-----------|----------|-----|------|---------|
-| `cpu/` | `c7a.24xlarge` (default) | Amazon Linux 2023 | `ec2-user` | Full pipeline or eval-only |
-| `gpu/` | `g5.xlarge` | AWS Deep Learning (Ubuntu) | `ubuntu` | Tune + train (GPU-accelerated) |
+| Directory | Instance                 | AMI                        | User       | Purpose                        |
+| --------- | ------------------------ | -------------------------- | ---------- | ------------------------------ |
+| `cpu/`    | `c7a.24xlarge` (default) | Amazon Linux 2023          | `ec2-user` | Full pipeline or eval-only     |
+| `gpu/`    | `g5.xlarge`              | AWS Deep Learning (Ubuntu) | `ubuntu`   | Tune + train (GPU-accelerated) |
 
 ## Prerequisites
 

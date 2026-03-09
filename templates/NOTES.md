@@ -120,7 +120,7 @@ curves tables below have the exact values and confidence intervals.
 
 The mechanism is domain starvation. Greedy utility ranking concentrates
 items heavily on Extraversion and Emotional Stability while starving
-Conscientiousness and Intellect/Openness entirely (the domain starvation
+Conscientiousness and Intellect/Imagination entirely (the domain starvation
 table below shows the exact allocation). Extraversion items dominate because
 they correlate moderately with other domains, which inflates their composite
 utility scores; but those cross-domain correlations are too weak to actually
@@ -344,7 +344,7 @@ in general.
 <!-- END:per_domain_k20 -->
 
 Domain-balanced achieves the most uniform per-domain performance. Mini-IPIP shows
-a clear Intellect/Openness gap relative to domain-balanced (visible in the table
+a clear Intellect/Imagination gap relative to domain-balanced (visible in the table
 above) because its Intellect items were selected for brevity, not discrimination.
 
 ### Domain Starvation (Greedy Selection at K=20)
@@ -447,7 +447,7 @@ The key differences from the domain-balanced set: Mini-IPIP includes weaker
 discriminators in Conscientiousness and Emotional Stability (csn7, est2) where
 domain-balanced selects higher-correlation items (csn6, est1). Mini-IPIP's
 Intellect items (opn3, opn2, opn4, opn6) all rank low by cross-domain info
-score; this reflects the psychometric independence of Intellect/Openness from
+score; this reflects the psychometric independence of Intellect/Imagination from
 the other four factors. The greedy ranking table above provides the full
 item-level detail.
 

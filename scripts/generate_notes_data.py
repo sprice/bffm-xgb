@@ -38,7 +38,7 @@ DOMAIN_LABELS = {
     "agr": "Agreeableness",
     "csn": "Conscientiousness",
     "est": "Emotional Stability",
-    "opn": "Intellect/Openness",
+    "opn": "Intellect/Imagination",
 }
 DOMAIN_KEYS_BASELINE = {
     "ext": "Extraversion",
@@ -152,13 +152,18 @@ def _resolve_calibration_policy_fields(policy: dict) -> tuple[str, str, str]:
 
 
 def load_hyperparameters_for_notes() -> dict:
-    """Load hyperparameters from canonical research summary notes inputs."""
+    """Load the hyperparameters that were actually used for training.
+
+    Reads from training_report.config.hyperparameters (the values used to
+    produce the trained models and all evaluation metrics), NOT from
+    tuned_params (which may reflect a later re-tuning run).
+    """
     notes_inputs = load_reference_notes_inputs()
-    tuned = _notes_input_dict(notes_inputs, "tuned_params")
-    hp = tuned.get("hyperparameters")
+    training_report = _notes_input_dict(notes_inputs, "training_report")
+    hp = _get_nested(training_report, ["config", "hyperparameters"])
     if isinstance(hp, dict) and hp:
         return hp
-    raise KeyError("research_summary reference input 'tuned_params.hyperparameters' missing.")
+    raise KeyError("research_summary reference input 'training_report.config.hyperparameters' missing.")
 
 
 def fmt_r(val: float, places: int = 4) -> str:
@@ -582,7 +587,7 @@ def gen_mini_ipip() -> str:
         "Agreeableness": "Agreeableness",
         "Conscientiousness": "Conscientiousness",
         "EmotionalStability": "Emotional Stability",
-        "Intellect": "Intellect/Openness",
+        "Intellect": "Intellect/Imagination",
     }
     rows = [["Domain", "Items", "Reported Alpha"]]
     for domain_name, item_ids in domains.items():

@@ -120,7 +120,7 @@ curves tables below have the exact values and confidence intervals.
 
 The mechanism is domain starvation. Greedy utility ranking concentrates
 items heavily on Extraversion and Emotional Stability while starving
-Conscientiousness and Intellect/Openness entirely (the domain starvation
+Conscientiousness and Intellect/Imagination entirely (the domain starvation
 table below shows the exact allocation). Extraversion items dominate because
 they correlate moderately with other domains, which inflates their composite
 utility scores; but those cross-domain correlations are too weak to actually
@@ -237,27 +237,27 @@ Full-50 and sparse-20 validation tables for each trained variant.
 **Full-50 validation:**
 
 
-| Domain              | r          | MAE      | RMSE     | Within-5   | 90% Coverage | Raw Crossing Rate |
-|---------------------|------------|----------|----------|------------|--------------|-------------------|
-| Extraversion        | 0.9998     | 0.40     | 0.58     | 100.0%     | 92.8%        | 28.8%             |
-| Agreeableness       | 0.9996     | 0.60     | 0.85     | 100.0%     | 93.0%        | 21.1%             |
-| Conscientiousness   | 0.9995     | 0.67     | 0.92     | 100.0%     | 94.4%        | 21.7%             |
-| Emotional Stability | 0.9997     | 0.54     | 0.76     | 100.0%     | 92.7%        | 26.0%             |
-| Intellect/Openness  | 0.9992     | 0.88     | 1.22     | 99.9%      | 93.8%        | 19.7%             |
-| **Overall**         | **0.9995** | **0.62** | **0.89** | **100.0%** | ---          | ---               |
+| Domain                | r          | MAE      | RMSE     | Within-5   | 90% Coverage | Raw Crossing Rate |
+|-----------------------|------------|----------|----------|------------|--------------|-------------------|
+| Extraversion          | 0.9998     | 0.40     | 0.58     | 100.0%     | 92.8%        | 28.8%             |
+| Agreeableness         | 0.9996     | 0.60     | 0.85     | 100.0%     | 93.0%        | 21.1%             |
+| Conscientiousness     | 0.9995     | 0.67     | 0.92     | 100.0%     | 94.4%        | 21.7%             |
+| Emotional Stability   | 0.9997     | 0.54     | 0.76     | 100.0%     | 92.7%        | 26.0%             |
+| Intellect/Imagination | 0.9992     | 0.88     | 1.22     | 99.9%      | 93.8%        | 19.7%             |
+| **Overall**           | **0.9995** | **0.62** | **0.89** | **100.0%** | ---          | ---               |
 
 
 **Sparse-20 validation:**
 
 
-| Domain              | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
-|---------------------|------------|----------|-----------|-----------|--------------|
-| Extraversion        | 0.9347     | 7.77     | 10.73     | 46.5%     | 91.0%        |
-| Agreeableness       | 0.9071     | 8.94     | 12.25     | 41.3%     | 90.0%        |
-| Conscientiousness   | 0.8927     | 9.90     | 13.46     | 38.1%     | 89.8%        |
-| Emotional Stability | 0.9229     | 8.41     | 11.59     | 44.0%     | 90.2%        |
-| Intellect/Openness  | 0.8879     | 9.98     | 13.69     | 38.2%     | 89.9%        |
-| **Overall**         | **0.9095** | **9.00** | **12.40** | **41.6%** | **90.2%**    |
+| Domain                | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
+|-----------------------|------------|----------|-----------|-----------|--------------|
+| Extraversion          | 0.9347     | 7.77     | 10.73     | 46.5%     | 91.0%        |
+| Agreeableness         | 0.9071     | 8.94     | 12.25     | 41.3%     | 90.0%        |
+| Conscientiousness     | 0.8927     | 9.90     | 13.46     | 38.1%     | 89.8%        |
+| Emotional Stability   | 0.9229     | 8.41     | 11.59     | 44.0%     | 90.2%        |
+| Intellect/Imagination | 0.8879     | 9.98     | 13.69     | 38.2%     | 89.9%        |
+| **Overall**           | **0.9095** | **9.00** | **12.40** | **41.6%** | **90.2%**    |
 
 #### Ablation: No Sparsity
 
@@ -265,27 +265,27 @@ Full-50 and sparse-20 validation tables for each trained variant.
 **Full-50 validation:**
 
 
-| Domain              | r          | MAE      | RMSE     | Within-5   | 90% Coverage | Raw Crossing Rate |
-|---------------------|------------|----------|----------|------------|--------------|-------------------|
-| Extraversion        | 1.0000     | 0.14     | 0.20     | 100.0%     | 95.1%        | 38.8%             |
-| Agreeableness       | 1.0000     | 0.17     | 0.25     | 100.0%     | 94.9%        | 36.8%             |
-| Conscientiousness   | 1.0000     | 0.18     | 0.26     | 100.0%     | 94.9%        | 42.4%             |
-| Emotional Stability | 1.0000     | 0.16     | 0.23     | 100.0%     | 94.8%        | 36.4%             |
-| Intellect/Openness  | 1.0000     | 0.17     | 0.26     | 100.0%     | 94.8%        | 38.2%             |
-| **Overall**         | **1.0000** | **0.16** | **0.24** | **100.0%** | ---          | ---               |
+| Domain                | r          | MAE      | RMSE     | Within-5   | 90% Coverage | Raw Crossing Rate |
+|-----------------------|------------|----------|----------|------------|--------------|-------------------|
+| Extraversion          | 1.0000     | 0.14     | 0.20     | 100.0%     | 95.1%        | 38.8%             |
+| Agreeableness         | 1.0000     | 0.17     | 0.25     | 100.0%     | 94.9%        | 36.8%             |
+| Conscientiousness     | 1.0000     | 0.18     | 0.26     | 100.0%     | 94.9%        | 42.4%             |
+| Emotional Stability   | 1.0000     | 0.16     | 0.23     | 100.0%     | 94.8%        | 36.4%             |
+| Intellect/Imagination | 1.0000     | 0.17     | 0.26     | 100.0%     | 94.8%        | 38.2%             |
+| **Overall**           | **1.0000** | **0.16** | **0.24** | **100.0%** | ---          | ---               |
 
 
 **Sparse-20 validation:**
 
 
-| Domain              | r          | MAE       | RMSE      | Within-5  | 90% Coverage |
-|---------------------|------------|-----------|-----------|-----------|--------------|
-| Extraversion        | 0.8692     | 39.83     | 46.38     | 9.1%      | 1.0%         |
-| Agreeableness       | 0.8360     | 30.56     | 36.41     | 11.9%     | 3.9%         |
-| Conscientiousness   | 0.7974     | 38.82     | 45.22     | 8.5%      | 1.5%         |
-| Emotional Stability | 0.8485     | 41.05     | 47.65     | 8.4%      | 1.0%         |
-| Intellect/Openness  | 0.8076     | 31.42     | 37.63     | 13.6%     | 5.0%         |
-| **Overall**         | **0.7417** | **36.34** | **42.91** | **10.3%** | **2.5%**     |
+| Domain                | r          | MAE       | RMSE      | Within-5  | 90% Coverage |
+|-----------------------|------------|-----------|-----------|-----------|--------------|
+| Extraversion          | 0.8692     | 39.83     | 46.38     | 9.1%      | 1.0%         |
+| Agreeableness         | 0.8360     | 30.56     | 36.41     | 11.9%     | 3.9%         |
+| Conscientiousness     | 0.7974     | 38.82     | 45.22     | 8.5%      | 1.5%         |
+| Emotional Stability   | 0.8485     | 41.05     | 47.65     | 8.4%      | 1.0%         |
+| Intellect/Imagination | 0.8076     | 31.42     | 37.63     | 13.6%     | 5.0%         |
+| **Overall**           | **0.7417** | **36.34** | **42.91** | **10.3%** | **2.5%**     |
 
 #### Ablation: Focused Only
 
@@ -293,27 +293,27 @@ Full-50 and sparse-20 validation tables for each trained variant.
 **Full-50 validation:**
 
 
-| Domain              | r          | MAE      | RMSE     | Within-5   | 90% Coverage | Raw Crossing Rate |
-|---------------------|------------|----------|----------|------------|--------------|-------------------|
-| Extraversion        | 0.9998     | 0.41     | 0.59     | 100.0%     | 92.6%        | 28.8%             |
-| Agreeableness       | 0.9996     | 0.61     | 0.86     | 100.0%     | 93.0%        | 20.8%             |
-| Conscientiousness   | 0.9995     | 0.68     | 0.94     | 100.0%     | 94.3%        | 19.9%             |
-| Emotional Stability | 0.9997     | 0.55     | 0.77     | 100.0%     | 92.4%        | 26.0%             |
-| Intellect/Openness  | 0.9991     | 0.90     | 1.24     | 99.8%      | 93.5%        | 19.1%             |
-| **Overall**         | **0.9995** | **0.63** | **0.91** | **100.0%** | ---          | ---               |
+| Domain                | r          | MAE      | RMSE     | Within-5   | 90% Coverage | Raw Crossing Rate |
+|-----------------------|------------|----------|----------|------------|--------------|-------------------|
+| Extraversion          | 0.9998     | 0.41     | 0.59     | 100.0%     | 92.6%        | 28.8%             |
+| Agreeableness         | 0.9996     | 0.61     | 0.86     | 100.0%     | 93.0%        | 20.8%             |
+| Conscientiousness     | 0.9995     | 0.68     | 0.94     | 100.0%     | 94.3%        | 19.9%             |
+| Emotional Stability   | 0.9997     | 0.55     | 0.77     | 100.0%     | 92.4%        | 26.0%             |
+| Intellect/Imagination | 0.9991     | 0.90     | 1.24     | 99.8%      | 93.5%        | 19.1%             |
+| **Overall**           | **0.9995** | **0.63** | **0.91** | **100.0%** | ---          | ---               |
 
 
 **Sparse-20 validation:**
 
 
-| Domain              | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
-|---------------------|------------|----------|-----------|-----------|--------------|
-| Extraversion        | 0.9348     | 7.76     | 10.71     | 46.6%     | 91.0%        |
-| Agreeableness       | 0.9071     | 8.96     | 12.30     | 41.5%     | 90.5%        |
-| Conscientiousness   | 0.8927     | 9.91     | 13.50     | 38.3%     | 90.1%        |
-| Emotional Stability | 0.9229     | 8.42     | 11.60     | 43.9%     | 90.4%        |
-| Intellect/Openness  | 0.8878     | 10.01    | 13.76     | 38.5%     | 90.2%        |
-| **Overall**         | **0.9094** | **9.01** | **12.43** | **41.8%** | **90.4%**    |
+| Domain                | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
+|-----------------------|------------|----------|-----------|-----------|--------------|
+| Extraversion          | 0.9348     | 7.76     | 10.71     | 46.6%     | 91.0%        |
+| Agreeableness         | 0.9071     | 8.96     | 12.30     | 41.5%     | 90.5%        |
+| Conscientiousness     | 0.8927     | 9.91     | 13.50     | 38.3%     | 90.1%        |
+| Emotional Stability   | 0.9229     | 8.42     | 11.60     | 43.9%     | 90.4%        |
+| Intellect/Imagination | 0.8878     | 10.01    | 13.76     | 38.5%     | 90.2%        |
+| **Overall**           | **0.9094** | **9.01** | **12.43** | **41.8%** | **90.4%**    |
 
 #### Ablation: Stratified Split
 
@@ -321,27 +321,27 @@ Full-50 and sparse-20 validation tables for each trained variant.
 **Full-50 validation:**
 
 
-| Domain              | r          | MAE      | RMSE     | Within-5  | 90% Coverage | Raw Crossing Rate |
-|---------------------|------------|----------|----------|-----------|--------------|-------------------|
-| Extraversion        | 0.9998     | 0.42     | 0.61     | 100.0%    | 92.2%        | 29.3%             |
-| Agreeableness       | 0.9995     | 0.64     | 0.90     | 100.0%    | 93.1%        | 19.8%             |
-| Conscientiousness   | 0.9995     | 0.69     | 0.94     | 100.0%    | 94.1%        | 19.6%             |
-| Emotional Stability | 0.9996     | 0.57     | 0.80     | 100.0%    | 92.4%        | 26.2%             |
-| Intellect/Openness  | 0.9991     | 0.90     | 1.24     | 99.8%     | 93.7%        | 18.7%             |
-| **Overall**         | **0.9995** | **0.64** | **0.92** | **99.9%** | ---          | ---               |
+| Domain                | r          | MAE      | RMSE     | Within-5  | 90% Coverage | Raw Crossing Rate |
+|-----------------------|------------|----------|----------|-----------|--------------|-------------------|
+| Extraversion          | 0.9998     | 0.42     | 0.61     | 100.0%    | 92.2%        | 29.3%             |
+| Agreeableness         | 0.9995     | 0.64     | 0.90     | 100.0%    | 93.1%        | 19.8%             |
+| Conscientiousness     | 0.9995     | 0.69     | 0.94     | 100.0%    | 94.1%        | 19.6%             |
+| Emotional Stability   | 0.9996     | 0.57     | 0.80     | 100.0%    | 92.4%        | 26.2%             |
+| Intellect/Imagination | 0.9991     | 0.90     | 1.24     | 99.8%     | 93.7%        | 18.7%             |
+| **Overall**           | **0.9995** | **0.64** | **0.92** | **99.9%** | ---          | ---               |
 
 
 **Sparse-20 validation:**
 
 
-| Domain              | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
-|---------------------|------------|----------|-----------|-----------|--------------|
-| Extraversion        | 0.9342     | 7.80     | 10.76     | 46.5%     | 90.9%        |
-| Agreeableness       | 0.9086     | 8.91     | 12.22     | 41.6%     | 90.5%        |
-| Conscientiousness   | 0.8932     | 9.90     | 13.49     | 38.2%     | 90.4%        |
-| Emotional Stability | 0.9231     | 8.39     | 11.59     | 44.1%     | 90.7%        |
-| Intellect/Openness  | 0.8887     | 10.02    | 13.71     | 38.3%     | 90.2%        |
-| **Overall**         | **0.9099** | **9.00** | **12.40** | **41.7%** | **90.5%**    |
+| Domain                | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
+|-----------------------|------------|----------|-----------|-----------|--------------|
+| Extraversion          | 0.9342     | 7.80     | 10.76     | 46.5%     | 90.9%        |
+| Agreeableness         | 0.9086     | 8.91     | 12.22     | 41.6%     | 90.5%        |
+| Conscientiousness     | 0.8932     | 9.90     | 13.49     | 38.2%     | 90.4%        |
+| Emotional Stability   | 0.9231     | 8.39     | 11.59     | 44.1%     | 90.7%        |
+| Intellect/Imagination | 0.8887     | 10.02    | 13.71     | 38.3%     | 90.2%        |
+| **Overall**           | **0.9099** | **9.00** | **12.40** | **41.7%** | **90.5%**    |
 <!-- END:ablation_validation_details -->
 
 ### Cross-Variant Baseline Curves (All Runs)
@@ -416,132 +416,132 @@ Per-domain K=20 breakdown (domain-balanced, Mini-IPIP, first-N) for each variant
 
 **Domain-Balanced (4 items per domain):**
 
-| Domain              | r      | Items | CI Lower | CI Upper |
-|---------------------|--------|-------|----------|----------|
-| Extraversion        | 0.9465 | 4     | 0.9457   | 0.9473   |
-| Agreeableness       | 0.9196 | 4     | 0.9184   | 0.9207   |
-| Conscientiousness   | 0.9192 | 4     | 0.9181   | 0.9203   |
-| Emotional Stability | 0.9366 | 4     | 0.9357   | 0.9375   |
-| Intellect/Openness  | 0.9100 | 4     | 0.9087   | 0.9114   |
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9465 | 4     | 0.9457   | 0.9473   |
+| Agreeableness         | 0.9196 | 4     | 0.9184   | 0.9207   |
+| Conscientiousness     | 0.9192 | 4     | 0.9181   | 0.9203   |
+| Emotional Stability   | 0.9366 | 4     | 0.9357   | 0.9375   |
+| Intellect/Imagination | 0.9100 | 4     | 0.9087   | 0.9114   |
 
 **Mini-IPIP (4 items per domain):**
 
-| Domain              | r      | Items | CI Lower | CI Upper |
-|---------------------|--------|-------|----------|----------|
-| Extraversion        | 0.9385 | 4     | ---      | ---      |
-| Agreeableness       | 0.9113 | 4     | ---      | ---      |
-| Conscientiousness   | 0.9086 | 4     | ---      | ---      |
-| Emotional Stability | 0.9292 | 4     | ---      | ---      |
-| Intellect/Openness  | 0.8419 | 4     | ---      | ---      |
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9385 | 4     | ---      | ---      |
+| Agreeableness         | 0.9113 | 4     | ---      | ---      |
+| Conscientiousness     | 0.9086 | 4     | ---      | ---      |
+| Emotional Stability   | 0.9292 | 4     | ---      | ---      |
+| Intellect/Imagination | 0.8419 | 4     | ---      | ---      |
 
 **First-N (4 items per domain):**
 
-| Domain              | r      | Items | CI Lower | CI Upper |
-|---------------------|--------|-------|----------|----------|
-| Extraversion        | 0.9392 | 4     | 0.9383   | 0.9401   |
-| Agreeableness       | 0.9264 | 4     | 0.9253   | 0.9275   |
-| Conscientiousness   | 0.8943 | 4     | 0.8929   | 0.8958   |
-| Emotional Stability | 0.8768 | 4     | 0.8752   | 0.8786   |
-| Intellect/Openness  | 0.9115 | 4     | 0.9102   | 0.9126   |
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9392 | 4     | 0.9383   | 0.9401   |
+| Agreeableness         | 0.9264 | 4     | 0.9253   | 0.9275   |
+| Conscientiousness     | 0.8943 | 4     | 0.8929   | 0.8958   |
+| Emotional Stability   | 0.8768 | 4     | 0.8752   | 0.8786   |
+| Intellect/Imagination | 0.9115 | 4     | 0.9102   | 0.9126   |
 
 #### Ablation: No Sparsity
 
 
 **Domain-Balanced (4 items per domain):**
 
-| Domain              | r      | Items | CI Lower | CI Upper |
-|---------------------|--------|-------|----------|----------|
-| Extraversion        | 0.8921 | 4     | 0.8911   | 0.8932   |
-| Agreeableness       | 0.8462 | 4     | 0.8448   | 0.8477   |
-| Conscientiousness   | 0.8614 | 4     | 0.8601   | 0.8627   |
-| Emotional Stability | 0.8616 | 4     | 0.8604   | 0.8628   |
-| Intellect/Openness  | 0.8444 | 4     | 0.8427   | 0.8460   |
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.8921 | 4     | 0.8911   | 0.8932   |
+| Agreeableness         | 0.8462 | 4     | 0.8448   | 0.8477   |
+| Conscientiousness     | 0.8614 | 4     | 0.8601   | 0.8627   |
+| Emotional Stability   | 0.8616 | 4     | 0.8604   | 0.8628   |
+| Intellect/Imagination | 0.8444 | 4     | 0.8427   | 0.8460   |
 
 **Mini-IPIP (4 items per domain):**
 
-| Domain              | r      | Items | CI Lower | CI Upper |
-|---------------------|--------|-------|----------|----------|
-| Extraversion        | 0.9385 | 4     | ---      | ---      |
-| Agreeableness       | 0.9113 | 4     | ---      | ---      |
-| Conscientiousness   | 0.9086 | 4     | ---      | ---      |
-| Emotional Stability | 0.9292 | 4     | ---      | ---      |
-| Intellect/Openness  | 0.8419 | 4     | ---      | ---      |
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9385 | 4     | ---      | ---      |
+| Agreeableness         | 0.9113 | 4     | ---      | ---      |
+| Conscientiousness     | 0.9086 | 4     | ---      | ---      |
+| Emotional Stability   | 0.9292 | 4     | ---      | ---      |
+| Intellect/Imagination | 0.8419 | 4     | ---      | ---      |
 
 **First-N (4 items per domain):**
 
-| Domain              | r      | Items | CI Lower | CI Upper |
-|---------------------|--------|-------|----------|----------|
-| Extraversion        | 0.8867 | 4     | 0.8857   | 0.8878   |
-| Agreeableness       | 0.8406 | 4     | 0.8391   | 0.8423   |
-| Conscientiousness   | 0.8168 | 4     | 0.8150   | 0.8186   |
-| Emotional Stability | 0.8190 | 4     | 0.8170   | 0.8211   |
-| Intellect/Openness  | 0.8331 | 4     | 0.8314   | 0.8347   |
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.8867 | 4     | 0.8857   | 0.8878   |
+| Agreeableness         | 0.8406 | 4     | 0.8391   | 0.8423   |
+| Conscientiousness     | 0.8168 | 4     | 0.8150   | 0.8186   |
+| Emotional Stability   | 0.8190 | 4     | 0.8170   | 0.8211   |
+| Intellect/Imagination | 0.8331 | 4     | 0.8314   | 0.8347   |
 
 #### Ablation: Focused Only
 
 
 **Domain-Balanced (4 items per domain):**
 
-| Domain              | r      | Items | CI Lower | CI Upper |
-|---------------------|--------|-------|----------|----------|
-| Extraversion        | 0.9464 | 4     | 0.9456   | 0.9472   |
-| Agreeableness       | 0.9196 | 4     | 0.9185   | 0.9208   |
-| Conscientiousness   | 0.9188 | 4     | 0.9177   | 0.9199   |
-| Emotional Stability | 0.9363 | 4     | 0.9354   | 0.9372   |
-| Intellect/Openness  | 0.9101 | 4     | 0.9088   | 0.9115   |
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9464 | 4     | 0.9456   | 0.9472   |
+| Agreeableness         | 0.9196 | 4     | 0.9185   | 0.9208   |
+| Conscientiousness     | 0.9188 | 4     | 0.9177   | 0.9199   |
+| Emotional Stability   | 0.9363 | 4     | 0.9354   | 0.9372   |
+| Intellect/Imagination | 0.9101 | 4     | 0.9088   | 0.9115   |
 
 **Mini-IPIP (4 items per domain):**
 
-| Domain              | r      | Items | CI Lower | CI Upper |
-|---------------------|--------|-------|----------|----------|
-| Extraversion        | 0.9385 | 4     | ---      | ---      |
-| Agreeableness       | 0.9113 | 4     | ---      | ---      |
-| Conscientiousness   | 0.9086 | 4     | ---      | ---      |
-| Emotional Stability | 0.9292 | 4     | ---      | ---      |
-| Intellect/Openness  | 0.8419 | 4     | ---      | ---      |
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9385 | 4     | ---      | ---      |
+| Agreeableness         | 0.9113 | 4     | ---      | ---      |
+| Conscientiousness     | 0.9086 | 4     | ---      | ---      |
+| Emotional Stability   | 0.9292 | 4     | ---      | ---      |
+| Intellect/Imagination | 0.8419 | 4     | ---      | ---      |
 
 **First-N (4 items per domain):**
 
-| Domain              | r      | Items | CI Lower | CI Upper |
-|---------------------|--------|-------|----------|----------|
-| Extraversion        | 0.9393 | 4     | 0.9383   | 0.9402   |
-| Agreeableness       | 0.9258 | 4     | 0.9248   | 0.9270   |
-| Conscientiousness   | 0.8944 | 4     | 0.8930   | 0.8959   |
-| Emotional Stability | 0.8764 | 4     | 0.8747   | 0.8782   |
-| Intellect/Openness  | 0.9106 | 4     | 0.9094   | 0.9118   |
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9393 | 4     | 0.9383   | 0.9402   |
+| Agreeableness         | 0.9258 | 4     | 0.9248   | 0.9270   |
+| Conscientiousness     | 0.8944 | 4     | 0.8930   | 0.8959   |
+| Emotional Stability   | 0.8764 | 4     | 0.8747   | 0.8782   |
+| Intellect/Imagination | 0.9106 | 4     | 0.9094   | 0.9118   |
 
 #### Ablation: Stratified Split
 
 
 **Domain-Balanced (4 items per domain):**
 
-| Domain              | r      | Items | CI Lower | CI Upper |
-|---------------------|--------|-------|----------|----------|
-| Extraversion        | 0.9463 | 4     | 0.9455   | 0.9471   |
-| Agreeableness       | 0.9206 | 4     | 0.9195   | 0.9218   |
-| Conscientiousness   | 0.9197 | 4     | 0.9185   | 0.9208   |
-| Emotional Stability | 0.9367 | 4     | 0.9358   | 0.9376   |
-| Intellect/Openness  | 0.9094 | 4     | 0.9080   | 0.9107   |
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9463 | 4     | 0.9455   | 0.9471   |
+| Agreeableness         | 0.9206 | 4     | 0.9195   | 0.9218   |
+| Conscientiousness     | 0.9197 | 4     | 0.9185   | 0.9208   |
+| Emotional Stability   | 0.9367 | 4     | 0.9358   | 0.9376   |
+| Intellect/Imagination | 0.9094 | 4     | 0.9080   | 0.9107   |
 
 **Mini-IPIP (4 items per domain):**
 
-| Domain              | r      | Items | CI Lower | CI Upper |
-|---------------------|--------|-------|----------|----------|
-| Extraversion        | 0.9377 | 4     | ---      | ---      |
-| Agreeableness       | 0.9126 | 4     | ---      | ---      |
-| Conscientiousness   | 0.9092 | 4     | ---      | ---      |
-| Emotional Stability | 0.9294 | 4     | ---      | ---      |
-| Intellect/Openness  | 0.8418 | 4     | ---      | ---      |
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9377 | 4     | ---      | ---      |
+| Agreeableness         | 0.9126 | 4     | ---      | ---      |
+| Conscientiousness     | 0.9092 | 4     | ---      | ---      |
+| Emotional Stability   | 0.9294 | 4     | ---      | ---      |
+| Intellect/Imagination | 0.8418 | 4     | ---      | ---      |
 
 **First-N (4 items per domain):**
 
-| Domain              | r      | Items | CI Lower | CI Upper |
-|---------------------|--------|-------|----------|----------|
-| Extraversion        | 0.9398 | 4     | 0.9389   | 0.9408   |
-| Agreeableness       | 0.9254 | 4     | 0.9243   | 0.9265   |
-| Conscientiousness   | 0.8956 | 4     | 0.8940   | 0.8971   |
-| Emotional Stability | 0.8763 | 4     | 0.8747   | 0.8780   |
-| Intellect/Openness  | 0.9110 | 4     | 0.9097   | 0.9122   |
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9398 | 4     | 0.9389   | 0.9408   |
+| Agreeableness         | 0.9254 | 4     | 0.9243   | 0.9265   |
+| Conscientiousness     | 0.8956 | 4     | 0.8940   | 0.8971   |
+| Emotional Stability   | 0.8763 | 4     | 0.8747   | 0.8780   |
+| Intellect/Imagination | 0.9110 | 4     | 0.9097   | 0.9122   |
 <!-- END:ablation_per_domain_k20_details -->
 
 ### Cross-Variant Domain Starvation at K=20 (All Runs)
@@ -552,46 +552,46 @@ Adaptive top-K domain allocation and resulting per-domain accuracy for each vari
 #### Reference
 
 
-| Domain              | Items | Share | r      | CI Lower | CI Upper |
-|---------------------|-------|-------|--------|----------|----------|
-| Extraversion        | 9     | 45%   | 0.9939 | 0.9938   | 0.9940   |
-| Emotional Stability | 6     | 30%   | 0.9703 | 0.9699   | 0.9707   |
-| Agreeableness       | 3     | 15%   | 0.8218 | 0.8194   | 0.8243   |
-| Conscientiousness   | 2     | 10%   | 0.7562 | 0.7529   | 0.7592   |
-| Intellect/Openness  | 0     | 0%    | 0.4109 | 0.4054   | 0.4165   |
+| Domain                | Items | Share | r      | CI Lower | CI Upper |
+|-----------------------|-------|-------|--------|----------|----------|
+| Extraversion          | 9     | 45%   | 0.9939 | 0.9938   | 0.9940   |
+| Emotional Stability   | 6     | 30%   | 0.9703 | 0.9699   | 0.9707   |
+| Agreeableness         | 3     | 15%   | 0.8218 | 0.8194   | 0.8243   |
+| Conscientiousness     | 2     | 10%   | 0.7562 | 0.7529   | 0.7592   |
+| Intellect/Imagination | 0     | 0%    | 0.4109 | 0.4054   | 0.4165   |
 
 #### Ablation: No Sparsity
 
 
-| Domain              | Items | Share | r       | CI Lower | CI Upper |
-|---------------------|-------|-------|---------|----------|----------|
-| Extraversion        | 9     | 45%   | 0.9886  | 0.9885   | 0.9887   |
-| Emotional Stability | 6     | 30%   | 0.9095  | 0.9088   | 0.9103   |
-| Agreeableness       | 3     | 15%   | 0.7552  | 0.7528   | 0.7578   |
-| Conscientiousness   | 2     | 10%   | 0.6980  | 0.6947   | 0.7013   |
-| Intellect/Openness  | 0     | 0%    | -0.0434 | -0.0498  | -0.0366  |
+| Domain                | Items | Share | r       | CI Lower | CI Upper |
+|-----------------------|-------|-------|---------|----------|----------|
+| Extraversion          | 9     | 45%   | 0.9886  | 0.9885   | 0.9887   |
+| Emotional Stability   | 6     | 30%   | 0.9095  | 0.9088   | 0.9103   |
+| Agreeableness         | 3     | 15%   | 0.7552  | 0.7528   | 0.7578   |
+| Conscientiousness     | 2     | 10%   | 0.6980  | 0.6947   | 0.7013   |
+| Intellect/Imagination | 0     | 0%    | -0.0434 | -0.0498  | -0.0366  |
 
 #### Ablation: Focused Only
 
 
-| Domain              | Items | Share | r      | CI Lower | CI Upper |
-|---------------------|-------|-------|--------|----------|----------|
-| Extraversion        | 9     | 45%   | 0.9938 | 0.9937   | 0.9939   |
-| Emotional Stability | 6     | 30%   | 0.9695 | 0.9691   | 0.9699   |
-| Agreeableness       | 3     | 15%   | 0.8185 | 0.8161   | 0.8209   |
-| Conscientiousness   | 2     | 10%   | 0.7543 | 0.7511   | 0.7573   |
-| Intellect/Openness  | 0     | 0%    | 0.4023 | 0.3967   | 0.4077   |
+| Domain                | Items | Share | r      | CI Lower | CI Upper |
+|-----------------------|-------|-------|--------|----------|----------|
+| Extraversion          | 9     | 45%   | 0.9938 | 0.9937   | 0.9939   |
+| Emotional Stability   | 6     | 30%   | 0.9695 | 0.9691   | 0.9699   |
+| Agreeableness         | 3     | 15%   | 0.8185 | 0.8161   | 0.8209   |
+| Conscientiousness     | 2     | 10%   | 0.7543 | 0.7511   | 0.7573   |
+| Intellect/Imagination | 0     | 0%    | 0.4023 | 0.3967   | 0.4077   |
 
 #### Ablation: Stratified Split
 
 
-| Domain              | Items | Share | r      | CI Lower | CI Upper |
-|---------------------|-------|-------|--------|----------|----------|
-| Extraversion        | 9     | 45%   | 0.9938 | 0.9937   | 0.9939   |
-| Emotional Stability | 6     | 30%   | 0.9693 | 0.9688   | 0.9697   |
-| Agreeableness       | 3     | 15%   | 0.8215 | 0.8192   | 0.8239   |
-| Conscientiousness   | 2     | 10%   | 0.7578 | 0.7548   | 0.7611   |
-| Intellect/Openness  | 0     | 0%    | 0.4081 | 0.4023   | 0.4137   |
+| Domain                | Items | Share | r      | CI Lower | CI Upper |
+|-----------------------|-------|-------|--------|----------|----------|
+| Extraversion          | 9     | 45%   | 0.9938 | 0.9937   | 0.9939   |
+| Emotional Stability   | 6     | 30%   | 0.9693 | 0.9688   | 0.9697   |
+| Agreeableness         | 3     | 15%   | 0.8215 | 0.8192   | 0.8239   |
+| Conscientiousness     | 2     | 10%   | 0.7578 | 0.7548   | 0.7611   |
+| Intellect/Imagination | 0     | 0%    | 0.4081 | 0.4023   | 0.4137   |
 <!-- END:ablation_domain_starvation_details -->
 
 ### Cross-Variant ML vs Averaging (All Runs)
@@ -652,50 +652,50 @@ Adaptive simulation outcomes for each variant at the operating point.
 #### Reference
 
 
-| Domain              | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
-|---------------------|------------|----------|-----------|-----------|--------------|
-| Extraversion        | 0.9347     | 7.78     | 10.67     | 46.2%     | 91.1%        |
-| Agreeableness       | 0.9176     | 8.41     | 11.53     | 43.4%     | 88.6%        |
-| Conscientiousness   | 0.9169     | 8.78     | 11.85     | 41.5%     | 89.6%        |
-| Emotional Stability | 0.9379     | 7.72     | 10.45     | 45.3%     | 88.9%        |
-| Intellect/Openness  | 0.9099     | 8.97     | 12.43     | 42.8%     | 90.1%        |
-| **Overall**         | **0.9236** | **8.33** | **11.41** | **43.8%** | **89.7%**    |
+| Domain                | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
+|-----------------------|------------|----------|-----------|-----------|--------------|
+| Extraversion          | 0.9347     | 7.78     | 10.67     | 46.2%     | 91.1%        |
+| Agreeableness         | 0.9176     | 8.41     | 11.53     | 43.4%     | 88.6%        |
+| Conscientiousness     | 0.9169     | 8.78     | 11.85     | 41.5%     | 89.6%        |
+| Emotional Stability   | 0.9379     | 7.72     | 10.45     | 45.3%     | 88.9%        |
+| Intellect/Imagination | 0.9099     | 8.97     | 12.43     | 42.8%     | 90.1%        |
+| **Overall**           | **0.9236** | **8.33** | **11.41** | **43.8%** | **89.7%**    |
 
 #### Ablation: No Sparsity
 
 
-| Domain              | r          | MAE       | RMSE      | Within-5 | 90% Coverage |
-|---------------------|------------|-----------|-----------|----------|--------------|
-| Extraversion        | 0.8773     | 40.16     | 46.66     | 8.7%     | 0.7%         |
-| Agreeableness       | 0.8460     | 30.84     | 36.17     | 10.0%    | 2.8%         |
-| Conscientiousness   | 0.8597     | 36.61     | 42.19     | 8.3%     | 1.5%         |
-| Emotional Stability | 0.8618     | 41.46     | 47.53     | 6.8%     | 0.5%         |
-| Intellect/Openness  | 0.8422     | 30.78     | 36.50     | 12.7%    | 3.9%         |
-| **Overall**         | **0.7718** | **35.97** | **42.09** | **9.3%** | **1.9%**     |
+| Domain                | r          | MAE       | RMSE      | Within-5 | 90% Coverage |
+|-----------------------|------------|-----------|-----------|----------|--------------|
+| Extraversion          | 0.8773     | 40.16     | 46.66     | 8.7%     | 0.7%         |
+| Agreeableness         | 0.8460     | 30.84     | 36.17     | 10.0%    | 2.8%         |
+| Conscientiousness     | 0.8597     | 36.61     | 42.19     | 8.3%     | 1.5%         |
+| Emotional Stability   | 0.8618     | 41.46     | 47.53     | 6.8%     | 0.5%         |
+| Intellect/Imagination | 0.8422     | 30.78     | 36.50     | 12.7%    | 3.9%         |
+| **Overall**           | **0.7718** | **35.97** | **42.09** | **9.3%** | **1.9%**     |
 
 #### Ablation: Focused Only
 
 
-| Domain              | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
-|---------------------|------------|----------|-----------|-----------|--------------|
-| Extraversion        | 0.9346     | 7.79     | 10.67     | 46.1%     | 91.6%        |
-| Agreeableness       | 0.9176     | 8.42     | 11.50     | 42.9%     | 89.1%        |
-| Conscientiousness   | 0.9167     | 8.79     | 11.87     | 41.5%     | 89.3%        |
-| Emotional Stability | 0.9373     | 7.75     | 10.49     | 45.6%     | 89.9%        |
-| Intellect/Openness  | 0.9102     | 8.97     | 12.45     | 42.5%     | 90.9%        |
-| **Overall**         | **0.9234** | **8.34** | **11.42** | **43.7%** | **90.2%**    |
+| Domain                | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
+|-----------------------|------------|----------|-----------|-----------|--------------|
+| Extraversion          | 0.9346     | 7.79     | 10.67     | 46.1%     | 91.6%        |
+| Agreeableness         | 0.9176     | 8.42     | 11.50     | 42.9%     | 89.1%        |
+| Conscientiousness     | 0.9167     | 8.79     | 11.87     | 41.5%     | 89.3%        |
+| Emotional Stability   | 0.9373     | 7.75     | 10.49     | 45.6%     | 89.9%        |
+| Intellect/Imagination | 0.9102     | 8.97     | 12.45     | 42.5%     | 90.9%        |
+| **Overall**           | **0.9234** | **8.34** | **11.42** | **43.7%** | **90.2%**    |
 
 #### Ablation: Stratified Split
 
 
-| Domain              | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
-|---------------------|------------|----------|-----------|-----------|--------------|
-| Extraversion        | 0.9364     | 7.68     | 10.53     | 46.4%     | 91.7%        |
-| Agreeableness       | 0.9176     | 8.51     | 11.60     | 42.3%     | 88.6%        |
-| Conscientiousness   | 0.9211     | 8.57     | 11.69     | 42.7%     | 89.5%        |
-| Emotional Stability | 0.9373     | 7.72     | 10.53     | 47.0%     | 89.7%        |
-| Intellect/Openness  | 0.9095     | 9.06     | 12.38     | 41.2%     | 90.2%        |
-| **Overall**         | **0.9245** | **8.31** | **11.37** | **43.9%** | **90.0%**    |
+| Domain                | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
+|-----------------------|------------|----------|-----------|-----------|--------------|
+| Extraversion          | 0.9364     | 7.68     | 10.53     | 46.4%     | 91.7%        |
+| Agreeableness         | 0.9176     | 8.51     | 11.60     | 42.3%     | 88.6%        |
+| Conscientiousness     | 0.9211     | 8.57     | 11.69     | 42.7%     | 89.5%        |
+| Emotional Stability   | 0.9373     | 7.72     | 10.53     | 47.0%     | 89.7%        |
+| Intellect/Imagination | 0.9095     | 9.06     | 12.38     | 41.2%     | 90.2%        |
+| **Overall**           | **0.9245** | **8.31** | **11.37** | **43.9%** | **90.0%**    |
 <!-- END:ablation_simulation_details -->
 
 ### Dataset
@@ -713,13 +713,13 @@ split into train/validation/test.
 
 Stratification: ext_q * 5 + est_q (25 strata) (25 strata, seed=42).
 
-| Domain              | Max Mean Diff | KS Statistic | KS p-value |
-|---------------------|---------------|--------------|------------|
-| Extraversion        | 0.0031        | 0.0015       | 0.995      |
-| Agreeableness       | 0.0010        | 0.0021       | 0.889      |
-| Conscientiousness   | 0.0047        | 0.0024       | 0.802      |
-| Emotional Stability | 0.0011        | 0.0021       | 0.897      |
-| Intellect/Openness  | 0.0020        | 0.0019       | 0.950      |
+| Domain                | Max Mean Diff | KS Statistic | KS p-value |
+|-----------------------|---------------|--------------|------------|
+| Extraversion          | 0.0031        | 0.0015       | 0.995      |
+| Agreeableness         | 0.0010        | 0.0021       | 0.889      |
+| Conscientiousness     | 0.0047        | 0.0024       | 0.802      |
+| Emotional Stability   | 0.0011        | 0.0021       | 0.897      |
+| Intellect/Imagination | 0.0020        | 0.0019       | 0.950      |
 <!-- END:data_splits -->
 
 ### Training Configuration
@@ -748,14 +748,14 @@ Sparsity augmentation and training settings from `configs/reference.yaml`.
 |------------------|---------------------------------------------|
 | Algorithm        | XGBoost quantile regression (pinball loss)  |
 | Models           | 15 (5 domains x 3 quantiles: q05, q50, q95) |
-| n_estimators     | 6,884                                       |
-| max_depth        | 5                                           |
-| learning_rate    | 0.0100                                      |
-| min_child_weight | 8                                           |
-| subsample        | 0.721                                       |
-| colsample_bytree | 0.590                                       |
-| reg_lambda       | 2.135                                       |
-| reg_alpha        | 4.430                                       |
+| n_estimators     | 9,092                                       |
+| max_depth        | 4                                           |
+| learning_rate    | 0.0118                                      |
+| min_child_weight | 7                                           |
+| subsample        | 0.753                                       |
+| colsample_bytree | 0.548                                       |
+| reg_lambda       | 2.124                                       |
+| reg_alpha        | 4.717                                       |
 | RNG seed         | 42                                          |
 <!-- END:model_config -->
 
@@ -775,13 +775,13 @@ Used for raw-score to percentile conversion via
 `percentile = phi((raw - mu) / sigma) * 100`.
 
 <!-- BEGIN:norms -->
-| Domain              | Mean   | SD     |
-|---------------------|--------|--------|
-| Extraversion        | 2.9138 | 0.9112 |
-| Agreeableness       | 3.7589 | 0.7363 |
-| Conscientiousness   | 3.3426 | 0.7391 |
-| Emotional Stability | 2.9187 | 0.8607 |
-| Intellect/Openness  | 3.9389 | 0.6183 |
+| Domain                | Mean   | SD     |
+|-----------------------|--------|--------|
+| Extraversion          | 2.9138 | 0.9112 |
+| Agreeableness         | 3.7589 | 0.7363 |
+| Conscientiousness     | 3.3426 | 0.7391 |
+| Emotional Stability   | 2.9187 | 0.8607 |
+| Intellect/Imagination | 3.9389 | 0.6183 |
 <!-- END:norms -->
 
 ### Ceiling Check: Full-Model Accuracy (50 Items, 90K Test)
@@ -792,14 +792,14 @@ correctly, not the operating-point accuracy. See the K=20 tables below for
 the primary evaluation.
 
 <!-- BEGIN:validation -->
-| Domain              | r          | MAE      | RMSE     | Within-5   | 90% Coverage | Raw Crossing Rate |
-|---------------------|------------|----------|----------|------------|--------------|-------------------|
-| Extraversion        | 0.9998     | 0.40     | 0.58     | 100.0%     | 92.8%        | 28.8%             |
-| Agreeableness       | 0.9996     | 0.60     | 0.85     | 100.0%     | 93.0%        | 21.1%             |
-| Conscientiousness   | 0.9995     | 0.67     | 0.92     | 100.0%     | 94.4%        | 21.7%             |
-| Emotional Stability | 0.9997     | 0.54     | 0.76     | 100.0%     | 92.7%        | 26.0%             |
-| Intellect/Openness  | 0.9992     | 0.88     | 1.22     | 99.9%      | 93.8%        | 19.7%             |
-| **Overall**         | **0.9995** | **0.62** | **0.89** | **100.0%** | ---          | ---               |
+| Domain                | r          | MAE      | RMSE     | Within-5   | 90% Coverage | Raw Crossing Rate |
+|-----------------------|------------|----------|----------|------------|--------------|-------------------|
+| Extraversion          | 0.9998     | 0.40     | 0.58     | 100.0%     | 92.8%        | 28.8%             |
+| Agreeableness         | 0.9996     | 0.60     | 0.85     | 100.0%     | 93.0%        | 21.1%             |
+| Conscientiousness     | 0.9995     | 0.67     | 0.92     | 100.0%     | 94.4%        | 21.7%             |
+| Emotional Stability   | 0.9997     | 0.54     | 0.76     | 100.0%     | 92.7%        | 26.0%             |
+| Intellect/Imagination | 0.9992     | 0.88     | 1.22     | 99.9%      | 93.8%        | 19.7%             |
+| **Overall**           | **0.9995** | **0.62** | **0.89** | **100.0%** | ---          | ---               |
 <!-- END:validation -->
 
 Coverage: all domains exceed the 90% nominal target, as the table shows. Raw
@@ -836,11 +836,11 @@ distribution.
 | Emotional Stability                | Q3       | 15,043 | 0.80     | 96.1%        | 4.68          |
 | Emotional Stability                | Q4       | 19,338 | 0.67     | 94.5%        | 3.68          |
 | Emotional Stability                | Q5       | 16,569 | 0.29     | 89.6%        | 1.41          |
-| Intellect/Openness                 | Q1       | 19,317 | 0.71     | 89.5%        | 3.05          |
-| Intellect/Openness                 | Q2       | 18,472 | 1.25     | 96.5%        | 6.78          |
-| Intellect/Openness                 | Q3       | 16,569 | 1.15     | 98.8%        | 7.76          |
-| Intellect/Openness                 | Q4       | 20,307 | 0.89     | 98.5%        | 5.88          |
-| Intellect/Openness                 | Q5       | 15,834 | 0.38     | 84.4%        | 1.84          |
+| Intellect/Imagination              | Q1       | 19,317 | 0.71     | 89.5%        | 3.05          |
+| Intellect/Imagination              | Q2       | 18,472 | 1.25     | 96.5%        | 6.78          |
+| Intellect/Imagination              | Q3       | 16,569 | 1.15     | 98.8%        | 7.76          |
+| Intellect/Imagination              | Q4       | 20,307 | 0.89     | 98.5%        | 5.88          |
+| Intellect/Imagination              | Q5       | 15,834 | 0.38     | 84.4%        | 1.84          |
 | **Avg Tails (Q1/Q5, all domains)** | ---      | ---    | **0.36** | **89.0%**    | **1.79**      |
 | **Avg Center (Q3, all domains)**   | ---      | ---    | **0.86** | **97.0%**    | **5.55**      |
 <!-- END:validation_quintiles -->
@@ -873,49 +873,49 @@ in general.
 <!-- BEGIN:per_domain_k20 -->
 **Domain-Balanced (4 items per domain):**
 
-| Domain              | r      | Items | CI Lower | CI Upper |
-|---------------------|--------|-------|----------|----------|
-| Extraversion        | 0.9465 | 4     | 0.9457   | 0.9473   |
-| Agreeableness       | 0.9196 | 4     | 0.9184   | 0.9207   |
-| Conscientiousness   | 0.9192 | 4     | 0.9181   | 0.9203   |
-| Emotional Stability | 0.9366 | 4     | 0.9357   | 0.9375   |
-| Intellect/Openness  | 0.9100 | 4     | 0.9087   | 0.9114   |
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9465 | 4     | 0.9457   | 0.9473   |
+| Agreeableness         | 0.9196 | 4     | 0.9184   | 0.9207   |
+| Conscientiousness     | 0.9192 | 4     | 0.9181   | 0.9203   |
+| Emotional Stability   | 0.9366 | 4     | 0.9357   | 0.9375   |
+| Intellect/Imagination | 0.9100 | 4     | 0.9087   | 0.9114   |
 
 **Mini-IPIP (4 items per domain):**
 
-| Domain              | r      | Items | CI Lower | CI Upper |
-|---------------------|--------|-------|----------|----------|
-| Extraversion        | 0.9385 | 4     | ---      | ---      |
-| Agreeableness       | 0.9113 | 4     | ---      | ---      |
-| Conscientiousness   | 0.9086 | 4     | ---      | ---      |
-| Emotional Stability | 0.9292 | 4     | ---      | ---      |
-| Intellect/Openness  | 0.8419 | 4     | ---      | ---      |
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9385 | 4     | ---      | ---      |
+| Agreeableness         | 0.9113 | 4     | ---      | ---      |
+| Conscientiousness     | 0.9086 | 4     | ---      | ---      |
+| Emotional Stability   | 0.9292 | 4     | ---      | ---      |
+| Intellect/Imagination | 0.8419 | 4     | ---      | ---      |
 
 **First-N (4 items per domain):**
 
-| Domain              | r      | Items | CI Lower | CI Upper |
-|---------------------|--------|-------|----------|----------|
-| Extraversion        | 0.9392 | 4     | 0.9383   | 0.9401   |
-| Agreeableness       | 0.9264 | 4     | 0.9253   | 0.9275   |
-| Conscientiousness   | 0.8943 | 4     | 0.8929   | 0.8958   |
-| Emotional Stability | 0.8768 | 4     | 0.8752   | 0.8786   |
-| Intellect/Openness  | 0.9115 | 4     | 0.9102   | 0.9126   |
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9392 | 4     | 0.9383   | 0.9401   |
+| Agreeableness         | 0.9264 | 4     | 0.9253   | 0.9275   |
+| Conscientiousness     | 0.8943 | 4     | 0.8929   | 0.8958   |
+| Emotional Stability   | 0.8768 | 4     | 0.8752   | 0.8786   |
+| Intellect/Imagination | 0.9115 | 4     | 0.9102   | 0.9126   |
 <!-- END:per_domain_k20 -->
 
 Domain-balanced achieves the most uniform per-domain performance. Mini-IPIP shows
-a clear Intellect/Openness gap relative to domain-balanced (visible in the table
+a clear Intellect/Imagination gap relative to domain-balanced (visible in the table
 above) because its Intellect items were selected for brevity, not discrimination.
 
 ### Domain Starvation (Greedy Selection at K=20)
 
 <!-- BEGIN:domain_starvation -->
-| Domain              | Items | Share | r      | CI Lower | CI Upper |
-|---------------------|-------|-------|--------|----------|----------|
-| Extraversion        | 9     | 45%   | 0.9939 | 0.9938   | 0.9940   |
-| Emotional Stability | 6     | 30%   | 0.9703 | 0.9699   | 0.9707   |
-| Agreeableness       | 3     | 15%   | 0.8218 | 0.8194   | 0.8243   |
-| Conscientiousness   | 2     | 10%   | 0.7562 | 0.7529   | 0.7592   |
-| Intellect/Openness  | 0     | 0%    | 0.4109 | 0.4054   | 0.4165   |
+| Domain                | Items | Share | r      | CI Lower | CI Upper |
+|-----------------------|-------|-------|--------|----------|----------|
+| Extraversion          | 9     | 45%   | 0.9939 | 0.9938   | 0.9940   |
+| Emotional Stability   | 6     | 30%   | 0.9703 | 0.9699   | 0.9707   |
+| Agreeableness         | 3     | 15%   | 0.8218 | 0.8194   | 0.8243   |
+| Conscientiousness     | 2     | 10%   | 0.7562 | 0.7529   | 0.7592   |
+| Intellect/Imagination | 0     | 0%    | 0.4109 | 0.4054   | 0.4165   |
 <!-- END:domain_starvation -->
 
 Intellect first appears just outside the top 20 in the greedy ranking (see the
@@ -947,14 +947,14 @@ SEM threshold 0.45, min 4 items per domain. All respondents converge to
 exactly 20 items (4-4-4-4-4).
 
 <!-- BEGIN:simulation -->
-| Domain              | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
-|---------------------|------------|----------|-----------|-----------|--------------|
-| Extraversion        | 0.9347     | 7.78     | 10.67     | 46.2%     | 91.1%        |
-| Agreeableness       | 0.9176     | 8.41     | 11.53     | 43.4%     | 88.6%        |
-| Conscientiousness   | 0.9169     | 8.78     | 11.85     | 41.5%     | 89.6%        |
-| Emotional Stability | 0.9379     | 7.72     | 10.45     | 45.3%     | 88.9%        |
-| Intellect/Openness  | 0.9099     | 8.97     | 12.43     | 42.8%     | 90.1%        |
-| **Overall**         | **0.9236** | **8.33** | **11.41** | **43.8%** | **89.7%**    |
+| Domain                | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
+|-----------------------|------------|----------|-----------|-----------|--------------|
+| Extraversion          | 0.9347     | 7.78     | 10.67     | 46.2%     | 91.1%        |
+| Agreeableness         | 0.9176     | 8.41     | 11.53     | 43.4%     | 88.6%        |
+| Conscientiousness     | 0.9169     | 8.78     | 11.85     | 41.5%     | 89.6%        |
+| Emotional Stability   | 0.9379     | 7.72     | 10.45     | 45.3%     | 88.9%        |
+| Intellect/Imagination | 0.9099     | 8.97     | 12.43     | 42.8%     | 90.1%        |
+| **Overall**           | **0.9236** | **8.33** | **11.41** | **43.8%** | **89.7%**    |
 <!-- END:simulation -->
 
 Simulation results closely match the static baseline evaluation (compare the
@@ -967,13 +967,13 @@ confirms the pipeline end-to-end.
 <!-- BEGIN:calibration -->
 Calibration regime: `sparse_20_balanced` (domain-balanced, 20 items, 4 per domain).
 
-| Domain              | Observed Coverage | Scale Factor |
-|---------------------|-------------------|--------------|
-| Extraversion        | 91.0%             | 1.0          |
-| Agreeableness       | 90.0%             | 1.0          |
-| Conscientiousness   | 89.9%             | 1.0          |
-| Emotional Stability | 90.3%             | 1.0          |
-| Intellect/Openness  | 89.7%             | 1.0          |
+| Domain                | Observed Coverage | Scale Factor |
+|-----------------------|-------------------|--------------|
+| Extraversion          | 91.0%             | 1.0          |
+| Agreeableness         | 90.0%             | 1.0          |
+| Conscientiousness     | 89.9%             | 1.0          |
+| Emotional Stability   | 90.3%             | 1.0          |
+| Intellect/Imagination | 89.7%             | 1.0          |
 <!-- END:calibration -->
 
 All domains achieve near-nominal 90% coverage without requiring any scaling
@@ -1003,28 +1003,28 @@ Top 4 items per domain by within-domain correlation. These are the items selecte
 by the `domain_balanced` strategy.
 
 <!-- BEGIN:domain_balanced_items -->
-| Rank | Item  | Domain              | Own-Domain r | Reverse-Keyed |
-|------|-------|---------------------|--------------|---------------|
-| 1    | ext4  | Extraversion        | 0.718        | yes           |
-| 2    | ext5  | Extraversion        | 0.707        | no            |
-| 3    | ext7  | Extraversion        | 0.689        | no            |
-| 4    | ext2  | Extraversion        | 0.675        | yes           |
-| 5    | agr4  | Agreeableness       | 0.717        | no            |
-| 6    | agr9  | Agreeableness       | 0.639        | no            |
-| 7    | agr7  | Agreeableness       | 0.627        | yes           |
-| 8    | agr5  | Agreeableness       | 0.626        | yes           |
-| 9    | csn6  | Conscientiousness   | 0.590        | yes           |
-| 10   | csn1  | Conscientiousness   | 0.576        | no            |
-| 11   | csn5  | Conscientiousness   | 0.570        | no            |
-| 12   | csn4  | Conscientiousness   | 0.561        | yes           |
-| 13   | est8  | Emotional Stability | 0.692        | yes           |
-| 14   | est6  | Emotional Stability | 0.685        | yes           |
-| 15   | est1  | Emotional Stability | 0.669        | yes           |
-| 16   | est7  | Emotional Stability | 0.662        | yes           |
-| 17   | opn10 | Intellect/Openness  | 0.600        | no            |
-| 18   | opn2  | Intellect/Openness  | 0.527        | yes           |
-| 19   | opn1  | Intellect/Openness  | 0.521        | no            |
-| 20   | opn5  | Intellect/Openness  | 0.513        | no            |
+| Rank | Item  | Domain                | Own-Domain r | Reverse-Keyed |
+|------|-------|-----------------------|--------------|---------------|
+| 1    | ext4  | Extraversion          | 0.718        | yes           |
+| 2    | ext5  | Extraversion          | 0.707        | no            |
+| 3    | ext7  | Extraversion          | 0.689        | no            |
+| 4    | ext2  | Extraversion          | 0.675        | yes           |
+| 5    | agr4  | Agreeableness         | 0.717        | no            |
+| 6    | agr9  | Agreeableness         | 0.639        | no            |
+| 7    | agr7  | Agreeableness         | 0.627        | yes           |
+| 8    | agr5  | Agreeableness         | 0.626        | yes           |
+| 9    | csn6  | Conscientiousness     | 0.590        | yes           |
+| 10   | csn1  | Conscientiousness     | 0.576        | no            |
+| 11   | csn5  | Conscientiousness     | 0.570        | no            |
+| 12   | csn4  | Conscientiousness     | 0.561        | yes           |
+| 13   | est8  | Emotional Stability   | 0.692        | yes           |
+| 14   | est6  | Emotional Stability   | 0.685        | yes           |
+| 15   | est1  | Emotional Stability   | 0.669        | yes           |
+| 16   | est7  | Emotional Stability   | 0.662        | yes           |
+| 17   | opn10 | Intellect/Imagination | 0.600        | no            |
+| 18   | opn2  | Intellect/Imagination | 0.527        | yes           |
+| 19   | opn1  | Intellect/Imagination | 0.521        | no            |
+| 20   | opn5  | Intellect/Imagination | 0.513        | no            |
 <!-- END:domain_balanced_items -->
 
 This 20-item set differs from the Mini-IPIP: the domain-balanced set selects by
@@ -1072,20 +1072,20 @@ too weak to reliably predict other domains.
 Donnellan et al. (2006) fixed 20-item mapping to IPIP-BFFM items.
 
 <!-- BEGIN:mini_ipip -->
-| Domain              | Items                  | Reported Alpha |
-|---------------------|------------------------|----------------|
-| Extraversion        | ext1, ext7, ext2, ext4 | 0.77           |
-| Agreeableness       | agr4, agr9, agr7, agr5 | 0.70           |
-| Conscientiousness   | csn5, csn7, csn6, csn4 | 0.69           |
-| Emotional Stability | est8, est6, est2, est4 | 0.68           |
-| Intellect/Openness  | opn3, opn2, opn4, opn6 | 0.65           |
+| Domain                | Items                  | Reported Alpha |
+|-----------------------|------------------------|----------------|
+| Extraversion          | ext1, ext7, ext2, ext4 | 0.77           |
+| Agreeableness         | agr4, agr9, agr7, agr5 | 0.70           |
+| Conscientiousness     | csn5, csn7, csn6, csn4 | 0.69           |
+| Emotional Stability   | est8, est6, est2, est4 | 0.68           |
+| Intellect/Imagination | opn3, opn2, opn4, opn6 | 0.65           |
 <!-- END:mini_ipip -->
 
 The key differences from the domain-balanced set: Mini-IPIP includes weaker
 discriminators in Conscientiousness and Emotional Stability (csn7, est2) where
 domain-balanced selects higher-correlation items (csn6, est1). Mini-IPIP's
 Intellect items (opn3, opn2, opn4, opn6) all rank low by cross-domain info
-score; this reflects the psychometric independence of Intellect/Openness from
+score; this reflects the psychometric independence of Intellect/Imagination from
 the other four factors. The greedy ranking table above provides the full
 item-level detail.
 

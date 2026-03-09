@@ -10,10 +10,10 @@ The pipeline can run on three types of infrastructure:
 
 There are two Terraform configurations under `infra/`:
 
-| Directory    | Instance        | AMI                    | User       | Purpose              |
-|-------------|-----------------|------------------------|------------|----------------------|
-| `infra/cpu/` | `c7a.24xlarge`  | Amazon Linux 2023      | `ec2-user` | Eval, full pipeline  |
-| `infra/gpu/` | `g5.xlarge`     | AWS Deep Learning (Ubuntu) | `ubuntu` | Tune + train         |
+| Directory    | Instance       | AMI                        | User       | Purpose             |
+| ------------ | -------------- | -------------------------- | ---------- | ------------------- |
+| `infra/cpu/` | `c7a.24xlarge` | Amazon Linux 2023          | `ec2-user` | Eval, full pipeline |
+| `infra/gpu/` | `g5.xlarge`    | AWS Deep Learning (Ubuntu) | `ubuntu`   | Tune + train        |
 
 Each has its own VPC, subnet, security group, and Terraform state — fully independent.
 
@@ -73,12 +73,12 @@ make remote-all-2          # train through figures, pulls results, tears down
 
 ### Targets
 
-| Target             | Steps                                                        |
-|--------------------|--------------------------------------------------------------|
-| `make remote-all`  | push, setup, download → figures, checkpoint-pull major artifacts, pull all, infra-cpu-down |
+| Target                  | Steps                                                                                                                                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `make remote-all`       | push, setup, download → figures, checkpoint-pull major artifacts, pull all, infra-cpu-down                                                                                                 |
 | `make remote-reference` | preflight local workspace, push, setup, download → reference-only prep/correlations/train/eval/export/figures, checkpoint-pull reference artifacts, pull reference results, infra-cpu-down |
-| `make remote-all-1`| push, setup, download → tune, pull tuned_params.json         |
-| `make remote-all-2`| train → figures, pull all, infra-cpu-down                    |
+| `make remote-all-1`     | push, setup, download → tune, pull tuned_params.json                                                                                                                                       |
+| `make remote-all-2`     | train → figures, pull all, infra-cpu-down                                                                                                                                                  |
 
 ---
 
@@ -141,19 +141,19 @@ Runs on the CPU instance (`c7a.24xlarge` with Amazon Linux 2023).
 
 ### GPU Infrastructure
 
-| Target              | Description                                    |
-|---------------------|------------------------------------------------|
-| `make infra-gpu-up`  | Initialize and apply `infra/gpu/` Terraform    |
-| `make infra-gpu-down`| Destroy GPU instance and networking            |
-| `make infra-gpu-ssh` | SSH into the GPU instance                      |
+| Target                | Description                                 |
+| --------------------- | ------------------------------------------- |
+| `make infra-gpu-up`   | Initialize and apply `infra/gpu/` Terraform |
+| `make infra-gpu-down` | Destroy GPU instance and networking         |
+| `make infra-gpu-ssh`  | SSH into the GPU instance                   |
 
 ### CPU Infrastructure
 
-| Target              | Description                                    |
-|---------------------|------------------------------------------------|
-| `make infra-cpu-up`  | Initialize and apply `infra/cpu/` Terraform    |
-| `make infra-cpu-down`| Destroy CPU instance and networking            |
-| `make infra-cpu-ssh` | SSH into the CPU instance                      |
+| Target                | Description                                 |
+| --------------------- | ------------------------------------------- |
+| `make infra-cpu-up`   | Initialize and apply `infra/cpu/` Terraform |
+| `make infra-cpu-down` | Destroy CPU instance and networking         |
+| `make infra-cpu-ssh`  | SSH into the CPU instance                   |
 
 ---
 
@@ -204,12 +204,12 @@ allowed_ssh_cidr = "YOUR_IP/32"
 
 ## File Changes Summary
 
-| File                      | Change                                              |
-|---------------------------|-----------------------------------------------------|
-| `infra/cpu/`              | Existing `infra/` moved here (unchanged config)     |
-| `infra/gpu/`              | New Terraform config (DL AMI, Ubuntu, g5.xlarge)    |
-| `pipeline/06_tune.py`     | Add `--gpu` flag → `device='cuda'`                  |
-| `pipeline/07_train.py`    | Add `--gpu` flag → `device='cuda'`                  |
-| `scripts/run-pipeline.sh` | Add `--gpu` flag, pass `GPU=1` to make tune/train   |
+| File                      | Change                                                                    |
+| ------------------------- | ------------------------------------------------------------------------- |
+| `infra/cpu/`              | Existing `infra/` moved here (unchanged config)                           |
+| `infra/gpu/`              | New Terraform config (DL AMI, Ubuntu, g5.xlarge)                          |
+| `pipeline/06_tune.py`     | Add `--gpu` flag → `device='cuda'`                                        |
+| `pipeline/07_train.py`    | Add `--gpu` flag → `device='cuda'`                                        |
+| `scripts/run-pipeline.sh` | Add `--gpu` flag, pass `GPU=1` to make tune/train                         |
 | `Makefile`                | New GPU/CPU infra targets, `remote-1-gpu`, `remote-2-cpu`, `GPU` variable |
-| `.gitignore`              | Add `infra/gpu/` terraform patterns                 |
+| `.gitignore`              | Add `infra/gpu/` terraform patterns                                       |
