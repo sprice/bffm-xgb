@@ -65,4 +65,4 @@ Browser → HF proxy → Hono (:7860)
   POST /api/predict → reverse-score → ONNX inference → percentiles
 ```
 
-The server reverse-scores the 11 reverse-keyed items (`6 - value`) before inference, matching the preprocessing applied during model training.
+The server reverse-scores the 24 reverse-keyed items (`6 - value`) before inference, matching the preprocessing applied during model training. This preprocessing happens in the web server; the standalone Python and TypeScript inference packages do not apply it automatically.

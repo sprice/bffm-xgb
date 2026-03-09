@@ -13,6 +13,17 @@ provider "aws" {
   region = var.aws_region
 }
 
+locals {
+  instance_id = one(concat(
+    aws_spot_instance_request.pipeline[*].spot_instance_id,
+    aws_instance.pipeline[*].id,
+  ))
+  instance_ip = one(concat(
+    aws_spot_instance_request.pipeline[*].public_ip,
+    aws_instance.pipeline[*].public_ip,
+  ))
+}
+
 # --- AMI ---
 
 data "aws_ami" "dl_ubuntu" {
@@ -109,9 +120,10 @@ resource "aws_security_group" "pipeline" {
   }
 }
 
-# --- Spot Instance ---
+# --- Compute ---
 
 resource "aws_spot_instance_request" "pipeline" {
+  count                  = var.use_spot ? 1 : 0
   ami                    = data.aws_ami.dl_ubuntu.id
   instance_type          = var.instance_type
   spot_price             = var.spot_max_price
@@ -152,8 +164,49 @@ EOF
   }
 }
 
+resource "aws_instance" "pipeline" {
+  count                       = var.use_spot ? 0 : 1
+  ami                         = data.aws_ami.dl_ubuntu.id
+  instance_type               = var.instance_type
+  key_name                    = var.key_name
+  subnet_id                   = aws_subnet.pipeline.id
+  vpc_security_group_ids      = [aws_security_group.pipeline.id]
+  associate_public_ip_address = true
+
+  root_block_device {
+    volume_size = var.volume_size
+    volume_type = "gp3"
+    encrypted   = true
+  }
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
+
+  user_data = <<EOF
+#!/bin/bash
+set -euo pipefail
+
+apt-get update -y
+apt-get install -y python3-venv tmux htop
+
+mkdir -p /home/ubuntu/bffm-xgb
+chown ubuntu:ubuntu /home/ubuntu/bffm-xgb
+
+touch /home/ubuntu/.setup-done
+chown ubuntu:ubuntu /home/ubuntu/.setup-done
+EOF
+
+  tags = {
+    Name = "bffm-xgb-pipeline-gpu"
+  }
+}
+
 resource "aws_ec2_tag" "pipeline_name" {
-  resource_id = aws_spot_instance_request.pipeline.spot_instance_id
+  count       = var.use_spot ? 1 : 0
+  resource_id = aws_spot_instance_request.pipeline[0].spot_instance_id
   key         = "Name"
   value       = "bffm-xgb-pipeline-gpu"
 }

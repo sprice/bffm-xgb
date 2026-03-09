@@ -9,6 +9,7 @@ CV_PARALLEL_FOLDS="${CV_PARALLEL_FOLDS:-}"
 TRAIN_PARALLEL="${TRAIN_PARALLEL:-}"
 RESEARCH_EVAL_PARALLEL="${RESEARCH_EVAL_PARALLEL:-}"
 GPU="${GPU:-}"
+REFERENCE_ONLY="${REFERENCE_ONLY:-}"
 
 # ---------------------------------------------------------------------------
 # Stage range flags
@@ -21,13 +22,28 @@ while [[ $# -gt 0 ]]; do
         --start-stage) START_STAGE="$2"; shift 2 ;;
         --end-stage)   END_STAGE="$2";   shift 2 ;;
         --gpu)         GPU=1;            shift   ;;
+        --reference-only) REFERENCE_ONLY=1; shift ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
 
+canonicalize_stage() {
+    case "$1" in
+        export-all|export-reference|export) echo "export" ;;
+        research-eval-reference|research-eval) echo "research-eval" ;;
+        train-1|train) echo "train" ;;
+        prepare-default|prepare) echo "prepare" ;;
+        correlations-default|correlations) echo "correlations" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+START_STAGE="$(canonicalize_stage "$START_STAGE")"
+END_STAGE="$(canonicalize_stage "$END_STAGE")"
+
 STAGE_ORDER=(
     download load norms norms-check prepare correlations
-    tune train research-eval export-all notes figures
+    tune train research-eval export notes figures
 )
 
 # Validate stage names
@@ -133,6 +149,31 @@ run_step() {
     fi
 }
 
+skip_step() {
+    local label="$1"
+    local reason="$2"
+
+    if [[ "$_STAGE_ACTIVE" -eq 0 ]]; then
+        if [[ "$label" == "$START_STAGE" ]]; then
+            _STAGE_ACTIVE=1
+        else
+            echo "--- $label SKIPPED (before start stage '$START_STAGE')" | tee -a "$PIPELINE_LOG"
+            return 0
+        fi
+    fi
+
+    echo "--- $label SKIPPED ($reason)" | tee -a "$PIPELINE_LOG"
+    echo "$label | SKIPPED | $reason" >> "$TIMING_LOG"
+
+    if [[ -n "$END_STAGE" && "$label" == "$END_STAGE" ]]; then
+        echo "--- Stopping after end stage '$END_STAGE'" | tee -a "$PIPELINE_LOG"
+        local total=$(( $(date +%s) - PIPELINE_START ))
+        echo "total | $(fmt_duration "$total")" >> "$TIMING_LOG"
+        echo "=== Pipeline complete ($(fmt_duration "$total"))" | tee -a "$PIPELINE_LOG"
+        exit 0
+    fi
+}
+
 _GPU_FLAG=""
 if [[ -n "$GPU" ]]; then
     _GPU_FLAG="GPU=1"
@@ -149,8 +190,13 @@ run_step "download" make download
 run_step "load" make load
 run_step "norms" make norms
 run_step "norms-check" make norms-check
-run_step "prepare" make prepare
-run_step "correlations" make correlations
+if [[ -n "$REFERENCE_ONLY" ]]; then
+    run_step "prepare" make prepare-default
+    run_step "correlations" make correlations-default
+else
+    run_step "prepare" make prepare
+    run_step "correlations" make correlations
+fi
 
 tune_cmd=(make tune)
 [[ -n "$TUNE_N_JOBS" ]] && tune_cmd+=("N_JOBS=$TUNE_N_JOBS")
@@ -159,6 +205,7 @@ tune_cmd=(make tune)
 run_step "tune" "${tune_cmd[@]}"
 
 train_cmd=(make train)
+[[ -n "$REFERENCE_ONLY" ]] && train_cmd+=("1")
 [[ -n "$TRAIN_N_JOBS" ]] && train_cmd+=("N_JOBS=$TRAIN_N_JOBS")
 [[ -n "$PARALLEL_DOMAINS" ]] && train_cmd+=("PARALLEL_DOMAINS=$PARALLEL_DOMAINS")
 [[ -n "$CV_PARALLEL_FOLDS" ]] && train_cmd+=("CV_PARALLEL_FOLDS=$CV_PARALLEL_FOLDS")
@@ -166,11 +213,21 @@ train_cmd=(make train)
 [[ -n "$_GPU_FLAG" ]] && train_cmd+=("$_GPU_FLAG")
 run_step "train" "${train_cmd[@]}"
 
-research_eval_cmd=(make research-eval)
+if [[ -n "$REFERENCE_ONLY" ]]; then
+    research_eval_cmd=(make research-eval-reference)
+else
+    research_eval_cmd=(make research-eval)
+fi
 [[ -n "$RESEARCH_EVAL_PARALLEL" ]] && research_eval_cmd+=("RESEARCH_EVAL_PARALLEL=$RESEARCH_EVAL_PARALLEL")
 run_step "research-eval" "${research_eval_cmd[@]}"
-run_step "export-all" make export-all
-run_step "notes" make notes
+
+if [[ -n "$REFERENCE_ONLY" ]]; then
+    run_step "export" make export-reference export-repo-readme
+    skip_step "notes" "reference-only mode requires all four variants"
+else
+    run_step "export" make export-all
+    run_step "notes" make notes
+fi
 run_step "figures" make figures
 
 TOTAL=$(( $(date +%s) - PIPELINE_START ))

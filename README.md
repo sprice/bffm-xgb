@@ -4,7 +4,7 @@
 
 Standalone pipeline for training, evaluating, and exporting sparse-input XGBoost quantile regression models for the 50-item [IPIP Big-Five Factor Markers](https://ipip.ori.org/newBigFive5broadKey.htm) (BFFM) personality assessment.
 
-The exported models predict accurate Big Five personality scores from partial item responses (NaN = unanswered), enabling short-form assessments of 20 items or fewer with calibrated 90% confidence intervals.
+The exported models predict Big Five personality scores from partial item responses (NaN = unanswered). Point predictions support arbitrary missing-item patterns; the exported calibrated 90% intervals are currently fit for the two regimes used in the pipeline: full 50-item completion and the primary 20-item domain-balanced operating point.
 
 ### Comparison with the Mini-IPIP
 
@@ -42,6 +42,8 @@ If you just want to **run the pre-trained models** without reproducing the full 
 | Python     | [`python/`](python/)         | `pip install onnxruntime numpy scipy pytest` | `python -m pytest -v` |
 | TypeScript | [`typescript/`](typescript/) | `npm ci`                                     | `npm test`            |
 
+Important for direct package use: the Python and TypeScript inference packages expect inputs to already match training-time preprocessing. That means you must reverse-score the 24 negatively keyed IPIP-BFFM items yourself before calling `predict()`. The web app does this automatically on the server; the standalone packages do not.
+
 **Python example:**
 
 ```python
@@ -49,6 +51,8 @@ from inference import IPIPBFFMPredictor
 
 predictor = IPIPBFFMPredictor()
 
+# Values below assume reverse-keyed items have already been transformed via
+# `6 - raw_value` before inference.
 result = predictor.predict({
     "ext3": 4.0, "ext5": 5.0, "agr1": 3.0, "agr7": 4.0,
     "csn1": 5.0, "csn4": 3.0, "est9": 4.0, "est10": 3.0,
@@ -68,6 +72,8 @@ import { IPIPBFFMPredictor } from "./inference.js";
 
 const predictor = await IPIPBFFMPredictor.create();
 
+// Values below assume reverse-keyed items have already been transformed via
+// `6 - rawValue` before inference.
 const result = await predictor.predict({
   ext3: 4.0, ext5: 5.0, agr1: 3.0, agr7: 4.0,
   csn1: 5.0, csn4: 3.0, est9: 4.0, est10: 3.0,
@@ -84,6 +90,8 @@ predictor.dispose();
 ```
 
 The pre-trained ONNX model and `config.json` are in [`output/`](output/). The config file contains feature names, norms, calibration factors, and all metadata needed for inference.
+
+Calibration note: exported inference currently dispatches between `full_50` and `sparse_20_balanced` regimes by answered-item count. Predictions remain available for arbitrary partial-response patterns, but the strongest calibration claim in this repo is the primary 20-item domain-balanced operating point rather than every possible sub-50 response pattern.
 
 ## Full Reproduction
 
@@ -239,14 +247,22 @@ make upload-hf
 
 ### Remote Training on AWS
 
-A 96-vCPU AWS spot instance completes the full pipeline much quicker than on a local machine. Terraform provisions the instance and `make remote-all` handles the entire run unattended:
+A 96-vCPU AWS CPU instance completes the full pipeline much quicker than on a local machine. Terraform provisions spot capacity by default, and `make remote-all` handles the entire run unattended:
 
 ```bash
 make infra-up      # provision spot instance (~60s)
 make remote-all    # push, setup, run full pipeline, pull results, tear down
+# or: make remote-reference   # reference-only remote pipeline
 ```
 
+Use `TF_VAR_use_spot=false` with `make infra-cpu-up` or `make infra-gpu-up` if you want on-demand capacity instead of spot for a more stable long-running session.
+Use `TF_VAR_remote_njobs=<n>` (or `remote_njobs` in `terraform.tfvars`) to set the default remote `N_JOBS` budget that the Makefile will use for that instance.
+
 `remote-all` attaches to a live tmux view of the pipeline. If you detach (Ctrl+B D) or lose connection, the run continues remotely and the local process polls until completion, checkpoint-pulls major artifacts (norms, prepared data, correlations, tuned params, models, eval outputs), then pulls final results and destroys the infrastructure.
+
+`make remote-reference` uses the same CPU remote workflow but stays on the default reference path throughout: `prepare-default`, `correlations-default`, `train 1`, `research-eval-reference`, `export-reference`, `export-repo-readme`, and `figures`. It intentionally skips `notes`, because the notes/research-summary path still requires all four variants. It also fails closed if your local workspace still contains stale ablation outputs or notes from a prior full run; rerun with `FORCE=1` only if you want those generated outputs removed before the reference-only pull.
+
+`make remote-push` intentionally excludes `data/` so full remote runs stay clean-room oriented. When you need to resume from existing local processed data, use `make remote-push-data` to sync the entire `data/` tree explicitly.
 
 See [`infra/README.md`](infra/README.md)
 

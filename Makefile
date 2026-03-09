@@ -304,21 +304,25 @@ SSH_KEY       ?= ~/.ssh/id_rsa
 SSH_OPTS       = -i $(SSH_KEY) -o StrictHostKeyChecking=no -o ConnectTimeout=10
 CPU_USER      := ec2-user
 CPU_HOST       = $(shell cd infra/cpu && terraform output -raw instance_ip 2>/dev/null | grep -m1 -E '^[0-9]+(\.[0-9]+){3}$$')
+CPU_REMOTE_NJOBS = $(shell cd infra/cpu && terraform output -raw remote_njobs 2>/dev/null | grep -m1 -E '^[0-9]+$$')
 CPU_DIR        = /home/$(CPU_USER)/bffm-xgb
 CPU_SSH        = ssh $(SSH_OPTS) $(CPU_USER)@$(CPU_HOST)
 CPU_RSYNC      = rsync -avz --progress -e "ssh $(SSH_OPTS)"
 GPU_USER      := ubuntu
 GPU_HOST       = $(shell cd infra/gpu && terraform output -raw instance_ip 2>/dev/null | grep -m1 -E '^[0-9]+(\.[0-9]+){3}$$')
+GPU_REMOTE_NJOBS = $(shell cd infra/gpu && terraform output -raw remote_njobs 2>/dev/null | grep -m1 -E '^[0-9]+$$')
 GPU_DIR        = /home/$(GPU_USER)/bffm-xgb
 GPU_SSH        = ssh $(SSH_OPTS) $(GPU_USER)@$(GPU_HOST)
 GPU_RSYNC      = rsync -avz --progress -e "ssh $(SSH_OPTS)"
+CPU_RSYNC_DELETE = rsync -avz --delete --progress -e "ssh $(SSH_OPTS)"
 # Backward compat defaults (point to CPU)
 REMOTE_USER   ?= $(CPU_USER)
 REMOTE_HOST    = $(CPU_HOST)
 SSH            = $(CPU_SSH)
 RSYNC          = $(CPU_RSYNC)
+RSYNC_DELETE   = $(CPU_RSYNC_DELETE)
 REMOTE_DIR     = $(CPU_DIR)
-REMOTE_NJOBS  ?= 96
+REMOTE_NJOBS  ?= $(if $(CPU_REMOTE_NJOBS),$(CPU_REMOTE_NJOBS),96)
 REMOTE_POLL_MAX ?= 360
 REMOTE_PARALLEL_TRIALS ?= 4
 REMOTE_PARALLEL_DOMAINS ?= 5
@@ -327,7 +331,7 @@ REMOTE_RESEARCH_EVAL_PARALLEL ?= $(RESEARCH_EVAL_PARALLEL)
 
 FILE ?=
 
-.PHONY: infra-up infra-down infra-ssh infra-cpu-up infra-cpu-down infra-cpu-ssh infra-gpu-up infra-gpu-down infra-gpu-ssh remote-push remote-pull remote-setup remote-tune remote-train remote-research-eval remote-attach remote-status remote-all remote-all-1 remote-all-2 remote-1-gpu remote-2-cpu
+.PHONY: infra-up infra-down infra-ssh infra-cpu-up infra-cpu-down infra-cpu-ssh infra-gpu-up infra-gpu-down infra-gpu-ssh remote-push remote-push-data remote-pull remote-pull-reference remote-reference-preflight remote-setup remote-tune remote-train remote-research-eval remote-attach remote-status remote-all remote-reference remote-all-1 remote-all-2 remote-1-gpu remote-2-cpu
 
 infra-cpu-up:
 	@echo "==> Initializing and applying Terraform (CPU)..."
@@ -450,6 +454,12 @@ else
 endif
 	@echo "==> Upload complete."
 
+remote-push-data:
+	@echo "==> Uploading data/ to $(REMOTE_HOST):$(REMOTE_DIR)/data/..."
+	@$(SSH) 'mkdir -p $(REMOTE_DIR)/data'
+	$(RSYNC) ./data/ $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/
+	@echo "==> Data upload complete."
+
 remote-pull:
 ifdef FILE
 	@echo "==> Downloading $(FILE) from $(REMOTE_HOST)..."
@@ -472,6 +482,31 @@ else
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/pipeline-timing.log ./pipeline-timing.log 2>/dev/null || true
 endif
 	@echo "==> Download complete."
+
+remote-pull-reference:
+	@echo "==> Downloading reference-only results from $(REMOTE_HOST)..."
+	@mkdir -p ./artifacts ./artifacts/variants ./data/raw ./data/processed ./models/reference ./output ./logs ./figures
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/raw/ ./data/raw/ 2>/dev/null || true
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/processed/ipip_bffm.db ./data/processed/ 2>/dev/null || true
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/processed/load_metadata.json ./data/processed/ 2>/dev/null || true
+	$(RSYNC_DELETE) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/processed/ext_est/ ./data/processed/ext_est/ 2>/dev/null || true
+	$(RSYNC_DELETE) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/models/reference/ ./models/reference/ 2>/dev/null || true
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/tuned_params.json ./artifacts/ 2>/dev/null || true
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/tuned_params.original.json ./artifacts/ 2>/dev/null || true
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/ipip_bffm_norms.json ./artifacts/ 2>/dev/null || true
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/ipip_bffm_norms.meta.json ./artifacts/ 2>/dev/null || true
+	$(RSYNC_DELETE) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/variants/reference/ ./artifacts/variants/reference/ 2>/dev/null || true
+	$(RSYNC_DELETE) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/output/reference/ ./output/reference/ 2>/dev/null || true
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/output/README.md ./output/ 2>/dev/null || true
+	$(RSYNC_DELETE) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/figures/ ./figures/ 2>/dev/null || true
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/$(LOGS_DIR)/train-reference.log ./$(LOGS_DIR)/ 2>/dev/null || true
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/$(LOGS_DIR)/eval-reference.log ./$(LOGS_DIR)/ 2>/dev/null || true
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/pipeline.log ./pipeline.log 2>/dev/null || true
+	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/pipeline-timing.log ./pipeline-timing.log 2>/dev/null || true
+	@echo "==> Download complete."
+
+remote-reference-preflight:
+	@$(PY) scripts/manage_reference_only_workspace.py $(if $(filter 1,$(FORCE)),--force,)
 
 remote-setup:
 	@echo "==> Installing dependencies on $(REMOTE_HOST)..."
@@ -570,6 +605,65 @@ remote-all: remote-push remote-setup
 	fi
 	@echo "==> Pipeline succeeded. Pulling results..."
 	@"$${MAKE:-make}" remote-pull
+	@echo "==> Tearing down infrastructure..."
+	@"$${MAKE:-make}" infra-down
+	@echo "==> Done. Infrastructure destroyed."
+
+remote-reference: remote-reference-preflight remote-push remote-setup
+	@echo "==> Starting reference-only pipeline on $(REMOTE_HOST) (detached tmux)..."
+	$(SSH) 'rm -f $(REMOTE_DIR)/.pipeline-exit-code && rm -rf $(REMOTE_DIR)/.pipeline-checkpoints && \
+		rm -rf $(REMOTE_DIR)/models/reference $(REMOTE_DIR)/artifacts/variants/reference $(REMOTE_DIR)/output/reference $(REMOTE_DIR)/figures && \
+		rm -f $(REMOTE_DIR)/output/README.md $(REMOTE_DIR)/artifacts/research_summary.json $(REMOTE_DIR)/notes/NOTES.md $(REMOTE_DIR)/$(LOGS_DIR)/train-reference.log $(REMOTE_DIR)/$(LOGS_DIR)/eval-reference.log && \
+		mkdir -p $(REMOTE_DIR)/models/reference $(REMOTE_DIR)/artifacts/variants/reference $(REMOTE_DIR)/output/reference $(REMOTE_DIR)/figures $(REMOTE_DIR)/$(LOGS_DIR) $(REMOTE_DIR)/data/processed/ext_est && \
+		: > $(REMOTE_DIR)/output/README.md && : > $(REMOTE_DIR)/$(LOGS_DIR)/train-reference.log && : > $(REMOTE_DIR)/$(LOGS_DIR)/eval-reference.log && \
+		tmux kill-session -t pipeline 2>/dev/null || true && \
+		tmux new-session -d -s pipeline \
+				"cd $(REMOTE_DIR) && \
+				 TUNE_N_JOBS=$(REMOTE_NJOBS) \
+				 TRAIN_N_JOBS=$(REMOTE_NJOBS) \
+				 PARALLEL_TRIALS=$(REMOTE_PARALLEL_TRIALS) \
+				 PARALLEL_DOMAINS=$(REMOTE_PARALLEL_DOMAINS) \
+				 CV_PARALLEL_FOLDS=$(REMOTE_CV_PARALLEL_FOLDS) \
+				 RESEARCH_EVAL_PARALLEL=$(REMOTE_RESEARCH_EVAL_PARALLEL) \
+				 bash scripts/run-pipeline.sh --reference-only; echo \$$? > .pipeline-exit-code"'
+	@echo "==> Attaching to live pipeline output (Ctrl+B D to detach)..."
+	@sleep 2
+	-$(SSH) -t 'tmux attach -t pipeline'
+	@echo "==> Polling for completion every 60s (timeout: $(REMOTE_POLL_MAX) min)..."
+	@POLL_N=0; \
+	CHECKPOINTS="norms prepare correlations tune train research-eval figures"; \
+	PULLED_CHECKPOINTS=""; \
+	while true; do \
+			for STAGE in $$CHECKPOINTS; do \
+				case " $$PULLED_CHECKPOINTS " in *" $$STAGE "*) continue ;; esac; \
+				if $(SSH) 'test -f $(REMOTE_DIR)/.pipeline-checkpoints/'"$$STAGE"'.done' 2>/dev/null; then \
+					echo "==> Checkpoint '$$STAGE' reached. Pulling intermediate results..."; \
+					if "$${MAKE:-make}" remote-pull-reference; then \
+						PULLED_CHECKPOINTS="$$PULLED_CHECKPOINTS $$STAGE"; \
+					else \
+						echo "==> WARNING: Intermediate pull for '$$STAGE' failed. Will retry."; \
+					fi; \
+				fi; \
+		done; \
+		if $(SSH) 'test -f $(REMOTE_DIR)/.pipeline-exit-code' 2>/dev/null; then \
+			break; \
+		fi; \
+		POLL_N=$$((POLL_N + 1)); \
+		if [ "$$POLL_N" -ge "$(REMOTE_POLL_MAX)" ]; then \
+			echo "==> ERROR: Polling timed out after $(REMOTE_POLL_MAX) minutes."; \
+			echo "    Instance still running — check: make infra-ssh"; \
+			exit 1; \
+		fi; \
+		sleep 60; \
+	done
+	@EXIT_CODE=$$($(SSH) 'cat $(REMOTE_DIR)/.pipeline-exit-code'); \
+	if [ "$$EXIT_CODE" != "0" ]; then \
+		echo "==> ERROR: Reference-only pipeline failed (exit code $$EXIT_CODE)."; \
+		echo "    Check: make infra-ssh, then: cat $(REMOTE_DIR)/pipeline.log"; \
+		exit 1; \
+	fi
+	@echo "==> Reference-only pipeline succeeded. Pulling results..."
+	@"$${MAKE:-make}" remote-pull-reference
 	@echo "==> Tearing down infrastructure..."
 	@"$${MAKE:-make}" infra-down
 	@echo "==> Done. Infrastructure destroyed."

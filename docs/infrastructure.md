@@ -5,8 +5,8 @@
 The pipeline can run on three types of infrastructure:
 
 1. **Local** — Your laptop/desktop. Fine for eval and export, slow for tune/train.
-2. **AWS CPU** — Spot instance (`c7a.24xlarge`, 96 cores). Good for everything but slower on tune/train.
-3. **AWS GPU** — Spot instance (`g5.xlarge`, 1x A10G). Fast for tune/train, then hand off to CPU for eval.
+2. **AWS CPU** — `c7a.24xlarge`/`c7i.24xlarge`-class instance (spot by default, on-demand optional). Good for everything but slower on tune/train.
+3. **AWS GPU** — `g5.xlarge`-class instance (spot by default, on-demand optional). Fast for tune/train, then hand off to CPU for eval.
 
 There are two Terraform configurations under `infra/`:
 
@@ -16,6 +16,15 @@ There are two Terraform configurations under `infra/`:
 | `infra/gpu/` | `g5.xlarge`     | AWS Deep Learning (Ubuntu) | `ubuntu` | Tune + train         |
 
 Each has its own VPC, subnet, security group, and Terraform state — fully independent.
+
+To provision on-demand instead of spot, prefix the infra command with `TF_VAR_use_spot=false`, for example:
+
+```bash
+TF_VAR_use_spot=false make infra-cpu-up
+TF_VAR_use_spot=false make infra-gpu-up
+```
+
+To set the default remote Make core budget for an instance, use `TF_VAR_remote_njobs=<n>` or set `remote_njobs` in that Terraform root's `terraform.tfvars`. The Makefile reads this output and uses it as the default `REMOTE_NJOBS`.
 
 ---
 
@@ -29,11 +38,29 @@ make infra-cpu-up
 
 # 2. Run entire pipeline (push, setup, download through figures, pull, teardown)
 make remote-all
+
+# Reference-only variant of the same CPU workflow
+make remote-reference
 ```
 
 `make remote-all` checkpoint-pulls major artifacts during the run
 (`norms`, `prepare`, `correlations`, `tune`, `train`, `research-eval`, `figures`)
 so expensive outputs are synced locally before final teardown.
+
+`make remote-reference` follows the same remote CPU path but only builds the
+reference data/model path after load/norms: `prepare-default`,
+`correlations-default`, `train 1`, `research-eval-reference`,
+`export-reference`, `export-repo-readme`, and `figures`. It skips `notes`
+because notes generation still requires all four variants.
+
+`make remote-push` excludes `data/` by design. Use `make remote-push-data`
+when you intentionally want to seed the remote box with your local `data/`
+tree for a resume/recovery workflow.
+
+By default, `make remote-reference` fails closed if the local workspace still
+contains stale ablation outputs, `notes/NOTES.md`, or
+`artifacts/research_summary.json` from an earlier full run. Use `FORCE=1` only
+if you want those generated outputs removed before the reference-only pull.
 
 Or in two phases with a pause to review tuned hyperparameters:
 
@@ -49,6 +76,7 @@ make remote-all-2          # train through figures, pulls results, tears down
 | Target             | Steps                                                        |
 |--------------------|--------------------------------------------------------------|
 | `make remote-all`  | push, setup, download → figures, checkpoint-pull major artifacts, pull all, infra-cpu-down |
+| `make remote-reference` | preflight local workspace, push, setup, download → reference-only prep/correlations/train/eval/export/figures, checkpoint-pull reference artifacts, pull reference results, infra-cpu-down |
 | `make remote-all-1`| push, setup, download → tune, pull tuned_params.json         |
 | `make remote-all-2`| train → figures, pull all, infra-cpu-down                    |
 
@@ -155,6 +183,8 @@ Each Terraform config reads from its own `terraform.tfvars` (gitignored):
 key_name         = "my-macbook"
 aws_region       = "us-east-1"
 allowed_ssh_cidr = "YOUR_IP/32"
+# use_spot       = false            # optional; default true
+# remote_njobs   = 64               # optional; default REMOTE_NJOBS for this host
 # instance_type  = "c7a.24xlarge"  # default
 # spot_max_price = "2.50"          # default
 ```
@@ -164,6 +194,8 @@ allowed_ssh_cidr = "YOUR_IP/32"
 key_name         = "my-macbook"
 aws_region       = "us-east-1"
 allowed_ssh_cidr = "YOUR_IP/32"
+# use_spot       = false            # optional; default true
+# remote_njobs   = 4                # optional; default REMOTE_NJOBS for this host
 # instance_type  = "g5.xlarge"     # default
 # spot_max_price = "1.50"          # default
 ```

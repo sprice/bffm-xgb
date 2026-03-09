@@ -391,12 +391,17 @@ confirms the pipeline end-to-end.
 <!-- END:calibration -->
 
 All domains achieve near-nominal 90% coverage without requiring any scaling
-adjustment. This is a direct result of the sparse calibration fix (B5.2) which
-aligned the calibration procedure with the production operating point.
+adjustment at the explicitly supported calibration regimes. In this project,
+the strongest calibration claim is for full 50-item completion and the primary
+20-item domain-balanced operating point.
 
 ### Calibration Policy
 
-When each calibration regime is applied, based on item count.
+When each calibration regime is applied, based on item count. Current exported
+runtime uses `full_50` for complete responses and falls back to
+`sparse_20_balanced` for sub-50 response patterns; that fallback supports point
+prediction broadly, but the strongest calibration claim remains the primary
+20-item domain-balanced regime.
 
 <!-- BEGIN:calibration_policy -->
 *Data will be populated after training run.*

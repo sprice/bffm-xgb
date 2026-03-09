@@ -45,6 +45,8 @@ QUANTILE_VALUES = [0.05, 0.5, 0.95]
 N_FEATURES = 50
 FEATURE_NAMES = list(ITEM_COLUMNS)
 PARITY_TOL = 1e-4
+# Small relative tolerance for XGBoost -> ONNX numeric drift on larger scores.
+PARITY_RTOL = 5e-5
 N_TEST_SAMPLES = 100
 ARTIFACT_PROVENANCE_KEYS = (
     "git_hash",
@@ -314,6 +316,7 @@ def validate_parity(joblib_models: dict, onnx_models: dict) -> None:
     X_test = np.vstack([X_full, X_sparse])
 
     max_diff_overall = 0.0
+    max_rel_diff_overall = 0.0
     for key in joblib_models:
         # Joblib prediction
         joblib_pred = joblib_models[key].predict(X_test)
@@ -324,21 +327,32 @@ def validate_parity(joblib_models: dict, onnx_models: dict) -> None:
         input_name = sess.get_inputs()[0].name
         ort_pred = sess.run(None, {input_name: X_test})[0].flatten()
 
-        max_diff = float(np.max(np.abs(joblib_pred - ort_pred)))
+        abs_diff = np.abs(joblib_pred - ort_pred)
+        max_diff = float(np.max(abs_diff))
         max_diff_overall = max(max_diff_overall, max_diff)
+        rel_scale = np.maximum(np.maximum(np.abs(joblib_pred), np.abs(ort_pred)), 1.0)
+        rel_diff = abs_diff / rel_scale
+        max_rel_diff = float(np.max(rel_diff))
+        max_rel_diff_overall = max(max_rel_diff_overall, max_rel_diff)
 
-        if max_diff > PARITY_TOL:
+        if not np.allclose(joblib_pred, ort_pred, atol=PARITY_TOL, rtol=PARITY_RTOL, equal_nan=True):
             log.error(
-                "  FAIL %s: max diff = %.2e (tolerance %.0e)",
+                "  FAIL %s: max abs diff = %.2e (atol %.0e), max rel diff = %.2e (rtol %.0e)",
                 key,
                 max_diff,
                 PARITY_TOL,
+                max_rel_diff,
+                PARITY_RTOL,
             )
             sys.exit(1)
         else:
-            log.info("  PASS %s: max diff = %.2e", key, max_diff)
+            log.info("  PASS %s: max abs diff = %.2e, max rel diff = %.2e", key, max_diff, max_rel_diff)
 
-    log.info("All models pass parity check (max diff = %.2e)", max_diff_overall)
+    log.info(
+        "All models pass parity check (max abs diff = %.2e, max rel diff = %.2e)",
+        max_diff_overall,
+        max_rel_diff_overall,
+    )
 
 
 def validate_merged_parity(
@@ -1068,6 +1082,7 @@ with open("config.json") as f:
     config = json.load(f)
 
 # Build input array (NaN = unanswered)
+# Reverse-keyed items must already be transformed via `6 - raw_value`.
 responses = {{
     "ext3": 4.0, "ext5": 5.0, "agr1": 3.0, "agr7": 4.0,
     "csn1": 5.0, "csn4": 3.0, "est9": 4.0, "est10": 3.0,
@@ -1103,6 +1118,7 @@ const config = JSON.parse(readFileSync("config.json", "utf-8"));
 const session = await ort.InferenceSession.create("model.onnx");
 
 // Build input array (NaN = unanswered)
+// Reverse-keyed items must already be transformed via `6 - rawValue`.
 const responses: Record<string, number> = {{
   ext3: 4.0, ext5: 5.0, agr1: 3.0, agr7: 4.0,
   csn1: 5.0, csn4: 3.0, est9: 4.0, est10: 3.0,
@@ -1155,6 +1171,8 @@ Population norms for raw-score -> percentile conversion (from OSPP dataset):
 
 - Norms are derived from self-selected online respondents (OSPP); they may not represent the general population
 - Models are trained on English-language IPIP items only
+- Standalone Python/TypeScript inference expects reverse-keyed items to be preprocessed before scoring; the web app applies that transform server-side
+- Exported calibration regimes are `full_50` and `sparse_20_balanced`; arbitrary sub-50 response patterns use the sparse regime as a fallback rather than a separately fit calibration curve
 - Accuracy degrades with fewer items; 20 items is the recommended minimum for reliable scoring
 - Not intended for clinical diagnosis or high-stakes selection decisions
 
@@ -1217,7 +1235,8 @@ def generate_repo_readme(variants: list[tuple[str, Path]]) -> str:
         "",
         "Each model takes up to 50 item responses (Likert 1--5) and predicts Big Five "
         "domain scores (Extraversion, Agreeableness, Conscientiousness, Emotional "
-        "Stability, Intellect) with calibrated 90% confidence intervals.",
+        "Stability, Intellect). The exported calibration regimes are fit for full "
+        "50-item completion and the primary domain-balanced 20-item sparse regime.",
         "",
         "**Key capability: sparse input.** The models produce accurate predictions even "
         "when most items are unanswered (NaN). This allows adaptive and short-form "
@@ -1231,7 +1250,8 @@ def generate_repo_readme(variants: list[tuple[str, Path]]) -> str:
         "masked to simulate missing items, teaching the model to handle arbitrary "
         "missing-item patterns",
         "- **Quantile regression** -- pinball loss at tau = 0.05, 0.50, 0.95 provides "
-        "median predictions with calibrated uncertainty bounds",
+        "median predictions with uncertainty bounds that are explicitly calibrated "
+        "for full_50 and sparse_20_balanced runtime regimes",
         "- **Norms-based percentiles** -- raw predictions are converted to population "
         "percentiles using z-score norms derived from 874k respondents",
         "",

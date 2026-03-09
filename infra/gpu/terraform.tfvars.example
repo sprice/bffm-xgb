@@ -5,6 +5,8 @@ key_name = "my-keypair"
 allowed_ssh_cidr = "YOUR_IP/32"
 
 # Optional overrides
+# remote_njobs         = 4              # default Make N_JOBS budget for this host
+# use_spot            = false          # default: true (spot)
 # aws_region           = "us-west-2"
 # instance_type        = "g5.xlarge"
 # spot_max_price       = "1.50"

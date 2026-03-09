@@ -2521,6 +2521,113 @@ def test_run_pipeline_writes_checkpoint_markers_for_major_stages(tmp_path) -> No
     assert not (checkpoint_dir / "tune.done").exists()
 
 
+def test_run_pipeline_reference_only_uses_reference_targets_and_skips_notes(tmp_path) -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir(parents=True)
+    calls_path = tmp_path / "make_calls.log"
+    make_stub = fake_bin / "make"
+    make_stub.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                f'printf \"%s\\n\" \"$*\" >> \"{calls_path}\"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    make_stub.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    result = subprocess.run(
+        ["bash", "scripts/run-pipeline.sh", "--reference-only", "--end-stage", "figures"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0
+    calls = calls_path.read_text(encoding="utf-8").splitlines()
+    assert any(line == "prepare-default" for line in calls)
+    assert any(line == "correlations-default" for line in calls)
+    assert any(line.startswith("train 1") for line in calls)
+    assert any(line.startswith("research-eval-reference") for line in calls)
+    assert any(line.startswith("export-reference export-repo-readme") for line in calls)
+    assert not any(line == "prepare" or line.startswith("prepare ") for line in calls)
+    assert not any(line == "correlations" or line.startswith("correlations ") for line in calls)
+    assert not any(line.startswith("research-eval ") for line in calls)
+    assert not any(line == "notes" or line.startswith("notes ") for line in calls)
+    assert "notes SKIPPED (reference-only mode requires all four variants)" in result.stdout
+
+
+def test_run_pipeline_reference_only_accepts_export_stage_aliases(tmp_path) -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir(parents=True)
+    calls_path = tmp_path / "make_calls.log"
+    make_stub = fake_bin / "make"
+    make_stub.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                f'printf \"%s\\n\" \"$*\" >> \"{calls_path}\"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    make_stub.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    result = subprocess.run(
+        ["bash", "scripts/run-pipeline.sh", "--reference-only", "--start-stage", "export-all", "--end-stage", "export-reference"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0
+    calls = calls_path.read_text(encoding="utf-8").splitlines()
+    assert calls == ["export-reference export-repo-readme"]
+    assert "--- export done" in result.stdout
+
+
+def test_manage_reference_only_workspace_fails_closed_and_force_cleans(tmp_path, monkeypatch, capsys) -> None:
+    workspace = _load_paper_module("manage_reference_only_workspace.py")
+    monkeypatch.setattr(workspace, "PACKAGE_ROOT", tmp_path)
+
+    stale_paths = [
+        "artifacts/variants/ablation_none/validation_results.json",
+        "notes/NOTES.md",
+        "output/ablation_focused/model.onnx",
+        "logs/eval-ablation-stratified.log",
+    ]
+    for rel in stale_paths:
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("stale", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["manage_reference_only_workspace.py"])
+    rc = workspace.main()
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "remote-reference refuses to run" in captured.out
+    assert "artifacts/variants/ablation_none" in captured.out
+
+    monkeypatch.setattr(sys, "argv", ["manage_reference_only_workspace.py", "--force"])
+    rc = workspace.main()
+    assert rc == 0
+    assert not (tmp_path / "artifacts/variants/ablation_none").exists()
+    assert not (tmp_path / "notes/NOTES.md").exists()
+    assert not (tmp_path / "output/ablation_focused").exists()
+    assert not (tmp_path / "logs/eval-ablation-stratified.log").exists()
+
+
 def test_manage_backup_clean_moves_outputs_and_writes_manifest(tmp_path, monkeypatch, capsys) -> None:
     backup = _load_paper_module("manage_backup.py")
     monkeypatch.setattr(backup, "PACKAGE_ROOT", tmp_path)
@@ -2635,6 +2742,43 @@ def test_makefile_remote_all_includes_checkpoint_pull_loop() -> None:
     assert '"${MAKE:-make}" remote-pull' in out
 
 
+def test_makefile_remote_reference_runs_reference_only_pipeline() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        ["make", "-n", "remote-reference"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    out = result.stdout
+    assert "scripts/manage_reference_only_workspace.py" in out
+    assert "bash scripts/run-pipeline.sh --reference-only" in out
+    assert ".pipeline-checkpoints" in out
+    assert "TRAIN_N_JOBS=96" in out
+    assert '"${MAKE:-make}" remote-pull-reference' in out
+
+
+def test_makefile_remote_pull_reference_scopes_results() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        ["make", "-n", "remote-pull-reference"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    out = result.stdout
+    assert "data/processed/ext_est/" in out
+    assert "models/reference/" in out
+    assert "artifacts/variants/reference/" in out
+    assert "output/reference/" in out
+    assert "notes/" not in out
+    assert "artifacts/research_summary.json" not in out
+
+
 def test_makefile_remote_push_excludes_backup_dir() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     result = subprocess.run(
@@ -2647,6 +2791,23 @@ def test_makefile_remote_push_excludes_backup_dir() -> None:
     assert result.returncode == 0
     out = result.stdout
     assert "--exclude='.backup/'" in out
+
+
+def test_makefile_remote_push_data_syncs_data_tree() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        ["make", "-n", "remote-push-data"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    out = result.stdout
+    assert "Uploading data/" in out
+    assert "./data/ " in out
+    assert ":$(REMOTE_DIR)/data/" not in out
+    assert "/data/" in out
 
 
 def test_makefile_remote_gpu_push_excludes_backup_dir() -> None:
@@ -2712,6 +2873,66 @@ def test_makefile_pairing_guard_fails_closed_on_mismatch_with_trailing_slash_mod
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "Model/data mismatch" in combined
+
+
+def test_export_validate_parity_allows_tiny_relative_drift(monkeypatch) -> None:
+    export = _load_pipeline_module("11_export_onnx.py")
+
+    class _FakeJoblibModel:
+        def predict(self, X):
+            return np.full(X.shape[0], 4.413000106811523, dtype=np.float32)
+
+    class _FakeOnnxModel:
+        def SerializeToString(self):
+            return b"fake-onnx"
+
+    class _FakeSession:
+        def __init__(self, _bytes):
+            pass
+
+        def get_inputs(self):
+            return [type("_Input", (), {"name": "input"})()]
+
+        def run(self, _outputs, inputs):
+            X = next(iter(inputs.values()))
+            pred = np.full(X.shape[0], 4.413000106811523, dtype=np.float32)
+            pred[71] = np.float32(4.413167953491211)
+            return [pred]
+
+    monkeypatch.setitem(sys.modules, "onnxruntime", type("_Ort", (), {"InferenceSession": _FakeSession})())
+
+    export.validate_parity({"agr_q50": _FakeJoblibModel()}, {"agr_q50": _FakeOnnxModel()})
+
+
+def test_export_validate_parity_still_fails_on_material_drift(monkeypatch) -> None:
+    export = _load_pipeline_module("11_export_onnx.py")
+
+    class _FakeJoblibModel:
+        def predict(self, X):
+            return np.full(X.shape[0], 4.0, dtype=np.float32)
+
+    class _FakeOnnxModel:
+        def SerializeToString(self):
+            return b"fake-onnx"
+
+    class _FakeSession:
+        def __init__(self, _bytes):
+            pass
+
+        def get_inputs(self):
+            return [type("_Input", (), {"name": "input"})()]
+
+        def run(self, _outputs, inputs):
+            X = next(iter(inputs.values()))
+            pred = np.full(X.shape[0], 4.0, dtype=np.float32)
+            pred[71] = np.float32(4.0005)
+            return [pred]
+
+    monkeypatch.setitem(sys.modules, "onnxruntime", type("_Ort", (), {"InferenceSession": _FakeSession})())
+
+    with pytest.raises(SystemExit) as exc_info:
+        export.validate_parity({"agr_q50": _FakeJoblibModel()}, {"agr_q50": _FakeOnnxModel()})
+    assert exc_info.value.code == 1
 
 
 def test_export_requires_stage05_item_info(tmp_path, monkeypatch) -> None:

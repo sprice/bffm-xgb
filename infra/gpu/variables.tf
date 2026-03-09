@@ -10,8 +10,20 @@ variable "instance_type" {
   default     = "g5.xlarge"
 }
 
+variable "remote_njobs" {
+  description = "Default remote CPU core budget passed to Make targets on this instance"
+  type        = number
+  default     = 4
+}
+
+variable "use_spot" {
+  description = "Whether to provision a spot instance request instead of an on-demand instance"
+  type        = bool
+  default     = true
+}
+
 variable "spot_max_price" {
-  description = "Maximum hourly price for spot instance (USD)"
+  description = "Maximum hourly price for spot instance (USD, ignored when use_spot=false)"
   type        = string
   default     = "1.50"
 }
