@@ -1,0 +1,30 @@
+{
+  "hyperparameters": {
+    "n_estimators": 6884,
+    "max_depth": 5,
+    "learning_rate": 0.010019388376694232,
+    "reg_alpha": 4.430034672198069,
+    "reg_lambda": 2.1350513811608853,
+    "subsample": 0.7211182938397382,
+    "colsample_bytree": 0.5903992966597149,
+    "min_child_weight": 8
+  },
+  "provenance": {
+    "data_snapshot_id": "norms_sha256:3470dd5a33da84f343e24b052155dbdca65b7c48644d2266c466d534990daf80",
+    "preprocessing_version": "9575ef602239c3154e4f06d432a43fccef325115",
+    "script": "06_tune.py",
+    "git_hash": "9575ef602239c3154e4f06d432a43fccef325115",
+    "rng_seed": 42,
+    "n_trials": 200,
+    "parallel_trials": 1,
+    "config": "configs/reference.yaml",
+    "xgb_n_jobs": 16,
+    "gpu": false,
+    "xgb_n_jobs_source": "config.training.n_jobs",
+    "train_sha256": "cbb2105feeae0b39590ea22332151e3ad370a138278b4874f15fbec332dc8464",
+    "val_sha256": "09be1604b5737831ce0cca07d17f1b0c5c64e413681a47c65a765ad67276c53c",
+    "test_sha256": "bffdba36640f6dd7f0237f89f02c0ebc14ad95408ceabb896298530101b48bb8",
+    "split_signature": "58fd3f36d4359e4c653df6c910e871de3aa1e8495db4280156fef262851d50cf",
+    "item_info_sha256": "6a37db63096a81eae2ddcf5d6fab1fe2c2be82f1056f9fd15f3467d045361ee1"
+  }
+}

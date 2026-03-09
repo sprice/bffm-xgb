@@ -1,0 +1,55 @@
+{
+  "schema_version": 2,
+  "dataset": "IPIP-FFM (openpsychometrics.org)",
+  "table": "responses",
+  "scope": "full cleaned dataset from stage 02 SQLite (not split-specific)",
+  "n_respondents": 603322,
+  "mini_ipip_mapping": {
+    "file": "mini_ipip_mapping.json",
+    "sha256": "b709a7a5e297a03c6f4d3c2f2067f8bc80d4d2dba59cf81c4cd3593526996450"
+  },
+  "norms": {
+    "ext": {
+      "mean": 2.913822303844382,
+      "sd": 0.9112317774936253
+    },
+    "agr": {
+      "mean": 3.75890983587537,
+      "sd": 0.7363302058000516
+    },
+    "csn": {
+      "mean": 3.342564666960595,
+      "sd": 0.7390534942476729
+    },
+    "est": {
+      "mean": 2.9186823951389145,
+      "sd": 0.8606772235454255
+    },
+    "opn": {
+      "mean": 3.938876420883044,
+      "sd": 0.618255254688003
+    }
+  },
+  "mini_ipip_norms": {
+    "ext": {
+      "mean": 2.8050738245911804,
+      "sd": 1.0287265134850925
+    },
+    "agr": {
+      "mean": 3.800007707327099,
+      "sd": 0.8952101374459086
+    },
+    "csn": {
+      "mean": 3.2001675722085388,
+      "sd": 0.9029097463745694
+    },
+    "est": {
+      "mean": 3.0645513506883555,
+      "sd": 0.9093891400661973
+    },
+    "opn": {
+      "mean": 4.053896592532677,
+      "sd": 0.7664723563640424
+    }
+  }
+}
