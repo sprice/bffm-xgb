@@ -28,6 +28,7 @@ node_modules/
 # Web app (regenerable)
 web/model/
 web/dist/
+learn/dist/
 
 # Pipeline outputs (regenerable via make all)
 artifacts/ipip_bffm_norms.meta.json
