@@ -42,7 +42,7 @@ export const chapter11Runtime: Chapter = {
       "Why ONNX?",
       `
         ${paragraph(
-          `The user already stated one pragmatic reason: ONNX made it easy to publish on ${abbr("Hugging Face", "A platform for sharing machine-learning models, datasets, and demos.")} and use the same exported model in the web-facing runtime. That is already a sufficient engineering reason.`,
+          `One pragmatic reason: ONNX makes it easy to publish on ${abbr("Hugging Face", "A platform for sharing machine-learning models, datasets, and demos.")} and use the same exported model in the web-facing runtime. That is already a sufficient engineering reason.`,
         )}
         ${table(
           ["Choice", "Pros", "Cons"],

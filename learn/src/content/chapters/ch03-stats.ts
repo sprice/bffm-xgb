@@ -148,7 +148,7 @@ export const chapter03Stats: Chapter = {
       `,
     )}
     ${section(
-      "The Stats Lens You Need For The Rest Of The Course",
+      "Key Statistical Concepts For What Follows",
       `
         ${list([
           "A raw score is just a location on the questionnaire's 1-5 scale.",

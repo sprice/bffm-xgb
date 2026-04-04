@@ -154,11 +154,11 @@ k = 4  -> alpha ≈ 0.779, SEM ≈ 0.428`,
       "The Most Important Lesson From Evaluation",
       `
         ${list([
-          "You need held-out validation, not just training success.",
-          "You need strong baselines, not just one ML model.",
-          "You need to separate scoring quality from item-selection quality.",
-          "You need psychometric stopping logic if you want adaptive assessment claims to remain principled.",
-          "You should treat invalidated ideas as part of the knowledge of the repo, not as embarrassing leftovers.",
+          "Held-out validation matters, not just training success.",
+          "Strong baselines matter, not just one ML model.",
+          "Scoring quality and item-selection quality are separate questions.",
+          "Adaptive assessment claims need psychometric stopping logic to remain principled.",
+          "Invalidated ideas are part of the knowledge of the repo, not embarrassing leftovers.",
         ])}
         ${internalFiles([
           "pipeline/08_validate.py",

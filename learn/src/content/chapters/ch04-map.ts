@@ -87,7 +87,7 @@ export const chapter04Map: Chapter = {
           ],
         )}
         ${paragraph(
-          "Stages 01-07 build the model. Stages 08-10 test the research claims. Stages 11-13 package and publish the runtime artifact. The course will follow roughly the same order.",
+          "Stages 01-07 build the model. Stages 08-10 test the research claims. Stages 11-13 package and publish the runtime artifact. This guide follows roughly the same order.",
         )}
       `,
     )}
@@ -122,9 +122,9 @@ export const chapter04Map: Chapter = {
           `The Makefile and <code>scripts/run-pipeline.sh</code> are the ${abbr("orchestration layer", "The commands and scripts that coordinate how the whole pipeline is executed across stages and machines.")}. They define how stages run locally, how reference-only or full multi-variant runs are executed, and how CPU/GPU remote workflows hand off work between machines.`,
         )}
         ${list([
-          "Use the numbered scripts to understand the science.",
-          "Use the Makefile to understand the operational workflow.",
-          "Use the docs folder to understand the intended usage and deployment story.",
+          "The numbered scripts contain the science.",
+          "The Makefile defines the operational workflow.",
+          "The docs folder explains the intended usage and deployment story.",
         ])}
       `,
     )}

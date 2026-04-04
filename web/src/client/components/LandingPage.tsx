@@ -2,10 +2,15 @@ import { InfoCards } from "./InfoCards";
 
 interface LandingPageProps {
   onStart: () => void;
+  primaryActionLabel: string;
   children?: React.ReactNode;
 }
 
-export function LandingPage({ onStart, children }: LandingPageProps) {
+export function LandingPage({
+  onStart,
+  primaryActionLabel,
+  children,
+}: LandingPageProps) {
   return (
     <div className="flex flex-col gap-10">
       <div className="pt-2 pb-4">
@@ -31,7 +36,7 @@ export function LandingPage({ onStart, children }: LandingPageProps) {
             className="min-h-[52px] px-10 py-4 bg-primary text-white rounded-lg text-lg font-bold shadow-lg hover:bg-primary-hover hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 active:shadow-md transition-all"
             onClick={onStart}
           >
-            {children ? "Start Over" : "Take the Assessment"}
+            {primaryActionLabel}
           </button>
 
           {children}

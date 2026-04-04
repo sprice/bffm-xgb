@@ -68,7 +68,7 @@ export const chapter01Orientation: Chapter = {
             [
               "Codebase map",
               `How the numbered scripts, ${abbr("artifacts", "Named output files produced by pipeline stages, such as norms, splits, models, and reports.")}, configs, runtime packages, and web app fit together.`,
-              `You need the ${abbr("artifact graph", "The chain of which artifacts are produced by each stage and consumed by later stages.")} before you can safely change anything.`,
+              `Understanding the ${abbr("artifact graph", "The chain of which artifacts are produced by each stage and consumed by later stages.")} makes the rest of the system click.`,
             ],
             [
               `${abbr("XGBoost", "A high-performance gradient-boosted decision tree library that works especially well on tabular data.")} + ${abbr("quantile regression", "Regression that predicts specific quantiles such as q05, q50, and q95 rather than only a mean.")}`,
@@ -137,7 +137,7 @@ export const chapter01Orientation: Chapter = {
       `
         ${list([
           "Read linearly the first time. The chapters are ordered to front-load psychology and statistics before ML details.",
-          "When a chapter references a script, open that file in parallel and scan the top-level flow rather than reading every line immediately.",
+          "When a chapter references a script, the source is linked so you can scan the top-level flow rather than reading every line.",
           `Treat every stage as an ${abbr("artifact transformer", "A step that reads one set of saved files, transforms them, and writes a new set of saved outputs.").replace("artifact transformer", "artifact transformer")}: ask what it reads, what it writes, and what assumptions it locks in for the next stage.`,
           "Pay attention to historical invalidations. Those are some of the most valuable lessons in the codebase.",
         ])}

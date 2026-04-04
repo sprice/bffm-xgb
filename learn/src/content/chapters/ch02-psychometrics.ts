@@ -108,7 +108,7 @@ export const chapter02Psychometrics: Chapter = {
           "warning",
           "Important limitation",
           paragraph(
-            `This codebase mainly demonstrates reconstruction of full-scale scores. That is not the same thing as proving equal ${abbr("external validity", "Evidence that a score relates appropriately to outside outcomes or behaviors.")}, equal ${abbr("factor structure", "The pattern of underlying latent dimensions inferred from how items relate to each other.")}, or equal clinical interpretability. The course will keep returning to that distinction.`,
+            `This codebase mainly demonstrates reconstruction of full-scale scores. That is not the same thing as proving equal ${abbr("external validity", "Evidence that a score relates appropriately to outside outcomes or behaviors.")}, equal ${abbr("factor structure", "The pattern of underlying latent dimensions inferred from how items relate to each other.")}, or equal clinical interpretability. This guide returns to that distinction throughout.`,
           ),
         )}
       `,
@@ -135,7 +135,7 @@ export const chapter02Psychometrics: Chapter = {
       `,
     )}
     ${section(
-      "Psychometrics You Should Keep Watching For",
+      "Key Psychometric Concepts To Watch For",
       `
         ${list([
           "Reverse-keying protects score direction.",

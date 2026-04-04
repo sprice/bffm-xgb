@@ -10,6 +10,7 @@ export function LandingPage() {
   const sessionExists = hasSession();
   const raw = loadResultsHash();
   const resultsHash = raw && VALID_HASH.test(raw) ? raw : null;
+  const hasSavedState = Boolean(resultsHash || sessionExists);
 
   useEffect(() => {
     document.title = "Big Five Personality Assessment";
@@ -25,7 +26,10 @@ export function LandingPage() {
 
   return (
     <div className="max-w-[720px] mx-auto">
-      <LandingContent onStart={handleStart}>
+      <LandingContent
+        onStart={handleStart}
+        primaryActionLabel={hasSavedState ? "Start Over" : "Take the Assessment"}
+      >
         {resultsHash && (
           <button
             type="button"

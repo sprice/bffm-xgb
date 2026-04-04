@@ -92,7 +92,7 @@ export const chapter09Training: Chapter = {
           `One subtle but important implementation detail: the code splits an ${abbr("early-stopping evaluation slice", "A held-out subset used during training to decide when to stop adding trees before the model starts overfitting.")} before augmentation when using multi-pass sparsity. That prevents augmented copies of the same respondent from leaking across fit/eval boundaries.`,
         )}
         ${paragraph(
-          "This is the kind of issue that strong engineers care about even outside ML. If one raw respondent is duplicated into multiple masked variants and those variants leak into both sides of a validation boundary, the reported performance becomes overly optimistic.",
+          "This matters because if one raw respondent is duplicated into multiple masked variants and those variants leak into both sides of a validation boundary, the reported performance becomes overly optimistic.",
         )}
       `,
     )}
@@ -144,7 +144,7 @@ else: scale = 1.0`,
           `Stage 07 has a strict ${abbr("hyperparameter lock policy", "A rule for deciding when previously tuned model settings are still allowed to be reused.")}. Under <code>strict_data_hash</code>, it checks that the locked params file's provenance matches the current train hash, validation hash, split signature, and item_info hash. If not, it fails closed.`,
         )}
         ${paragraph(
-          "That means you cannot casually retune on one split and then silently retrain on another while pretending the params are still valid. The repo forces you to make that change explicit.",
+          "That means no one can casually retune on one split and then silently retrain on another while pretending the params are still valid. The repo forces any such change to be explicit.",
         )}
         ${callout(
           "repo",
