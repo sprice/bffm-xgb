@@ -12,6 +12,27 @@ if (!app) {
 const visitedStorageKey = "bffm-xgb-learn-visited";
 let glossaryTooltip: HTMLDivElement | null = null;
 let activeGlossaryTrigger: HTMLElement | null = null;
+let sidebarScrollTop = 0;
+
+function detectMathMlSupport(): boolean {
+  const probe = document.createElement("div");
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  probe.style.pointerEvents = "none";
+  probe.style.inset = "-9999px auto auto -9999px";
+  probe.innerHTML =
+    '<math xmlns="http://www.w3.org/1998/Math/MathML"><mspace height="23px" width="77px"></mspace></math>';
+  document.body.appendChild(probe);
+
+  const rect = probe.getBoundingClientRect();
+  probe.remove();
+
+  return Math.abs(rect.width - 77) <= 1 && Math.abs(rect.height - 23) <= 1;
+}
+
+document.documentElement.classList.add(
+  detectMathMlSupport() ? "mathml-supported" : "mathml-fallback",
+);
 
 function ensureGlossaryTooltip(): HTMLDivElement {
   if (glossaryTooltip) return glossaryTooltip;
@@ -212,6 +233,11 @@ function renderPrevNext(current: Chapter): string {
 function renderApp(): void {
   hideGlossaryTooltip();
 
+  const previousSidebar = app.querySelector<HTMLElement>(".sidebar");
+  if (previousSidebar) {
+    sidebarScrollTop = previousSidebar.scrollTop;
+  }
+
   const visited = loadVisited();
   const chapter = chapterBySlug(currentSlug());
   visited.add(chapter.slug);
@@ -251,6 +277,12 @@ function renderApp(): void {
       </main>
     </div>
   `;
+
+  const sidebar = app.querySelector<HTMLElement>(".sidebar");
+  if (sidebar) {
+    sidebar.scrollTop = sidebarScrollTop;
+    sidebar.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: "nearest" });
+  }
 
   chapter.afterRender?.();
   wireGlossaryTooltips(app);

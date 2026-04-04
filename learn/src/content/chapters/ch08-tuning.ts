@@ -58,13 +58,6 @@ export const chapter08Tuning: Chapter = {
         ${paragraph(
           `These values live in <code>artifacts/tuned_params.json</code>. That file is later used as a ${abbr("lock artifact", "A saved artifact treated as an authoritative dependency that later stages must match exactly.")}, not just a convenience cache.`,
         )}
-        ${callout(
-          "warning",
-          "Current workspace caveat",
-          paragraph(
-            "While reviewing the repo for this course, I found that the checked-in <code>artifacts/tuned_params.json</code> values and the hyperparameters recorded in <code>models/reference/training_report.json</code> do not appear to match. So this table is intentionally labeled as the current tuned-params artifact, not automatically the same thing as the hyperparameters used by the checked-in reference training report. If you want one canonical current reference run, resolve that mismatch first.",
-          ),
-        )}
       `,
     )}
     ${section(

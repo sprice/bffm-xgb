@@ -147,13 +147,6 @@ else: scale = 1.0`,
           "That means you cannot casually retune on one split and then silently retrain on another while pretending the params are still valid. The repo forces you to make that change explicit.",
         )}
         ${callout(
-          "warning",
-          "Current workspace caveat",
-          paragraph(
-            "The checked-in reference training report and the current checked-in <code>artifacts/tuned_params.json</code> do not line up cleanly in this workspace. The report records a different hyperparameter hash than the file currently on disk. So treat the lock-policy description as the intended design, while recognizing that the present checked-in artifacts need reconciliation.",
-          ),
-        )}
-        ${callout(
           "repo",
           "This is the main reproducibility lesson",
           paragraph(

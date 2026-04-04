@@ -158,7 +158,7 @@ export const chapter01Orientation: Chapter = {
         },
         {
           label: "Current repo README",
-          href: "https://github.com/shawnprice/bffm-xgb",
+          href: "https://github.com/sprice/bffm-xgb",
           note: "Repository-level overview and install/run guide",
         },
       ]),

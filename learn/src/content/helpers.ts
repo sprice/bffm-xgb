@@ -86,11 +86,12 @@ export function callout(
 
 export function mathBlock(mathml: string, plainText?: string): string {
   const fallback = plainText
-    ? `<div class="math-fallback">${plainText}</div>`
+    ? `<div class="math-fallback">${escapeHtml(plainText)}</div>`
     : "";
+  const label = plainText ? ` aria-label="${escapeHtml(plainText)}"` : "";
   return `
-    <div class="math-block">
-      <math display="block">${mathml}</math>
+    <div class="math-block"${label}>
+      <math class="math-rendered" display="block">${mathml}</math>
       ${fallback}
     </div>
   `;
