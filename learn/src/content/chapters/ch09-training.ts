@@ -74,7 +74,7 @@ export const chapter09Training: Chapter = {
           ],
         )}
         ${paragraph(
-          `The imbalanced bucket matters because it exposes the model to the ugly patterns greedy selection can create. Even though greedy selection isn't the final recommendation, the model learns not to panic when it sees badly unbalanced inputs; it's seen worse during training.`,
+          `The imbalanced bucket matters because it exposes the model to the ugly patterns greedy selection can create. The model learns to handle badly unbalanced inputs because it's seen worse during training.`,
         )}
         ${callout(
           "why",
@@ -148,7 +148,7 @@ else: scale = 1.0`,
         )}
         ${callout(
           "repo",
-          "Reproducibility means identity, not just code",
+          "Reproducibility means full identity",
           paragraph(
             "A training run is code plus exact data identity, plus exact item-ranking identity, plus exact hyperparameter identity. This repo makes that fact concrete.",
           ),

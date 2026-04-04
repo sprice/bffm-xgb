@@ -61,7 +61,7 @@ export const chapter06ItemAnalysis: Chapter = {
       "Cross-Domain Information",
       `
         ${paragraph(
-          `The repo then computes a cross-domain information score as the sum of the absolute item correlations across all five domains. Despite the name, this includes the item's own domain too. So it is really a ${abbr("whole-profile utility score", "A heuristic ranking score for how useful an item seems for recovering the overall five-domain profile.")}, not a purely out-of-domain score.`,
+          `The repo then computes a cross-domain information score as the sum of the absolute item correlations across all five domains. Despite the name, this includes the item's own domain too. So it is really a ${abbr("whole-profile utility score", "A heuristic ranking score for how useful an item seems for recovering the overall five-domain profile.")}.`,
         )}
         ${codeBlock(
           "cross_domain_info = |r_ext| + |r_agr| + |r_csn| + |r_est| + |r_opn|",

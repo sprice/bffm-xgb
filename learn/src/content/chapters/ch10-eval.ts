@@ -105,9 +105,9 @@ SEM = SD_domain * sqrt(1 - alpha_k)`,
         )}
         ${callout(
           "note",
-          "What this SEM formula is and is not",
+          "Scope of this SEM formula",
           paragraph(
-            `A heuristic built from mean inter-item correlation and a ${abbr("Cronbach-alpha", "A classical internal-consistency reliability estimate based on how strongly items in a scale relate to each other.")}-style reliability approximation. It's useful for this repo's stopping logic, but it isn't the only possible definition of SEM and it isn't an ${abbr("IRT", "Item Response Theory: a psychometric framework that models item responses via latent traits and item parameters.")} information calculation.`,
+            `A heuristic built from mean inter-item correlation and a ${abbr("Cronbach-alpha", "A classical internal-consistency reliability estimate based on how strongly items in a scale relate to each other.")}-style reliability approximation. Useful for this repo's stopping logic; other definitions of SEM exist, and ${abbr("IRT", "Item Response Theory: a psychometric framework that models item responses via latent traits and item parameters.")} information calculations work differently.`,
           ),
         )}
         <div id="sem-widget"></div>
@@ -128,7 +128,7 @@ k = 4  -> alpha ≈ 0.779, SEM ≈ 0.428`,
           "text",
         )}
         ${paragraph(
-          `So moving from 3 to 4 Extraversion items pushes SEM below a 0.45 target. Stopping is framed in terms of ${abbr("measurement precision", "How narrowly and reliably a score estimates the trait rather than fluctuating because of measurement error.")}; the item count follows from the precision requirement, not the other way around.`,
+          `So moving from 3 to 4 Extraversion items pushes SEM below a 0.45 target. Stopping is framed in terms of ${abbr("measurement precision", "How narrowly and reliably a score estimates the trait rather than fluctuating because of measurement error.")}; the item count follows from the precision requirement.`,
         )}
       `,
     )}

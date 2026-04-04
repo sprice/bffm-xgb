@@ -142,7 +142,7 @@ export const chapter02Psychometrics: Chapter = {
           "Domain means define the raw-score targets.",
           "Norms define the percentile interpretation.",
           `Inter-item correlation and ${abbr("SEM", "Standard error of measurement: an estimate of how much observed scores vary because of measurement error.").replace("SEM", "SEM")} justify assessment length.`,
-          `Content balancing matters because the instrument is ${abbr("multidimensional", "Measuring several related but distinct traits rather than only one single trait.")}, not one-dimensional.`,
+          `Content balancing matters because the instrument is ${abbr("multidimensional", "Measuring several related but distinct traits rather than only one single trait.")}.`,
         ])}
         ${internalFiles([
           "pipeline/02_load_sqlite.py",
