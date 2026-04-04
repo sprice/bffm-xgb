@@ -27,17 +27,17 @@ export const chapter03Stats: Chapter = {
       "Means, Variation, And Why SD Matters",
       `
         ${lead(
-          `Most pipeline artifacts are summaries of ${abbr("distributions", "How values are spread across a variable, including their center, spread, and shape.")}. If you cannot reason about center and spread, the rest of the repo stays opaque.`,
+          `Most pipeline artifacts are summaries of ${abbr("distributions", "How values are spread across a variable, including their center, spread, and shape.")}. Without a handle on center and spread, the rest of the repo stays opaque.`,
         )}
         ${paragraph(
-          `A mean gives the center of a variable. A ${abbr("standard deviation", "A measure of spread showing how far values typically sit from the mean.")} tells you how spread out the values are around that mean. In this project, each domain's norm table stores both because percentile conversion depends on both.`,
+          `A mean gives the center of a variable; a ${abbr("standard deviation", "A measure of spread showing how far values typically sit from the mean.")} tells you how spread out values sit around that mean. Each domain's norm table stores both because percentile conversion depends on both.`,
         )}
         ${mathBlock(
           "<mrow><mi>z</mi><mo>=</mo><mfrac><mrow><mi>x</mi><mo>-</mo><mi>&mu;</mi></mrow><mi>&sigma;</mi></mfrac></mrow>",
           "z = (x - mean) / sd",
         )}
         ${paragraph(
-          `If an Extraversion raw score is above the norm mean, its z-score is positive. If it is below, the z-score is negative. Percentiles are then computed from the ${abbr("standard normal cumulative distribution", "The curve used to convert a z-score into the proportion of the population expected to fall below it.")}.`,
+          `Extraversion raw scores above the norm mean produce positive z-scores; scores below produce negative ones. Percentiles are then computed from the ${abbr("standard normal cumulative distribution", "The curve used to convert a z-score into the proportion of the population expected to fall below it.")}.`,
         )}
         <div id="z-score-widget"></div>
       `,
@@ -53,13 +53,13 @@ export const chapter03Stats: Chapter = {
           "text",
         )}
         ${paragraph(
-          "That means the respondent scored higher than roughly 83.5% of the reference sample on Extraversion. This is exactly the style of conversion used by <code>lib/scoring.py</code> and the inference packages.",
+          "So the respondent scored higher than roughly 83.5% of the reference sample on Extraversion&mdash;exactly the conversion style used by <code>lib/scoring.py</code> and the inference packages.",
         )}
         ${callout(
           "note",
           "Important percentile nuance",
           paragraph(
-            `In this repo, percentile conversion is a ${abbr("normal-CDF transform", "A conversion that maps z-scores to percentiles using the normal cumulative distribution function.")} using the locked mean and SD for each domain. That is not the same thing as an empirical percentile rank lookup from the raw sample. It is a modeling convenience and a stable runtime convention.`,
+            `Percentile conversion here is a ${abbr("normal-CDF transform", "A conversion that maps z-scores to percentiles using the normal cumulative distribution function.")} using the locked mean and SD for each domain&mdash;a modeling convenience and a stable runtime convention, distinct from an empirical percentile rank lookup on the raw sample.`,
           ),
         )}
       `,
@@ -68,10 +68,10 @@ export const chapter03Stats: Chapter = {
       "Pearson Correlation",
       `
         ${paragraph(
-          `${abbr("Pearson correlation", "A statistic that measures linear association between two variables, usually written as r.")} measures linear association between two variables. Values near +1 mean strong positive alignment. Values near 0 mean weak linear relationship. Values near -1 mean strong inverse relationship.`,
+          `${abbr("Pearson correlation", "A statistic that measures linear association between two variables, written as r.")} measures linear association between two variables. Values near +1 mean strong positive alignment; near 0, weak linear relationship; near &minus;1, strong inverse relationship.`,
         )}
         ${paragraph(
-          "The repo uses Pearson r everywhere: item-domain correlations in stage 05, overall performance metrics in validation, baseline comparisons, and simulation outputs.",
+          "Pearson r shows up everywhere in the repo: item-domain correlations in stage 05, overall performance metrics in validation, baseline comparisons, and simulation outputs.",
         )}
         ${table(
           ["r value", "Very rough interpretation"],
@@ -87,7 +87,7 @@ export const chapter03Stats: Chapter = {
           "note",
           "Important nuance",
           paragraph(
-            `In this repo, high Pearson r means the short-form predictions track the full-scale criterion well. It does not automatically mean every domain is equally good or that absolute error is small in every case. That is why the repo also tracks ${abbr("MAE", "Mean absolute error: the average size of prediction errors without regard to direction.")}, ${abbr("RMSE", "Root mean squared error: an error metric that penalizes larger mistakes more strongly.")}, within-5, and coverage.`,
+            `High Pearson r means the short-form predictions track the full-scale criterion well. But it doesn't automatically mean every domain is equally good (or that absolute error is small in every case). That's why the repo also tracks ${abbr("MAE", "Mean absolute error: the average size of prediction errors without regard to direction.")}, ${abbr("RMSE", "Root mean squared error: an error metric that penalizes larger mistakes more strongly.")}, within-5, and coverage.`,
           ),
         )}
       `,
@@ -96,7 +96,7 @@ export const chapter03Stats: Chapter = {
       "Train, Validation, And Test Splits",
       `
         ${paragraph(
-          `A training set fits the model. A validation set helps choose ${abbr("hyperparameters", "Settings chosen before or around training, such as tree depth or learning rate, that control how the model learns.")} and assess whether the model generalizes while development is still happening. A test set is held out for later evaluation so you do not silently tune against the final scoreboard.`,
+          `A training set fits the model. A validation set helps choose ${abbr("hyperparameters", "Settings chosen before or around training, such as tree depth or learning rate, that control how the model learns.")} and assess whether the model generalizes while development is still happening. And a test set is held out for final evaluation&mdash;so you don't silently tune against the scoreboard.`,
         )}
         ${table(
           ["Split", "Current row count", "What it is used for here"],
@@ -107,7 +107,7 @@ export const chapter03Stats: Chapter = {
           ],
         )}
         ${paragraph(
-          `The repo goes one step further: it hash-locks these files and computes a <code>split_signature</code>. Later stages verify that the data they are evaluating matches the split that training actually used.`,
+          `But the repo goes one step further: it hash-locks these files and computes a <code>split_signature</code>. Later stages verify that the data they're evaluating matches the split training actually used.`,
         )}
       `,
     )}
@@ -115,16 +115,16 @@ export const chapter03Stats: Chapter = {
       "Overfitting And Distribution Shift",
       `
         ${paragraph(
-          `${abbr("Overfitting", "When a model learns patterns that work on the training data but do not generalize well to new data.")} happens when a model learns peculiarities of the training data that do not generalize. ${abbr("Distribution shift", "A mismatch between the kinds of inputs seen during training and the kinds seen later during deployment.")} happens when the inputs seen during deployment differ from the inputs seen during training.`,
+          `${abbr("Overfitting", "When a model learns patterns that work on the training data but do not generalize well to new data.")} happens when a model learns peculiarities of the training data that don't generalize. ${abbr("Distribution shift", "A mismatch between the kinds of inputs seen during training and the kinds seen later during deployment.")} happens when deployment inputs differ from training inputs.`,
         )}
         ${paragraph(
-          "This project is especially concerned with distribution shift. Training starts from complete 50-item response vectors. Deployment often uses 20-item partial vectors. If the model never trains on sparse patterns, it can look excellent on full data and still fail badly on sparse input.",
+          "Distribution shift is the bigger worry here. Training starts from complete 50-item response vectors; deployment often uses 20-item partial vectors. If the model never trains on sparse patterns, it can look excellent on full data and still fail badly on sparse input.",
         )}
         ${callout(
           "warning",
           "One of the repo's strongest lessons",
           paragraph(
-            `${abbr("Sparse-input augmentation", "Artificially creating training examples with many missing items so the model learns the deployment regime.")} is not a cosmetic trick. It is the main defense against train/deploy mismatch. Without it, the ML model can underperform simple averaging on the very sparse regime it was built to improve.`,
+            `${abbr("Sparse-input augmentation", "Artificially creating training examples with many missing items so the model learns the deployment regime.")} is the main defense against train/deploy mismatch. Without it, the ML model can underperform simple averaging on the very sparse regime it was built to improve.`,
           ),
         )}
       `,
@@ -133,7 +133,7 @@ export const chapter03Stats: Chapter = {
       "Bootstrap Confidence Intervals",
       `
         ${paragraph(
-          `A ${abbr("bootstrap interval", "An uncertainty interval built by repeatedly resampling the observed data and recalculating the statistic of interest.")} estimates uncertainty by resampling the observed data many times. In this repo, respondent-level bootstrap resamples are used to quantify uncertainty around performance metrics like Pearson r and MAE.`,
+          `A ${abbr("bootstrap interval", "An uncertainty interval built by repeatedly resampling the observed data and recalculating the statistic of interest.")} estimates uncertainty by resampling the observed data many times. Here, respondent-level bootstrap resamples quantify uncertainty around performance metrics like Pearson r and MAE.`,
         )}
         ${ordered([
           "Take the held-out respondents.",
@@ -143,7 +143,7 @@ export const chapter03Stats: Chapter = {
           "Use the empirical distribution of those metric values to form a confidence interval.",
         ])}
         ${paragraph(
-          `The key advantage is that bootstrap intervals are flexible. They work well for complicated metrics where deriving a neat ${abbr("closed-form standard error", "A directly derived mathematical formula for uncertainty, rather than one estimated by simulation or resampling.")} is awkward or undesirable.`,
+          `Bootstrap intervals are flexible; they work well for complicated metrics where deriving a neat ${abbr("closed-form standard error", "A directly derived mathematical formula for uncertainty, rather than one estimated by simulation or resampling.")} would be awkward or undesirable.`,
         )}
       `,
     )}

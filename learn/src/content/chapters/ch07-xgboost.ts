@@ -24,13 +24,13 @@ export const chapter07Xgboost: Chapter = {
       "From Linear Models To Boosted Trees",
       `
         ${lead(
-          `${abbr("XGBoost", "A high-performance implementation of gradient-boosted decision trees, widely used for tabular machine-learning problems.")} is a ${abbr("gradient-boosted decision tree", "A model built by adding many small decision trees in sequence, each correcting errors left by the earlier ones.")} library. In plain terms, it builds many small trees sequentially, where each new tree tries to fix the mistakes left behind by the earlier trees.`,
+          `${abbr("XGBoost", "A high-performance implementation of gradient-boosted decision trees, widely used for tabular machine-learning problems.")} is a ${abbr("gradient-boosted decision tree", "A model built by adding many small decision trees in sequence, each correcting errors left by the earlier ones.")} library. It builds many small trees sequentially, where each new tree tries to fix the mistakes left behind by the earlier ones.`,
         )}
         ${paragraph(
-          `A ${abbr("decision tree", "A model that makes predictions by routing each example through if/then splits on feature values.")} splits the data with questions like “is ext3 > 3.5?” and assigns predictions based on the path a row takes through those splits. When a feature is missing, XGBoost does not usually ask a separate literal “is this missing?” question. Instead, each split learns a default branch for missing values.`,
+          `A ${abbr("decision tree", "A model that makes predictions by routing each example through if/then splits on feature values.")} splits the data with questions like "is ext3 > 3.5?" and assigns predictions based on the path a row takes through those splits. When a feature is missing, XGBoost doesn't ask a separate literal "is this missing?" question; each split learns a default branch for missing values.`,
         )}
         ${paragraph(
-          `Why does that fit this repo well? Because the inputs are ${abbr("tabular", "Organized as rows and columns, like a spreadsheet or database table.")}, moderately sized in feature count, full of ${abbr("nonlinear interactions", "Relationships where the combined effect of features is not just a simple straight-line sum.")}, and frequently sparse at ${abbr("inference time", "The moment when a trained model is used to make predictions on new data.")}. That is a very tree-friendly problem shape.`,
+          `Why does that fit this repo well? Because the inputs are ${abbr("tabular", "Organized as rows and columns, like a spreadsheet or database table.")}, moderately sized in feature count, full of ${abbr("nonlinear interactions", "Relationships where the combined effect of features is not just a simple straight-line sum.")}, and frequently sparse at ${abbr("inference time", "The moment when a trained model is used to make predictions on new data.")}. That's a very tree-friendly problem shape.`,
         )}
         ${codeBlock(
           `Prediction = tree_1(x) + learning_rate * tree_2(x) + learning_rate * tree_3(x) + ...`,
@@ -64,10 +64,10 @@ export const chapter07Xgboost: Chapter = {
       "How Boosting Feels Intuitively",
       `
         ${paragraph(
-          "Imagine starting with a rough predictor of Extraversion. It gets many rows about right but misses some patterns, especially when certain items are missing. A new tree is then fit to reduce those remaining errors. Another tree corrects what is still left. Repeat enough times and you get a flexible but structured ensemble.",
+          "Imagine starting with a rough predictor of Extraversion. It gets many rows about right but misses some patterns, especially when certain items are missing. A new tree is fit to reduce those remaining errors. Another corrects what's still left. Repeat enough times and you get a flexible but structured ensemble.",
         )}
         ${paragraph(
-          `The important ${abbr("bias-variance tradeoff", "The balance between a model being too simple to fit real patterns and too flexible to generalize well.")} is controlled through things like learning rate, tree depth, subsampling, column sampling, and ${abbr("regularization", "Penalties or constraints that keep a model from becoming too complex or unstable.")}. You will see those exact knobs in stage 06 tuning.`,
+          `The ${abbr("bias-variance tradeoff", "The balance between a model being too simple to fit real patterns and too flexible to generalize well.")} is controlled through learning rate, tree depth, subsampling, column sampling, and ${abbr("regularization", "Penalties or constraints that keep a model from becoming too complex or unstable.")}. You'll see those exact knobs in stage 06 tuning.`,
         )}
       `,
     )}
@@ -75,16 +75,16 @@ export const chapter07Xgboost: Chapter = {
       "Native Missing Values",
       `
         ${paragraph(
-          `A lot of ML introductions hide missing data behind ${abbr("preprocessing", "Data-cleaning or transformation work done before model training or inference.")}. This repo does not. During training-time sparsity augmentation, unasked items are explicitly set to <code>NaN</code>. XGBoost learns a default branch for missing values at each split.`,
+          `Most ML introductions hide missing data behind ${abbr("preprocessing", "Data-cleaning or transformation work done before model training or inference.")}. This repo doesn't. During training-time sparsity augmentation, unasked items are explicitly set to <code>NaN</code>, and XGBoost learns a default branch for missing values at each split.`,
         )}
         ${paragraph(
-          "That means the model can use patterns like “if ext3 is missing, follow the learned default branch; if ext3 is present and high, take the threshold branch.” This is better aligned with the actual deployment problem than pretending unanswered items are ordinary zeros or fully imputing them away.",
+          `So the model can use patterns like "if ext3 is missing, follow the learned default branch; if ext3 is present and high, take the threshold branch." Better aligned with the actual deployment problem than pretending unanswered items are ordinary zeros or fully imputing them away.`,
         )}
         ${callout(
           "warning",
           "One historical cleanup",
           paragraph(
-            `The predecessor repo at times discussed ${abbr("zero-encoding", "Representing missing answers as zeros instead of as true missing values.")} unanswered items. The current repo's training and runtime path is cleaner: unanswered items are treated as missing via <code>NaN</code>, and the inference packages preserve that convention.`,
+            `The predecessor repo at times discussed ${abbr("zero-encoding", "Representing missing answers as zeros instead of as true missing values.")} unanswered items. Now the path is cleaner: unanswered items are treated as missing via <code>NaN</code>, and the inference packages preserve that convention.`,
           ),
         )}
       `,
@@ -93,7 +93,7 @@ export const chapter07Xgboost: Chapter = {
       "Why Not A Neural Network?",
       `
         ${paragraph(
-          `A ${abbr("neural model", "A model based on layers of learned weights and nonlinear activations, such as a neural network.")} was an obvious alternative. The predecessor paper notes earlier work in that direction. But for this repo's specific problem, tree boosting has several advantages.`,
+          `A ${abbr("neural model", "A model based on layers of learned weights and nonlinear activations, such as a neural network.")} was an obvious alternative; the predecessor paper notes earlier work in that direction. But for this repo's specific problem, tree boosting has several advantages.`,
         )}
         ${table(
           ["Model family", "Pros here", "Cons here"],
@@ -109,7 +109,7 @@ export const chapter07Xgboost: Chapter = {
           "note",
           "Most honest summary",
           paragraph(
-            "The repo did not prove XGBoost is universally best. It found that XGBoost is a strong pragmatic match for this tabular sparse-input score-recovery problem, especially compared with simpler baselines and compared with the engineering burden of more ambitious alternatives.",
+            "XGBoost is a strong pragmatic match for this tabular, sparse-input, score-recovery problem. It outperforms simpler baselines without the engineering burden of more ambitious alternatives.",
           ),
         )}
       `,

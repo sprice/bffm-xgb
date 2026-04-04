@@ -44,7 +44,7 @@ export const chapter10Evaluation: Chapter = {
       "Stage 09: Baselines Matter More Than People Think",
       `
         ${paragraph(
-          `Stage 09 is one of the intellectually strongest parts of the whole codebase because it does not merely compare against a weak straw man. It compares multiple ${abbr("item-selection strategies", "Rules for choosing which questionnaire items to ask or keep in a short form.")} and multiple ${abbr("scoring baselines", "Simpler comparison methods used to judge whether the main model is actually adding value.")}.`,
+          `Stage 09 compares multiple ${abbr("item-selection strategies", "Rules for choosing which questionnaire items to ask or keep in a short form.")} and multiple ${abbr("scoring baselines", "Simpler comparison methods used to judge whether the main model is actually adding value.")}; each baseline is strong enough to be a credible alternative.`,
         )}
         ${table(
           ["20-item strategy", "Current Pearson r", "Interpretation"],
@@ -56,13 +56,13 @@ export const chapter10Evaluation: Chapter = {
           ],
         )}
         ${paragraph(
-          "That table contains the central empirical correction of the whole project: unconstrained greedy adaptive selection underperforms simpler balanced approaches.",
+          "Central empirical finding: unconstrained greedy adaptive selection underperforms simpler balanced approaches.",
         )}
         ${callout(
           "note",
           "Important result-family distinction",
           paragraph(
-            `In the current repo, the <code>mini_ipip</code> row in stage 09 is a standalone Mini-IPIP scoring baseline, not Mini-IPIP scored by the XGBoost model. The ML-scored Mini-IPIP result appears in the separate ${abbr("ML-vs-averaging comparison", "An artifact that compares learned model scoring against simple averaging on the same selected item sets.")}, where the current checked-in numbers are roughly <code>r = 0.9172</code> for ML versus <code>r = 0.9064</code> for averaging.`,
+            `In the current repo, the <code>mini_ipip</code> row in stage 09 is a standalone Mini-IPIP scoring baseline—not Mini-IPIP scored by the XGBoost model. The ML-scored Mini-IPIP result appears in the separate ${abbr("ML-vs-averaging comparison", "An artifact that compares learned model scoring against simple averaging on the same selected item sets.")}; there the checked-in numbers are roughly <code>r = 0.9172</code> for ML versus <code>r = 0.9064</code> for averaging.`,
           ),
         )}
       `,
@@ -71,7 +71,7 @@ export const chapter10Evaluation: Chapter = {
       "Why Greedy Adaptive Selection Failed",
       `
         ${paragraph(
-          `The old intuition was attractive: rank items by global predictive utility and ask the best ones first. The actual result was ${abbr("domain starvation", "A failure mode where some personality domains get too few items because the selection rule keeps favoring other domains.")}. Greedy selection kept choosing highly cross-correlated items, especially from Extraversion and Emotional Stability, and delayed or omitted items from more psychometrically distinct domains like Intellect/Openness.`,
+          `The old intuition was attractive: rank items by global predictive utility, ask the best ones first. But the actual result was ${abbr("domain starvation", "A failure mode where some personality domains get too few items because the selection rule keeps favoring other domains.")}. Greedy selection kept choosing highly cross-correlated items (especially from Extraversion and Emotional Stability) and delayed or omitted items from more psychometrically distinct domains like Intellect/Openness.`,
         )}
         <div class="bar-list">
           <div class="bar-row"><span>Extraversion</span><div class="bar-track"><div class="bar-fill" style="width:45%"></div></div><strong>9 items</strong></div>
@@ -84,7 +84,7 @@ export const chapter10Evaluation: Chapter = {
           "warning",
           "Core mechanism",
           paragraph(
-            `The greedy criterion optimized total cross-domain utility, not adequate coverage of each domain. Those are different objectives. In a ${abbr("multidimensional instrument", "A questionnaire meant to measure multiple distinct traits rather than only one overall trait.")}, the latter is usually what you need for usable score recovery.`,
+            `The greedy criterion optimized total cross-domain utility rather than adequate coverage of each domain. In a ${abbr("multidimensional instrument", "A questionnaire meant to measure multiple distinct traits rather than only one overall trait.")}, adequate per-domain coverage is usually what you need for usable score recovery.`,
           ),
         )}
       `,
@@ -93,7 +93,7 @@ export const chapter10Evaluation: Chapter = {
       "Stage 10: Simulation And SEM-Based Stopping",
       `
         ${paragraph(
-          `Stage 10 simulates assessment behavior on held-out respondents. In the current recommended flow, the stopping logic is aligned with ${abbr("classical test theory", "A traditional psychometric framework that analyzes observed scores in terms of true score plus measurement error.")}-style ${abbr("SEM", "Standard error of measurement: an estimate of how precise a score is.")} reasoning rather than pure greedy information gain.`,
+          `Stage 10 simulates assessment behavior on held-out respondents. Stopping logic aligns with ${abbr("classical test theory", "A traditional psychometric framework that analyzes observed scores in terms of true score plus measurement error.")}-style ${abbr("SEM", "Standard error of measurement: an estimate of how precise a score is.")} reasoning rather than pure greedy information gain.`,
         )}
         ${codeBlock(
           `alpha_k = (k * r_bar) / (1 + (k - 1) * r_bar)
@@ -101,18 +101,18 @@ SEM = SD_domain * sqrt(1 - alpha_k)`,
           "text",
         )}
         ${paragraph(
-          "The predecessor repo experimented with SEM thresholds like 0.42 and 0.38 during exploration. The current repo's canonical operating point uses a 0.45 threshold plus a minimum of 4 items per domain. In practice that produces a fixed 20-item pattern in the current reference simulation.",
+          "Earlier work experimented with SEM thresholds like 0.42 and 0.38 during exploration. Currently the canonical operating point uses a 0.45 threshold plus a minimum of 4 items per domain; in practice that produces a fixed 20-item pattern in the reference simulation.",
         )}
         ${callout(
           "note",
           "What this SEM formula is and is not",
           paragraph(
-            `This is a heuristic built from mean inter-item correlation and a ${abbr("Cronbach-alpha", "A classical internal-consistency reliability estimate based on how strongly items in a scale relate to each other.")}-style reliability approximation. It is useful for this repo's stopping logic, but it is not the only possible definition of SEM and it is not an ${abbr("IRT", "Item Response Theory: a psychometric framework that models item responses via latent traits and item parameters.")} information calculation.`,
+            `A heuristic built from mean inter-item correlation and a ${abbr("Cronbach-alpha", "A classical internal-consistency reliability estimate based on how strongly items in a scale relate to each other.")}-style reliability approximation. It's useful for this repo's stopping logic, but it isn't the only possible definition of SEM and it isn't an ${abbr("IRT", "Item Response Theory: a psychometric framework that models item responses via latent traits and item parameters.")} information calculation.`,
           ),
         )}
         <div id="sem-widget"></div>
         ${paragraph(
-          "The current simulation still uses <code>selection_strategy = correlation_ranked</code>, so it is not literally “adaptive stopping only.” But under the checked-in operating point the policy is so strongly constrained by domain coverage and the SEM target that the resulting assessment behaves much more like a fixed balanced 20-item path than like the original free-form greedy adaptive vision.",
+          `The current simulation still uses <code>selection_strategy = correlation_ranked</code>, so it isn't literally "adaptive stopping only." But under the checked-in operating point, domain coverage and the SEM target constrain the policy so heavily that the resulting assessment behaves much more like a fixed balanced 20-item path than like the original free-form greedy adaptive vision.`,
         )}
       `,
     )}
@@ -128,7 +128,7 @@ k = 4  -> alpha ≈ 0.779, SEM ≈ 0.428`,
           "text",
         )}
         ${paragraph(
-          `So moving from 3 to 4 Extraversion items pushes SEM below a 0.45 target. That is the kind of logic the simulation chapter wants you to understand: stopping is framed in terms of ${abbr("measurement precision", "How narrowly and reliably a score estimates the trait rather than fluctuating because of measurement error.")}, not just arbitrary item count.`,
+          `So moving from 3 to 4 Extraversion items pushes SEM below a 0.45 target. Stopping is framed in terms of ${abbr("measurement precision", "How narrowly and reliably a score estimates the trait rather than fluctuating because of measurement error.")}; the item count follows from the precision requirement, not the other way around.`,
         )}
       `,
     )}
@@ -146,7 +146,7 @@ k = 4  -> alpha ≈ 0.779, SEM ≈ 0.428`,
           ],
         )}
         ${paragraph(
-          `This is the final interpretation of the adaptive story in the current repo: adaptivity survives mainly in stopping logic and ${abbr("runtime flexibility", "The ability of the shipped inference system to score different partial-response patterns at prediction time.")}, not in greedy next-item selection.`,
+          `Adaptivity in the current repo survives mainly in stopping logic and ${abbr("runtime flexibility", "The ability of the shipped inference system to score different partial-response patterns at prediction time.")}. Greedy next-item selection is gone.`,
         )}
       `,
     )}
@@ -154,11 +154,11 @@ k = 4  -> alpha ≈ 0.779, SEM ≈ 0.428`,
       "The Most Important Lesson From Evaluation",
       `
         ${list([
-          "Held-out validation matters, not just training success.",
-          "Strong baselines matter, not just one ML model.",
+          "Held-out validation is the real test of generalization.",
+          "Strong baselines keep ML claims honest.",
           "Scoring quality and item-selection quality are separate questions.",
           "Adaptive assessment claims need psychometric stopping logic to remain principled.",
-          "Invalidated ideas are part of the knowledge of the repo, not embarrassing leftovers.",
+          "Invalidated ideas (like greedy adaptive selection) are part of the repo's knowledge.",
         ])}
         ${internalFiles([
           "pipeline/08_validate.py",

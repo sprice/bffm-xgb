@@ -29,7 +29,7 @@ export const chapter06ItemAnalysis: Chapter = {
           `Stage 05 turns the training split into ${abbr("psychometric metadata", "Measurement-related information about items and scales, such as correlations, score structure, and response behavior.")}: item-domain correlations, cross-domain information scores, inter-item correlation summaries, a ranked item pool, and a selected universal first item.`,
         )}
         ${paragraph(
-          `This stage is important for two different reasons. First, it creates ranking artifacts used by later training, baseline, and simulation code. Second, it exposes a conceptual bridge between psychometrics and machine learning: items are not just columns; they have domain membership, ${abbr("response distributions", "The pattern of how often respondents choose each response option for an item.")}, and varying predictive usefulness.`,
+          `This stage matters for two reasons. First, it creates ranking artifacts used by later training, baseline, and simulation code. Second, it exposes a conceptual bridge between psychometrics and machine learning: each item carries domain membership, ${abbr("response distributions", "The pattern of how often respondents choose each response option for an item.")}, and varying predictive usefulness.`,
         )}
         ${internalFiles([
           "pipeline/05_compute_correlations.py",
@@ -43,7 +43,7 @@ export const chapter06ItemAnalysis: Chapter = {
       "Corrected Own-Domain Correlation",
       `
         ${paragraph(
-          `For each item, the repo computes correlation with each domain score. But for the item's own domain, it uses a ${abbr("corrected score", "A domain score recalculated after removing the item being evaluated so the item is not correlated with a scale that contains itself.")} that excludes the item itself.`,
+          `For each item, the repo computes its correlation with each domain score. But for the item's own domain, it uses a ${abbr("corrected score", "A domain score recalculated after removing the item being evaluated so the item is not correlated with a scale that contains itself.")} that excludes the item itself.`,
         )}
         ${paragraph(
           `Why? Because otherwise the item would be correlated with a scale that literally contains itself. That inflates the relationship through ${abbr("part-whole contamination", "Artificially inflating a correlation because the item being tested is also part of the total score it is compared against.")}.`,
@@ -53,7 +53,7 @@ export const chapter06ItemAnalysis: Chapter = {
           "corrected domain score = mean of the other items in the domain",
         )}
         ${paragraph(
-          "This is a classical psychometric move. It makes the own-domain correlation a better proxy for item quality rather than merely item inclusion.",
+          "Correcting this way makes the own-domain correlation a better proxy for item quality rather than merely item inclusion.",
         )}
       `,
     )}
@@ -68,7 +68,7 @@ export const chapter06ItemAnalysis: Chapter = {
           "text",
         )}
         ${paragraph(
-          `This is not ${abbr("Fisher information", "A formal information quantity used in statistics and item response theory to describe how informative an observation is about an unknown parameter.")} in the ${abbr("IRT", "Item Response Theory: a psychometric framework that models responses in terms of latent traits and item parameters.")} sense. It is a heuristic ranking based on correlation structure. That distinction matters because the predecessor repo originally used this score as the engine of greedy adaptive item selection, and later evidence showed that this heuristic can over-concentrate in highly connected domains.`,
+          `Don't confuse this with ${abbr("Fisher information", "A formal information quantity used in statistics and item response theory to describe how informative an observation is about an unknown parameter.")} in the ${abbr("IRT", "Item Response Theory: a psychometric framework that models responses in terms of latent traits and item parameters.")} sense; it's a heuristic ranking based on correlation structure. The distinction matters because the predecessor repo originally used this score as the engine of greedy adaptive item selection, and later evidence showed the heuristic can over-concentrate in highly connected domains.`,
         )}
       `,
     )}
@@ -94,7 +94,7 @@ export const chapter06ItemAnalysis: Chapter = {
           "warning",
           "What changed later",
           paragraph(
-            "The existence of a good universal first item does not prove that greedy follow-up selection is good. The repo eventually shows the opposite: you can choose a sensible opener and still harm the assessment if the later policy keeps reallocating toward the same dominant domains.",
+            "A good universal first item doesn't prove that greedy follow-up selection works. The repo eventually shows the opposite: you can choose a sensible opener and still harm the assessment if the later policy keeps reallocating toward the same dominant domains.",
           ),
         )}
       `,
@@ -116,7 +116,7 @@ export const chapter06ItemAnalysis: Chapter = {
           ],
         )}
         ${paragraph(
-          "A higher mean inter-item correlation usually means items within that domain hang together more tightly. In plain language: the domain is easier to estimate precisely with fewer items. That is part of why some domains accumulate precision faster than others during simulation.",
+          "A higher mean inter-item correlation means items within that domain hang together more tightly, so the domain is easier to estimate precisely with fewer items. That's part of why some domains accumulate precision faster than others during simulation.",
         )}
       `,
     )}
@@ -133,7 +133,7 @@ export const chapter06ItemAnalysis: Chapter = {
           "repo",
           "Strict dependency",
           paragraph(
-            "Stages 06 and 07 refuse to proceed with stale or mismatched <code>item_info.json</code> when sparse objectives or sparsity augmentation depend on it. That strictness is intentional because item ranking changes can ripple into every later result.",
+            "Stages 06 and 07 refuse to proceed with stale or mismatched <code>item_info.json</code> when sparse objectives or sparsity augmentation depend on it. Item ranking changes can ripple into every later result.",
           ),
         )}
       `,

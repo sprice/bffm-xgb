@@ -25,10 +25,10 @@ export const chapter12SafeChanges: Chapter = {
       "The Core Rule",
       `
         ${lead(
-          `In this repo, the dangerous mistake is not merely a bug. It is making a change that silently invalidates earlier ${abbr("artifacts", "Saved outputs such as split files, tuned parameters, models, and reports produced by earlier stages.")} while leaving them in place so later results look legitimate.`,
+          `The dangerous mistake in this repo: making a change that silently invalidates earlier ${abbr("artifacts", "Saved outputs such as split files, tuned parameters, models, and reports produced by earlier stages.")} while leaving them in place, so later results look legitimate.`,
         )}
         ${paragraph(
-          `The repo's ${abbr("provenance system", "The hashes and metadata checks that verify where artifacts came from and whether they still match the expected data/code state.")} exists to prevent exactly that. The artifact boundaries encoded in the codebase are the first line of defense against self-deception.`,
+          `The repo's ${abbr("provenance system", "The hashes and metadata checks that verify where artifacts came from and whether they still match the expected data/code state.")} exists to prevent exactly that. Artifact boundaries encoded in the codebase are the first line of defense against self-deception.`,
         )}
       `,
     )}
@@ -44,7 +44,7 @@ export const chapter12SafeChanges: Chapter = {
             ["Item ranking logic", "Stages 05 onward", `Sparse masking, tuning objective, training, baselines, and simulation all depend on ${abbr("item_info", "The stage-05 artifact containing item-ranking metadata used by later sparse-training and evaluation steps.")}`],
             ["Hyperparameter search strategy", "Stages 06 onward", "Locked params artifact changes"],
             ["Sparsity augmentation recipe", "Stage 07 onward, plus evaluation", "Sparse behavior claims must be revalidated"],
-            ["Inference/export format", "Stage 11 onward, plus runtime tests", "Serving bundle changes even if training does not"],
+            ["Inference/export format", "Stage 11 onward, plus runtime tests", "Serving bundle changes even if training doesn't"],
           ],
         )}
       `,
@@ -64,7 +64,7 @@ export const chapter12SafeChanges: Chapter = {
           "warning",
           "A useful mental test",
           paragraph(
-            "For any conceptual change, the question is: which hashes should now be different? If the answer is not clear, the change boundary is not yet well understood.",
+            "For any conceptual change, the question is: which hashes should now be different? If the answer isn't clear, the change boundary isn't yet well understood.",
           ),
         )}
       `,
@@ -73,7 +73,7 @@ export const chapter12SafeChanges: Chapter = {
       "How The Repo Supports Safe Experimentation",
       `
         ${paragraph(
-          "The variant and artifact system is designed so that experiments can be scoped tightly without contaminating the reference pipeline.",
+          "Variants and artifacts let you scope experiments tightly without contaminating the reference pipeline.",
         )}
         ${table(
           ["Goal", "How the repo handles it"],
@@ -94,7 +94,7 @@ export const chapter12SafeChanges: Chapter = {
           "item_info hashes verify item-ranking identity.",
           "Hyperparameter lock policies verify that tuned-params reuse is legitimate.",
           `Model/data pairing checks prevent evaluating the wrong model against the wrong ${abbr("split regime", "The exact train/validation/test split scheme and data preparation setup used for a run.")}.`,
-          "Quality gates stop low-quality models before they are quietly treated as valid artifacts.",
+          "Quality gates stop low-quality models before they're quietly treated as valid artifacts.",
         ])}
         ${internalFiles([
           "lib/provenance.py",
@@ -110,15 +110,15 @@ export const chapter12SafeChanges: Chapter = {
       "Open Questions And Future Directions",
       `
         ${paragraph(
-          `A few reasonable future directions stand out: richer ${abbr("calibration", "Adjusting predicted intervals or uncertainty so they better match observed behavior on held-out data.")} methods, more explicit psychometric validation beyond score recovery, comparison against stronger ${abbr("IRT/CAT baselines", "Adaptive-testing baselines built from Item Response Theory and Computerized Adaptive Testing methods.")}, or a more specialized sequential selection policy that enforces domain balance structurally rather than hoping a generic utility score behaves well.`,
+          `Reasonable future directions include richer ${abbr("calibration", "Adjusting predicted intervals or uncertainty so they better match observed behavior on held-out data.")} methods, more explicit psychometric validation beyond score recovery, comparison against stronger ${abbr("IRT/CAT baselines", "Adaptive-testing baselines built from Item Response Theory and Computerized Adaptive Testing methods.")}, or a more specialized sequential selection policy that enforces domain balance structurally (rather than hoping a generic utility score behaves well).`,
         )}
         ${paragraph(
-          "But the most important thing the repo demonstrates is a discipline worth preserving: explicit artifacts, strong baselines, and the willingness to invalidate attractive ideas when the held-out evidence says no.",
+          "And the discipline is worth preserving regardless: explicit artifacts, strong baselines, and the willingness to invalidate attractive ideas when the held-out evidence says no.",
         )}
       `,
     )}
     ${section(
-      "Key Takeaways",
+      "What To Remember",
       `
         ${list([
           "Each numbered stage consumes specific artifacts and produces new ones.",

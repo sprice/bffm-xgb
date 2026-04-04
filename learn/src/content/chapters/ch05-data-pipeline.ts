@@ -30,7 +30,7 @@ export const chapter05DataPipeline: Chapter = {
           `The pipeline begins by downloading the ${abbr("Open Psychometrics Project", "A public site that hosts openly available psychology questionnaires and raw datasets.")} IPIP-FFM ZIP and verifying it before trusting it.`,
         )}
         ${paragraph(
-          `This is basic ${abbr("data-engineering hygiene", "Practical safeguards that keep a data pipeline reliable, reproducible, and resistant to accidental drift.")}. Research pipelines quietly become unreliable when upstream data can change or when downloaded payloads are not checked. Stage 01 records expected ${abbr("hashes", "File fingerprints used to verify that a file is exactly the expected content.")} for both the ZIP and the extracted CSV.`,
+          `Research pipelines quietly become unreliable when upstream data can change or when downloaded payloads aren't checked. Stage 01 records expected ${abbr("hashes", "File fingerprints used to verify that a file is exactly the expected content.")} for both the ZIP and the extracted CSV, anchoring ${abbr("data-engineering hygiene", "Practical safeguards that keep a data pipeline reliable, reproducible, and resistant to accidental drift.")} at the very first step.`,
         )}
         ${callout(
           "why",
@@ -45,7 +45,7 @@ export const chapter05DataPipeline: Chapter = {
       "Stage 02: Load Into SQLite And Clean",
       `
         ${paragraph(
-          `Stage 02 loads the raw ${abbr("tab-separated CSV", "A plain-text table file where columns are separated by tabs instead of commas.")} into ${abbr("pandas", "Python's main DataFrame library for loading, transforming, and analyzing tabular data.")}, filters invalid rows, applies reverse-scoring, computes domain means, and writes a local ${abbr("SQLite", "A lightweight embedded relational database stored in a single file.")} database. SQLite is not used here as a fancy production datastore. It is a deterministic, queryable checkpoint between raw text data and split-ready tabular data.`,
+          `Stage 02 loads the raw ${abbr("tab-separated CSV", "A plain-text table file where columns are separated by tabs instead of commas.")} into ${abbr("pandas", "Python's main DataFrame library for loading, transforming, and analyzing tabular data.")}, filters invalid rows, applies reverse-scoring, computes domain means, and writes a local ${abbr("SQLite", "A lightweight embedded relational database stored in a single file.")} database. SQLite here serves as a deterministic, queryable checkpoint between raw text data and split-ready tabular data.`,
         )}
         ${table(
           ["Cleaning step", "What it does", "Why it exists"],
@@ -57,7 +57,7 @@ export const chapter05DataPipeline: Chapter = {
           ],
         )}
         ${paragraph(
-          `The current cleaned dataset ends up with ${repoFacts.totalValidRespondents.toLocaleString()} valid respondents, substantially smaller than the older predecessor repo's sample. That is a feature, not a bug: the current repo uses tighter cleaning, especially the IP uniqueness rule.`,
+          `The current cleaned dataset ends up with ${repoFacts.totalValidRespondents.toLocaleString()} valid respondents, substantially smaller than the older predecessor repo's sample. Tighter cleaning (especially the IP uniqueness rule) accounts for the difference.`,
         )}
         ${internalFiles([
           "pipeline/01_download.py",
@@ -71,16 +71,16 @@ export const chapter05DataPipeline: Chapter = {
       "Stage 03: Compute Locked Norms",
       `
         ${paragraph(
-          `Stage 03 computes the norm tables from the full cleaned SQLite table, not from a single train split. That is deliberate. The norms are used as a ${abbr("reference distribution", "The population distribution used to interpret scores, such as by turning raw scores into percentiles.")} for score interpretation, not as a model-fit parameter that should vary with each train/validation/test partition.`,
+          `Stage 03 computes the norm tables from the full cleaned SQLite table, not from a single train split. Norms serve as a ${abbr("reference distribution", "The population distribution used to interpret scores, such as by turning raw scores into percentiles.")} for score interpretation; they aren't a model-fit parameter that should vary with each train/validation/test partition.`,
         )}
         ${paragraph(
-          `The stage writes a lock file and ${abbr("sidecar metadata", "A companion metadata file that travels alongside a main artifact and records its provenance or validation details.")} metadata. Later stages use a stable <code>data_snapshot_id</code> derived from the norms file hash. In other words, the norm artifact is promoted into a ${abbr("run identity anchor", "A fingerprinted artifact that helps define exactly which reproducible pipeline state a later run belongs to.")}.`,
+          `The stage writes a lock file and ${abbr("sidecar metadata", "A companion metadata file that travels alongside a main artifact and records its provenance or validation details.")} metadata. Later stages use a stable <code>data_snapshot_id</code> derived from the norms file hash, effectively promoting the norm artifact into a ${abbr("run identity anchor", "A fingerprinted artifact that helps define exactly which reproducible pipeline state a later run belongs to.")}.`,
         )}
         ${callout(
           "note",
           "Transfer-learning idea",
           paragraph(
-            "This is a good pattern outside psychology too. If your downstream pipeline depends on a derived reference artifact, hash and lock that artifact so you can reason about reproducibility without depending on wall-clock dates or human memory.",
+            "Any pipeline that depends on a derived reference artifact benefits from hashing and locking it; you can then reason about reproducibility without depending on wall-clock dates or human memory.",
           ),
         )}
       `,
@@ -118,23 +118,23 @@ export const chapter05DataPipeline: Chapter = {
       "Why Those Split Schemes?",
       `
         ${paragraph(
-          "Historical evidence from the predecessor repo shows that <code>ext-est</code> was the original default. The code and notes make clear that it was treated as a pragmatic compromise: enough stratification structure to preserve meaningful score balance, without exploding the number of strata.",
+          "Historical evidence from the predecessor repo shows that <code>ext-est</code> was the original default. Code and notes treat it as a pragmatic compromise: enough stratification structure to preserve meaningful score balance, without exploding the number of strata.",
         )}
         ${paragraph(
-          `The three-domain <code>ext-est-opn</code> scheme was introduced later as an ${abbr("ablation", "A controlled variant that changes one important design choice to test whether it really matters.")}, not the base design. Its purpose was to test whether a finer split geometry materially changed downstream results and to persist richer strata for later parity or ${abbr("stratified-bootstrap", "A bootstrap procedure that resamples while respecting defined strata or groups.")} checks.`,
+          `The three-domain <code>ext-est-opn</code> scheme came later as an ${abbr("ablation", "A controlled variant that changes one important design choice to test whether it really matters.")}. Its purpose: test whether a finer split geometry materially changed downstream results, and persist richer strata for later parity or ${abbr("stratified-bootstrap", "A bootstrap procedure that resamples while respecting defined strata or groups.")} checks.`,
         )}
         ${callout(
           "note",
           "How certain this historical explanation is",
           paragraph(
-            "The code history strongly supports the sequence <code>ext-est</code> first, <code>ext-est-opn</code> later. But the exact original motivation is partly inferred from code, configs, and notes rather than narrated in one explicit design memo.",
+            "Code history strongly supports the sequence <code>ext-est</code> first, <code>ext-est-opn</code> later. But the exact original motivation is partly inferred from code, configs, and notes rather than narrated in one explicit design memo.",
           ),
         )}
         ${callout(
           "why",
           "Why not stratify on all 5 domains?",
           paragraph(
-            "Five domains with five quintiles each would create 5^5 = 3125 strata. That explodes combinatorially and many strata would be tiny or empty. The chosen schemes are a compromise between representational balance and practical split stability.",
+            "Five domains with five quintiles each would create 5^5 = 3,125 strata. Most would be tiny or empty. The chosen schemes balance representational coverage against practical split stability.",
           ),
         )}
       `,
@@ -149,7 +149,7 @@ export const chapter05DataPipeline: Chapter = {
           "Quintile columns such as <code>ext_q</code>, <code>est_q</code>, and optionally <code>opn_q</code>",
         ])}
         ${paragraph(
-          `This stage is the point where raw data engineering becomes ${abbr("model-ready", "Prepared in the exact row/column structure expected by later machine-learning stages.").replace("model-ready", "model-ready")} research data. Everything later assumes the split files and metadata are trustworthy, and the provenance helpers enforce that assumption.`,
+          `At this stage, raw data engineering becomes ${abbr("model-ready", "Prepared in the exact row/column structure expected by later machine-learning stages.").replace("model-ready", "model-ready")} research data. Everything downstream assumes the split files and metadata are trustworthy; the provenance helpers enforce that assumption.`,
         )}
       `,
     )}

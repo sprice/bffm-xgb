@@ -53,7 +53,7 @@ export const chapter09Training: Chapter = {
           ],
         )}
         ${paragraph(
-          `The median model is the ${abbr("point prediction", "The single central predicted value, as opposed to an uncertainty interval.")}. The lower and upper quantile models define a ${abbr("nominal 90% interval", "An interval intended to contain the true value about 90% of the time before checking empirical calibration.")}. Later code converts these raw-score quantiles into percentile quantiles and then optionally rescales interval width for calibration.`,
+          `The median model is the ${abbr("point prediction", "The single central predicted value, as opposed to an uncertainty interval.")}. Lower and upper quantile models together define a ${abbr("nominal 90% interval", "An interval intended to contain the true value about 90% of the time before checking empirical calibration.")}. Later code converts these raw-score quantiles into percentile quantiles and optionally rescales interval width for calibration.`,
         )}
       `,
     )}
@@ -61,7 +61,7 @@ export const chapter09Training: Chapter = {
       "Sparsity Augmentation Is The Center Of Gravity",
       `
         ${paragraph(
-          `The most important training idea in this repo is ${abbr("sparsity augmentation", "Creating artificially masked training examples so the model learns to operate when many inputs are missing.")}. The original respondents answered all 50 items. Deployment often uses 20 items or fewer. So stage 07 creates masked copies of training rows where many items are hidden as <code>NaN</code>.`,
+          `The most important training idea in this repo is ${abbr("sparsity augmentation", "Creating artificially masked training examples so the model learns to operate when many inputs are missing.")}. Original respondents answered all 50 items, but deployment often uses 20 or fewer. So stage 07 creates masked copies of training rows where many items are hidden as <code>NaN</code>.`,
         )}
         ${table(
           ["Bucket", "Share", "Pattern"],
@@ -74,13 +74,13 @@ export const chapter09Training: Chapter = {
           ],
         )}
         ${paragraph(
-          `The imbalanced bucket matters because it exposes the model to the ugly patterns that greedy selection can create. That is a subtle but excellent engineering move: even though greedy selection is not the final recommendation, the model is taught not to panic when it sees badly unbalanced inputs.`,
+          `The imbalanced bucket matters because it exposes the model to the ugly patterns greedy selection can create. Even though greedy selection isn't the final recommendation, the model learns not to panic when it sees badly unbalanced inputs; it's seen worse during training.`,
         )}
         ${callout(
           "why",
           "Why no-sparsity ablations matter so much",
           paragraph(
-            `The ${abbr("ablation", "A controlled variant used to test what happens when one important design choice is removed or changed.")} without sparsity augmentation shows that sparse training is not an optimization flourish. It is the main condition under which the model can outperform simple averaging on partial responses.`,
+            `The ${abbr("ablation", "A controlled variant used to test what happens when one important design choice is removed or changed.")} without sparsity augmentation makes this clear: sparse training is the main condition under which the model can outperform simple averaging on partial responses.`,
           ),
         )}
       `,
@@ -89,10 +89,10 @@ export const chapter09Training: Chapter = {
       "Split Before Augmentation",
       `
         ${paragraph(
-          `One subtle but important implementation detail: the code splits an ${abbr("early-stopping evaluation slice", "A held-out subset used during training to decide when to stop adding trees before the model starts overfitting.")} before augmentation when using multi-pass sparsity. That prevents augmented copies of the same respondent from leaking across fit/eval boundaries.`,
+          `Here's a detail that's easy to miss: the code splits an ${abbr("early-stopping evaluation slice", "A held-out subset used during training to decide when to stop adding trees before the model starts overfitting.")} before augmentation when using multi-pass sparsity. Splitting first prevents augmented copies of the same respondent from leaking across fit/eval boundaries.`,
         )}
         ${paragraph(
-          "This matters because if one raw respondent is duplicated into multiple masked variants and those variants leak into both sides of a validation boundary, the reported performance becomes overly optimistic.",
+          "Why? If one raw respondent is duplicated into multiple masked variants and those variants leak into both sides of a validation boundary, reported performance becomes overly optimistic.",
         )}
       `,
     )}
@@ -109,7 +109,7 @@ else: scale = 1.0`,
           "text",
         )}
         ${paragraph(
-          `Notice the modesty of this calibration scheme. It is not a giant ${abbr("post-hoc probabilistic recalibration", "A more elaborate procedure that adjusts predicted uncertainty after training so reported probabilities or intervals better match reality.")}. It is a conservative scaling rule meant to bring runtime intervals closer to nominal behavior.`,
+          `Notice the modesty here. Rather than a full ${abbr("post-hoc probabilistic recalibration", "A more elaborate procedure that adjusts predicted uncertainty after training so reported probabilities or intervals better match reality.")}, this is a conservative scaling rule; it just nudges runtime intervals closer to nominal behavior.`,
         )}
       `,
     )}
@@ -117,7 +117,7 @@ else: scale = 1.0`,
       "Quality Gates",
       `
         ${paragraph(
-          `The reference config encodes minimum acceptable performance thresholds for both full-50 validation and sparse-20 validation. Training can abort before saving if those ${abbr("quality gates", "Executable acceptance thresholds that a training run must satisfy before it is considered valid.")} fail.`,
+          `Reference config encodes minimum acceptable performance thresholds for both full-50 and sparse-20 validation. Training can abort before saving if those ${abbr("quality gates", "Executable acceptance thresholds that a training run must satisfy before it is considered valid.")} fail.`,
         )}
         ${table(
           ["Gate", "Reference threshold"],
@@ -133,7 +133,7 @@ else: scale = 1.0`,
           ],
         )}
         ${paragraph(
-          "This is another excellent engineering pattern: do not quietly ship a new training run just because the script finished. Make the acceptance criteria executable.",
+          "A script finishing doesn't mean the run is good. Quality gates make acceptance criteria executable, so a bad run can't quietly ship.",
         )}
       `,
     )}
@@ -141,16 +141,16 @@ else: scale = 1.0`,
       "Provenance Locks",
       `
         ${paragraph(
-          `Stage 07 has a strict ${abbr("hyperparameter lock policy", "A rule for deciding when previously tuned model settings are still allowed to be reused.")}. Under <code>strict_data_hash</code>, it checks that the locked params file's provenance matches the current train hash, validation hash, split signature, and item_info hash. If not, it fails closed.`,
+          `Stage 07 enforces a strict ${abbr("hyperparameter lock policy", "A rule for deciding when previously tuned model settings are still allowed to be reused.")}. Under <code>strict_data_hash</code>, it checks that the locked params file's provenance matches the current train hash, validation hash, split signature, and item_info hash. Any mismatch and it fails closed.`,
         )}
         ${paragraph(
-          "That means no one can casually retune on one split and then silently retrain on another while pretending the params are still valid. The repo forces any such change to be explicit.",
+          "So nobody can casually retune on one split and silently retrain on another while pretending the params are still valid. Any such change has to be explicit.",
         )}
         ${callout(
           "repo",
-          "This is the main reproducibility lesson",
+          "Reproducibility means identity, not just code",
           paragraph(
-            "A training run is not just code plus random seed. It is code plus exact data identity plus exact item-ranking identity plus exact hyperparameter identity. This repo makes that fact concrete.",
+            "A training run is code plus exact data identity, plus exact item-ranking identity, plus exact hyperparameter identity. This repo makes that fact concrete.",
           ),
         )}
       `,

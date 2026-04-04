@@ -26,10 +26,10 @@ export const chapter08Tuning: Chapter = {
       "What Stage 06 Is Doing",
       `
         ${lead(
-          `Stage 06 uses ${abbr("Optuna", "A hyperparameter-optimization framework used to search over model settings efficiently.")} to search over XGBoost hyperparameters. Its goal is not abstract “best fit.” It is explicitly trying to find settings that perform well on the ${abbr("sparse operating regime", "The real deployment condition where many questionnaire items are missing and only a short form is available.")} the repo cares about.`,
+          `Stage 06 uses ${abbr("Optuna", "A hyperparameter-optimization framework used to search over model settings efficiently.")} to search over XGBoost hyperparameters. Its goal isn't abstract "best fit"—it's explicitly trying to find settings that perform well on the ${abbr("sparse operating regime", "The real deployment condition where many questionnaire items are missing and only a short form is available.")} the repo cares about.`,
         )}
         ${paragraph(
-          `The tuning stage ${abbr("subsamples", "Uses only a subset of the available training rows to make tuning faster while preserving the overall data pattern.")} the training data for speed, precomputes sparsity masks so trials do not waste time remasking from scratch, trains median models at <code>q50</code> for each domain, and scores them on both sparse-20 and full-50 validation behavior.`,
+          `The tuning stage ${abbr("subsamples", "Uses only a subset of the available training rows to make tuning faster while preserving the overall data pattern.")} the training data for speed, precomputes sparsity masks so trials don't waste time remasking from scratch, trains median models at <code>q50</code> for each domain, and scores them on both sparse-20 and full-50 validation behavior.`,
         )}
         ${internalFiles([
           "pipeline/06_tune.py",
@@ -56,7 +56,7 @@ export const chapter08Tuning: Chapter = {
           ],
         )}
         ${paragraph(
-          `These values live in <code>artifacts/tuned_params.json</code>. That file is later used as a ${abbr("lock artifact", "A saved artifact treated as an authoritative dependency that later stages must match exactly.")}, not just a convenience cache.`,
+          `These values live in <code>artifacts/tuned_params.json</code>. Later stages consume that file as a ${abbr("lock artifact", "A saved artifact treated as an authoritative dependency that later stages must match exactly.")}; it's the authoritative source downstream training must match exactly.`,
         )}
       `,
     )}
@@ -64,7 +64,7 @@ export const chapter08Tuning: Chapter = {
       "The Objective Function",
       `
         ${paragraph(
-          `This is one of the most important design choices in the whole repo. The tuning objective is ${abbr("deployment-aligned", "Designed to reward performance in the real use case the model will face after shipping.")}. It does not maximize full-information fit alone. It primarily rewards sparse-20 performance while still penalizing bad full-50 behavior.`,
+          `The tuning objective is ${abbr("deployment-aligned", "Designed to reward performance in the real use case the model will face after shipping.")}. It primarily rewards sparse-20 performance while still penalizing bad full-50 behavior.`,
         )}
         ${codeBlock(
           `objective = 0.80 * mean_r_sparse20
@@ -74,13 +74,13 @@ export const chapter08Tuning: Chapter = {
           "text",
         )}
         ${paragraph(
-          "Read this slowly. The model gets most of its reward from sparse-20 average correlation. It also gets a smaller reward from full-50 performance. Then penalties fire if sparse-20 minimum domain performance is too low or if full-50 average performance is too weak.",
+          "Read this slowly. Most of the reward comes from sparse-20 average correlation, with a smaller share from full-50 performance. Penalties fire if sparse-20 minimum domain performance drops too low or if full-50 average performance is too weak.",
         )}
         ${callout(
           "why",
           "Why this is better than a generic tuning objective",
           paragraph(
-            `If you tuned only on full-50 accuracy, the search could drift toward models that look wonderful when every item is present but fail the actual short-form use case. The explicit sparse objective forces the search to care about the ${abbr("deployment regime", "The actual pattern of inputs the model will see in real use, especially short partial questionnaires.").replace("deployment regime", "deployment regime")}.`,
+            `Tuning only on full-50 accuracy lets the search drift toward models that look wonderful when every item is present but fail the actual short-form use case. The explicit sparse objective forces the search to care about the ${abbr("deployment regime", "The actual pattern of inputs the model will see in real use, especially short partial questionnaires.").replace("deployment regime", "deployment regime")}.`,
           ),
         )}
       `,
@@ -89,16 +89,16 @@ export const chapter08Tuning: Chapter = {
       "Why Tune q50 First?",
       `
         ${paragraph(
-          `Stage 06 tunes median models first rather than fitting a separate Optuna study for each quantile. That is a pragmatic engineering decision. The median prediction is the ${abbr("central point estimate", "The main single predicted value, as opposed to lower and upper uncertainty bounds.")} and already captures most of the structural difficulty of the mapping.`,
+          `Stage 06 tunes median models first rather than fitting a separate Optuna study for each quantile. The median prediction is the ${abbr("central point estimate", "The main single predicted value, as opposed to lower and upper uncertainty bounds.")} and already captures most of the structural difficulty of the mapping; one well-tuned configuration covers the dominant complexity.`,
         )}
         ${paragraph(
-          "A full triple tuning process for q05, q50, and q95 would multiply cost and complexity. Instead, the repo tunes a strong general XGBoost configuration and reuses it across quantiles in stage 07, changing only the quantile target parameter.",
+          "A full triple tuning process (q05, q50, q95) would multiply cost and complexity. Instead, the repo tunes a strong general XGBoost configuration and reuses it across quantiles in stage 07, changing only the quantile target parameter.",
         )}
         ${callout(
           "note",
           "Tradeoff",
           paragraph(
-            "This does not prove the same hyperparameters are globally optimal for every quantile. It means the repo values a strong, reproducible, tractable training workflow over exhaustive per-quantile hyperparameter searches.",
+            "The same hyperparameters aren't guaranteed to be globally optimal for every quantile. The repo values a strong, reproducible, tractable training workflow over exhaustive per-quantile searches.",
           ),
         )}
       `,
@@ -107,10 +107,10 @@ export const chapter08Tuning: Chapter = {
       "Optuna And TPE",
       `
         ${paragraph(
-          `Optuna is the optimization framework. In this repo it uses a ${abbr("TPE sampler", "Tree-structured Parzen Estimator: a search method that models promising and less-promising regions of the hyperparameter space.")}, which models promising and less-promising regions of the search space and then chooses future trials accordingly. In plain terms: it is smarter than blind ${abbr("random search", "Trying randomly chosen hyperparameter settings without modeling which regions are promising.")} and cheaper than naive ${abbr("grid search", "Exhaustively trying combinations from a predefined grid of hyperparameter values.")}.`,
+          `Optuna is the optimization framework. Here it uses a ${abbr("TPE sampler", "Tree-structured Parzen Estimator: a search method that models promising and less-promising regions of the hyperparameter space.")}, which models promising and less-promising regions of the search space and chooses future trials accordingly—smarter than blind ${abbr("random search", "Trying randomly chosen hyperparameter settings without modeling which regions are promising.")} and cheaper than naive ${abbr("grid search", "Exhaustively trying combinations from a predefined grid of hyperparameter values.")}.`,
         )}
         ${paragraph(
-          "The stage also handles parallel trials by dividing available XGBoost thread budget across trials. That detail matters because uncontrolled parallelism can make heavy ML jobs unstable or inefficient.",
+          "It also handles parallel trials by dividing the available XGBoost thread budget across them. Uncontrolled parallelism can make heavy ML jobs unstable or inefficient, so the stage manages this explicitly.",
         )}
       `,
     )}
@@ -118,7 +118,7 @@ export const chapter08Tuning: Chapter = {
       "Pinball Loss Intuition",
       `
         ${paragraph(
-          `${abbr("Quantile regression", "Regression that predicts selected quantiles such as q05, q50, and q95 instead of only a mean prediction.")} uses ${abbr("pinball loss", "The asymmetric loss function used to train quantile predictions.")}. A high quantile like q95 is punished heavily when it predicts too low. A low quantile like q05 is punished heavily when it predicts too high. That asymmetry is what makes quantile estimates behave like quantiles rather than ordinary mean predictions.`,
+          `${abbr("Quantile regression", "Regression that predicts selected quantiles such as q05, q50, and q95 instead of only a mean prediction.")} uses ${abbr("pinball loss", "The asymmetric loss function used to train quantile predictions.")}. A high quantile like q95 is punished heavily when it predicts too low; a low quantile like q05 is punished heavily when it predicts too high. That asymmetry is what makes quantile estimates behave like quantiles rather than ordinary mean predictions.`,
         )}
         <div id="quantile-loss-widget"></div>
       `,
@@ -129,10 +129,10 @@ export const chapter08Tuning: Chapter = {
         ${list([
           "A locked hyperparameter JSON artifact",
           `Provenance fields tying the tuned params to train/val/test hashes, split signature, and ${abbr("item_info", "The stage-05 item-ranking metadata artifact used by later sparse-training and evaluation steps.")}`,
-          `A ${abbr("fail-closed", "Designed to stop with an error instead of continuing silently when artifacts do not match expected conditions.").replace("fail-closed", "fail-closed")} dependency for later training`,
+          `A ${abbr("fail-closed", "Designed to stop with an error instead of continuing silently when artifacts don't match expected conditions.").replace("fail-closed", "fail-closed")} dependency for later training`,
         ])}
         ${paragraph(
-          "That provenance is not decoration. Stage 07 uses it to decide whether the current data and item metadata are allowed to reuse the tuned parameters. If the hashes do not match under strict lock policy, training stops.",
+          "Provenance here is load-bearing. Stage 07 checks it to decide whether the current data and item metadata are allowed to reuse the tuned parameters. If the hashes don't match under strict lock policy, training stops.",
         )}
       `,
     )}

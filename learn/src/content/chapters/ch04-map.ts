@@ -22,10 +22,10 @@ export const chapter04Map: Chapter = {
       "Think In Artifacts, Not Just Scripts",
       `
         ${lead(
-          `The fastest way to understand this repo is to stop thinking of it as “a lot of Python files” and start thinking of it as a graph of ${abbr("artifacts", "Named output files such as norms, split files, model bundles, and reports produced by pipeline stages.")} with ${abbr("hash-locked", "Protected by file fingerprints so later stages can verify they are consuming the exact expected inputs.")} handoffs.`,
+          `The fastest way to understand this repo is to stop thinking of it as "a lot of Python files" and start thinking of it as a graph of ${abbr("artifacts", "Named output files such as norms, split files, model bundles, and reports produced by pipeline stages.")} with ${abbr("hash-locked", "Protected by file fingerprints so later stages can verify they are consuming the exact expected inputs.")} handoffs.`,
         )}
         ${paragraph(
-          `Every numbered pipeline script reads one set of files, computes a transformation, and writes another set of files. Later scripts trust those outputs only if ${abbr("provenance", "Metadata describing where an artifact came from and what exact inputs and code produced it.")}, file hashes, and ${abbr("split signatures", "Identifiers that encode the exact train/validation/test split identity for a run.")} match. That design is one of the strongest engineering choices in the project.`,
+          `Every numbered pipeline script reads one set of files, computes a transformation, and writes another set of files. Later scripts trust those outputs only if ${abbr("provenance", "Metadata describing where an artifact came from and what exact inputs and code produced it.")}, file hashes, and ${abbr("split signatures", "Identifiers that encode the exact train/validation/test split identity for a run.")} match.`,
         )}
         ${callout(
           "why",
@@ -95,7 +95,7 @@ export const chapter04Map: Chapter = {
       "Variants And Why They Exist",
       `
         ${paragraph(
-          `The repo does not train one model only. It trains a reference variant and several ${abbr("ablations", "Controlled variants where one important design choice is removed or changed to test whether it really matters.")}. This is a research pattern: you do not merely show that your preferred setup works; you test whether the important result disappears when a key design choice is removed.`,
+          `The repo doesn't train one model. It trains a reference variant and several ${abbr("ablations", "Controlled variants where one important design choice is removed or changed to test whether it really matters.")}; each ablation removes a key design choice so you can test whether the important result disappears without it.`,
         )}
         ${table(
           ["Config", "Meaning"],
