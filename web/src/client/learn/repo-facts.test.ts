@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { repoFacts } from "./content/data";
 
-const repoRoot = resolve(import.meta.dirname, "..", "..");
+const repoRoot = resolve(import.meta.dirname, "..", "..", "..", "..");
 
 function readJson<T>(relativePath: string): T {
   const fullPath = resolve(repoRoot, relativePath);

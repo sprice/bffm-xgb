@@ -31,12 +31,34 @@ const SharedResultsPage = lazy(() =>
     default: m.SharedResultsPage,
   })),
 );
+const LearnPage = lazy(() =>
+  import("./pages/LearnPage").then((m) => ({ default: m.LearnPage })),
+);
 
 export function App() {
   const location = useLocation();
   useEffect(() => {
     trackPageview(location.pathname);
   }, [location.pathname]);
+
+  const isLearnRoute = location.pathname === "/learn" || location.pathname.startsWith("/learn/");
+  if (isLearnRoute) {
+    return (
+      <main className="min-h-svh">
+        <Suspense>
+          <Routes>
+            <Route path="/learn/*" element={<LearnPage />} />
+            <Route
+              path="*"
+              element={
+                <div className="pt-8 px-4 min-h-svh text-text text-sm">Not found</div>
+              }
+            />
+          </Routes>
+        </Suspense>
+      </main>
+    );
+  }
 
   return (
     <div className="min-h-svh flex flex-col items-center bg-bg">
