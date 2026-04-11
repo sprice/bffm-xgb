@@ -19,22 +19,33 @@ function setHtml(id: string, html: string): HTMLElement | null {
   return el;
 }
 
+// Shared Tailwind class bundles for the widgets. Every widget has the
+// same card shell, label layout, input chrome, and output tile.
+const WIDGET_CARD =
+  "my-4 p-5 rounded-xl border border-border bg-surface";
+const WIDGET_LABEL =
+  "grid gap-2 font-body text-sm text-text";
+const WIDGET_INPUT =
+  "w-full px-3 py-2 rounded-lg border border-border bg-bg text-text font-body focus:outline-none focus:ring-2 focus:ring-primary/40";
+const WIDGET_OUTPUT =
+  "mt-4 p-4 rounded-lg bg-primary/10 border border-primary/20 text-text";
+
 export function mountReverseScoreWidget(id = "reverse-score-widget"): void {
   const container = setHtml(
     id,
     `
-      <div class="widget">
-        <div class="widget-grid">
-          <label>
+      <div class="${WIDGET_CARD}">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <label class="${WIDGET_LABEL}">
             Raw response (1-5)
-            <input id="${id}-input" type="range" min="1" max="5" step="1" value="2" />
+            <input id="${id}-input" type="range" min="1" max="5" step="1" value="2" class="${WIDGET_INPUT}" />
           </label>
-          <label>
+          <label class="${WIDGET_LABEL}">
             Current value
-            <input id="${id}-value" type="number" min="1" max="5" step="1" value="2" />
+            <input id="${id}-value" type="number" min="1" max="5" step="1" value="2" class="${WIDGET_INPUT}" />
           </label>
         </div>
-        <div id="${id}-output" class="widget-output"></div>
+        <div id="${id}-output" class="${WIDGET_OUTPUT}"></div>
       </div>
     `,
   );
@@ -64,22 +75,22 @@ export function mountZScoreWidget(id = "z-score-widget"): void {
   const container = setHtml(
     id,
     `
-      <div class="widget">
-        <div class="widget-grid">
-          <label>
+      <div class="${WIDGET_CARD}">
+        <div class="grid gap-4 sm:grid-cols-3">
+          <label class="${WIDGET_LABEL}">
             Raw score
-            <input id="${id}-score" type="number" step="0.01" value="3.8" />
+            <input id="${id}-score" type="number" step="0.01" value="3.8" class="${WIDGET_INPUT}" />
           </label>
-          <label>
+          <label class="${WIDGET_LABEL}">
             Mean
-            <input id="${id}-mean" type="number" step="0.01" value="2.9138" />
+            <input id="${id}-mean" type="number" step="0.01" value="2.9138" class="${WIDGET_INPUT}" />
           </label>
-          <label>
+          <label class="${WIDGET_LABEL}">
             SD
-            <input id="${id}-sd" type="number" step="0.01" min="0.01" value="0.9112" />
+            <input id="${id}-sd" type="number" step="0.01" min="0.01" value="0.9112" class="${WIDGET_INPUT}" />
           </label>
         </div>
-        <div id="${id}-output" class="widget-output"></div>
+        <div id="${id}-output" class="${WIDGET_OUTPUT}"></div>
       </div>
     `,
   );
@@ -113,22 +124,22 @@ export function mountQuantileLossWidget(id = "quantile-loss-widget"): void {
   const container = setHtml(
     id,
     `
-      <div class="widget">
-        <div class="widget-grid">
-          <label>
+      <div class="${WIDGET_CARD}">
+        <div class="grid gap-4 sm:grid-cols-3">
+          <label class="${WIDGET_LABEL}">
             True value y
-            <input id="${id}-truth" type="number" step="0.1" value="3.8" />
+            <input id="${id}-truth" type="number" step="0.1" value="3.8" class="${WIDGET_INPUT}" />
           </label>
-          <label>
+          <label class="${WIDGET_LABEL}">
             Predicted quantile ŷ
-            <input id="${id}-pred" type="number" step="0.1" value="3.2" />
+            <input id="${id}-pred" type="number" step="0.1" value="3.2" class="${WIDGET_INPUT}" />
           </label>
-          <label>
+          <label class="${WIDGET_LABEL}">
             Quantile τ
-            <input id="${id}-tau" type="number" min="0.01" max="0.99" step="0.05" value="0.95" />
+            <input id="${id}-tau" type="number" min="0.01" max="0.99" step="0.05" value="0.95" class="${WIDGET_INPUT}" />
           </label>
         </div>
-        <div id="${id}-output" class="widget-output"></div>
+        <div id="${id}-output" class="${WIDGET_OUTPUT}"></div>
       </div>
     `,
   );
@@ -166,22 +177,22 @@ export function mountSemWidget(id = "sem-widget"): void {
   const container = setHtml(
     id,
     `
-      <div class="widget">
-        <div class="widget-grid">
-          <label>
+      <div class="${WIDGET_CARD}">
+        <div class="grid gap-4 sm:grid-cols-3">
+          <label class="${WIDGET_LABEL}">
             Items in domain (k)
-            <input id="${id}-k" type="number" min="1" max="10" step="1" value="4" />
+            <input id="${id}-k" type="number" min="1" max="10" step="1" value="4" class="${WIDGET_INPUT}" />
           </label>
-          <label>
+          <label class="${WIDGET_LABEL}">
             Mean inter-item correlation (r̄)
-            <input id="${id}-rbar" type="number" min="0.01" max="0.99" step="0.01" value="0.47" />
+            <input id="${id}-rbar" type="number" min="0.01" max="0.99" step="0.01" value="0.47" class="${WIDGET_INPUT}" />
           </label>
-          <label>
+          <label class="${WIDGET_LABEL}">
             Domain SD
-            <input id="${id}-sd" type="number" min="0.01" step="0.01" value="0.91" />
+            <input id="${id}-sd" type="number" min="0.01" step="0.01" value="0.91" class="${WIDGET_INPUT}" />
           </label>
         </div>
-        <div id="${id}-output" class="widget-output"></div>
+        <div id="${id}-output" class="${WIDGET_OUTPUT}"></div>
       </div>
     `,
   );

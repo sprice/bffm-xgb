@@ -34,14 +34,14 @@ describe("learning course structure", () => {
       expect(chapter.title.length).toBeGreaterThan(5);
       expect(chapter.kicker.length).toBeGreaterThan(10);
       expect(chapter.summary.length).toBeGreaterThan(30);
-      expect(chapter.content).toContain("lesson-section");
+      expect(chapter.content).toContain("<section");
     }
   });
 
   it("adds glossary-style abbr tooltips to page 1 terms", () => {
     const chapter1 = chapters.find((chapter) => chapter.slug === "01-orientation");
     expect(chapter1).toBeTruthy();
-    expect(chapter1!.content).toContain('class="glossary-term"');
+    expect(chapter1!.content).toContain("data-glossary-term");
     expect(chapter1!.content).toContain("data-tooltip=");
     expect(chapter1!.content).toContain(">IPIP-BFFM inventory<");
     expect(chapter1!.content).toContain(">quantile regression<");
@@ -50,7 +50,7 @@ describe("learning course structure", () => {
 
   it("adds glossary tooltips across the full course", () => {
     for (const chapter of chapters) {
-      expect(chapter.content).toContain('class="glossary-term"');
+      expect(chapter.content).toContain("data-glossary-term");
       expect(chapter.content).toContain("data-tooltip=");
     }
   });

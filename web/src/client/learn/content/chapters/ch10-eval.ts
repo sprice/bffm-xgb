@@ -1,6 +1,7 @@
 import { officialDocs, repoFacts } from "../data";
 import {
   abbr,
+  barList,
   callout,
   codeBlock,
   internalFiles,
@@ -73,13 +74,13 @@ export const chapter10Evaluation: Chapter = {
         ${paragraph(
           `The old intuition was attractive: rank items by global predictive utility, ask the best ones first. But the actual result was ${abbr("domain starvation", "A failure mode where some personality domains get too few items because the selection rule keeps favoring other domains.")}. Greedy selection kept choosing highly cross-correlated items (especially from Extraversion and Emotional Stability) and delayed or omitted items from more psychometrically distinct domains like Intellect/Openness.`,
         )}
-        <div class="bar-list">
-          <div class="bar-row"><span>Extraversion</span><div class="bar-track"><div class="bar-fill" style="width:45%"></div></div><strong>9 items</strong></div>
-          <div class="bar-row"><span>Emotional Stability</span><div class="bar-track"><div class="bar-fill" style="width:30%"></div></div><strong>6 items</strong></div>
-          <div class="bar-row"><span>Agreeableness</span><div class="bar-track"><div class="bar-fill" style="width:15%"></div></div><strong>3 items</strong></div>
-          <div class="bar-row"><span>Conscientiousness</span><div class="bar-track"><div class="bar-fill" style="width:10%"></div></div><strong>2 items</strong></div>
-          <div class="bar-row"><span>Intellect / Openness</span><div class="bar-track"><div class="bar-fill" style="width:0%"></div></div><strong>0 items</strong></div>
-        </div>
+        ${barList([
+          { label: "Extraversion", percent: 45, value: "9 items" },
+          { label: "Emotional Stability", percent: 30, value: "6 items" },
+          { label: "Agreeableness", percent: 15, value: "3 items" },
+          { label: "Conscientiousness", percent: 10, value: "2 items" },
+          { label: "Intellect / Openness", percent: 0, value: "0 items" },
+        ])}
         ${callout(
           "warning",
           "Core mechanism",

@@ -2,7 +2,9 @@ import { officialDocs, repoFacts } from "../data";
 import {
   abbr,
   callout,
+  comparisonGrid,
   exampleCard,
+  figureStrip,
   internalFiles,
   lead,
   list,
@@ -33,13 +35,28 @@ export const chapter01Orientation: Chapter = {
         ${paragraph(
           `The codebase changed direction over time. Its predecessor began with an ${abbr("adaptive-testing", "A testing approach where later questions depend on earlier answers.")} idea where the next item was chosen greedily by ${abbr("cross-domain utility", "A heuristic score for how useful one item seems for predicting scores across multiple personality domains.")}. That idea was tested, then invalidated. The useful pieces carried forward: ${abbr("sparse-input scoring", "Using a model to score a person even when many questionnaire items were never answered.")} and ${abbr("uncertainty estimation", "Producing intervals or ranges that show how uncertain a prediction is, not just a single point estimate.")}.`,
         )}
-        <div class="figure-strip">
-          <div class="mini-stat"><strong>${repoFacts.totalValidRespondents.toLocaleString()}</strong><span>valid respondents in the current cleaned dataset</span></div>
-          <div class="mini-stat"><strong>15</strong><span>XGBoost models: 5 domains × 3 quantiles</span></div>
-          <div class="mini-stat"><strong>${repoFacts.validation.full50R.toFixed(4)}</strong><span>full-50 validation Pearson r</span></div>
-          <div class="mini-stat"><strong>${repoFacts.validation.sparse20R.toFixed(4)}</strong><span>sparse-20 validation Pearson r</span></div>
-          <div class="mini-stat"><strong>${repoFacts.baselineK20.domainBalancedR.toFixed(4)}</strong><span>domain-balanced 20-item baseline r</span></div>
-        </div>
+        ${figureStrip([
+          {
+            value: repoFacts.totalValidRespondents.toLocaleString(),
+            label: "valid respondents in the current cleaned dataset",
+          },
+          {
+            value: "15",
+            label: "XGBoost models: 5 domains × 3 quantiles",
+          },
+          {
+            value: repoFacts.validation.full50R.toFixed(4),
+            label: "full-50 validation Pearson r",
+          },
+          {
+            value: repoFacts.validation.sparse20R.toFixed(4),
+            label: "sparse-20 validation Pearson r",
+          },
+          {
+            value: repoFacts.baselineK20.domainBalancedR.toFixed(4),
+            label: "domain-balanced 20-item baseline r",
+          },
+        ])}
         ${callout(
           "why",
           "The central claim",
@@ -82,16 +99,16 @@ export const chapter01Orientation: Chapter = {
             ],
           ],
         )}
-        <div class="comparison-grid">
-          ${exampleCard(
+        ${comparisonGrid([
+          exampleCard(
             "Question the repo is built around",
             "<p>If a person answers only some items, can we reconstruct their full-scale Big Five percentile scores accurately enough to be useful?</p>",
-          )}
-          ${exampleCard(
+          ),
+          exampleCard(
             "Question the repo is not trying to answer",
             `<p>Does this system discover the true ${abbr("latent structure", "The underlying unobserved traits or factors assumed to generate observed questionnaire responses.")} of personality better than classical psychometrics? That would require a different validation program.</p>`,
-          )}
-        </div>
+          ),
+        ])}
       `,
     )}
     ${section(
