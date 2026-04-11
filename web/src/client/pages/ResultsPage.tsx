@@ -7,14 +7,14 @@ export function ResultsPage() {
   const results = (location.state as { results?: PredictionResult })?.results;
 
   if (!results) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/assessment" replace />;
   }
 
   let hash: string;
   try {
     hash = encodeResults(results);
   } catch {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/assessment" replace />;
   }
-  return <Navigate to={`/results/${hash}`} replace />;
+  return <Navigate to={`/assessment/results/${hash}`} replace />;
 }

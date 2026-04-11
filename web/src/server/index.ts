@@ -1,12 +1,44 @@
 import { serve } from "@hono/node-server";
-import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { resolve } from "node:path";
+import { getMimeType } from "hono/utils/mime";
+import { readFile } from "node:fs/promises";
+import { extname, resolve, sep } from "node:path";
 import { getPredictor, isPredictorReady } from "./predictor.js";
+import { isNavigationRequest } from "./route-guards.js";
 import { reverseScore } from "./reverse-score.js";
 
 const app = new Hono();
+const appRoot = resolve(import.meta.dirname, "..", "..");
+const clientDistDir = resolve(appRoot, "dist", "client");
+const isBuiltServer = import.meta.dirname.includes(`${sep}dist${sep}server`);
+
+function resolveClientFile(pathname: string): string | null {
+  const relativePath = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+  const resolvedPath = resolve(clientDistDir, relativePath);
+  if (resolvedPath !== clientDistDir && !resolvedPath.startsWith(`${clientDistDir}${sep}`)) {
+    return null;
+  }
+  return resolvedPath;
+}
+
+async function serveClientFile(pathname: string): Promise<Response | null> {
+  const filePath = resolveClientFile(pathname);
+  if (!filePath) return null;
+
+  try {
+    const body = await readFile(filePath);
+    const mimeType = getMimeType(extname(filePath)) || "application/octet-stream";
+    return new Response(body, {
+      status: 200,
+      headers: {
+        "Content-Type": mimeType,
+      },
+    });
+  } catch {
+    return null;
+  }
+}
 
 app.get("/api/health", (c) =>
   c.json({ status: isPredictorReady() ? "ok" : "loading" })
@@ -132,18 +164,20 @@ app.post("/a", bodyLimit({ maxSize: 4 * 1024 }), async (c) => {
   }
 });
 
-// Serve static files in production
-const clientDir = resolve(import.meta.dirname, "..", "client");
-app.use("/*", serveStatic({ root: clientDir }));
+if (isBuiltServer) {
+  app.get("/*", async (c) => {
+    const pathname = new URL(c.req.url).pathname;
+    const accept = c.req.header("Accept") || "";
+    const secFetchMode = c.req.header("Sec-Fetch-Mode");
+    const secFetchDest = c.req.header("Sec-Fetch-Dest");
 
-// SPA fallback: serve index.html only for navigation requests (not asset requests)
-app.get("/*", async (c) => {
-  const accept = c.req.header("Accept") || "";
-  if (accept.includes("text/html")) {
-    return serveStatic({ root: clientDir, path: "index.html" })(c, async () => {});
-  }
-  return c.notFound();
-});
+    if (isNavigationRequest(pathname, accept, secFetchMode, secFetchDest)) {
+      return (await serveClientFile("/index.html")) ?? c.notFound();
+    }
+
+    return (await serveClientFile(pathname)) ?? c.notFound();
+  });
+}
 
 const port = Number(process.env.PORT) || 7860;
 

@@ -44,7 +44,7 @@ export function AssessmentDonePage() {
         throw new Error(data.error || "Prediction failed");
       }
       clearSession();
-      navigate("/results", { state: { results: data.results }, replace: true });
+      navigate("/assessment/results", { state: { results: data.results }, replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -93,7 +93,7 @@ export function AssessmentDonePage() {
           type="button"
           aria-label="Previous question"
           className="min-h-[44px] min-w-[44px] px-4 py-2.5 border border-border rounded-md bg-surface text-sm text-text transition-colors hover:bg-primary-lighter active:bg-primary-light"
-          onClick={() => navigate(`/assessment/${totalItems}`)}
+          onClick={() => navigate(`/assessment/question/${totalItems}`)}
         >
           &larr; Previous
         </button>

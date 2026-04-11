@@ -20,10 +20,10 @@ export function SharedResultsPage() {
     return <NotFoundPage />;
   }
 
-  const shareUrl = `${window.location.origin}/shared/${hash}`;
+  const shareUrl = `${window.location.origin}/assessment/shared/${hash}`;
 
   function handleAction() {
-    navigate("/");
+    navigate("/assessment");
   }
 
   return (

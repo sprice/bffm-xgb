@@ -1,7 +1,13 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { LandingPage as LandingContent } from "../components/LandingPage";
-import { clearSession, clearResultsHash, hasSession, loadResultsHash } from "../hooks/use-assessment";
+import {
+  clearSession,
+  clearResultsHash,
+  getResumeTarget,
+  hasSession,
+  loadResultsHash,
+} from "../hooks/use-assessment";
 
 const VALID_HASH = /^[A-Za-z0-9_-]{10,30}$/;
 
@@ -21,7 +27,7 @@ export function LandingPage() {
       clearSession();
     }
     clearResultsHash();
-    navigate("/start");
+    navigate("/assessment/start");
   }
 
   return (
@@ -34,7 +40,7 @@ export function LandingPage() {
           <button
             type="button"
             className="min-h-[52px] px-10 py-4 border border-border rounded-lg text-lg font-bold bg-surface text-text transition-all hover:bg-primary-lighter hover:-translate-y-0.5 active:translate-y-0 active:bg-primary-light"
-            onClick={() => navigate(`/results/${resultsHash}`)}
+            onClick={() => navigate(`/assessment/results/${resultsHash}`)}
           >
             View Results
           </button>
@@ -43,7 +49,14 @@ export function LandingPage() {
           <button
             type="button"
             className="min-h-[52px] px-10 py-4 border border-border rounded-lg text-lg font-bold bg-surface text-text transition-all hover:bg-primary-lighter hover:-translate-y-0.5 active:translate-y-0 active:bg-primary-light"
-            onClick={() => navigate("/assessment")}
+            onClick={() => {
+              const target = getResumeTarget();
+              navigate(
+                target === "done"
+                  ? "/assessment/done"
+                  : `/assessment/question/${target}`,
+              );
+            }}
           >
             Resume Assessment
           </button>

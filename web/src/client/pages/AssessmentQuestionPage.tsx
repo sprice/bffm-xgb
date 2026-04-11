@@ -50,12 +50,12 @@ export function AssessmentQuestionPage() {
       if (e.key === "ArrowRight" || e.key === "ArrowDown") {
         e.preventDefault();
         if (questionNumber < totalItems)
-          navigate(`/assessment/${questionNumber + 1}`);
+          navigate(`/assessment/question/${questionNumber + 1}`);
       }
       if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
         e.preventDefault();
         if (questionNumber > 1)
-          navigate(`/assessment/${questionNumber - 1}`);
+          navigate(`/assessment/question/${questionNumber - 1}`);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -80,7 +80,7 @@ export function AssessmentQuestionPage() {
     if (!pendingAdvance.current) {
       let nextRoute: string | null = null;
       if (questionNumber < totalItems) {
-        nextRoute = `/assessment/${questionNumber + 1}`;
+        nextRoute = `/assessment/question/${questionNumber + 1}`;
       } else if (isNewAnswer ? answeredCount + 1 >= totalItems : allAnswered) {
         nextRoute = "/assessment/done";
       }
@@ -119,7 +119,7 @@ export function AssessmentQuestionPage() {
           type="button"
           aria-label="Previous question"
           className="min-h-[44px] min-w-[44px] px-4 py-2.5 border border-border rounded-md bg-surface text-sm text-text transition-colors hover:bg-primary-lighter active:bg-primary-light disabled:opacity-40 disabled:cursor-not-allowed"
-          onClick={() => navigate(`/assessment/${questionNumber - 1}`)}
+          onClick={() => navigate(`/assessment/question/${questionNumber - 1}`)}
           disabled={questionNumber === 1}
         >
           &larr; Previous
@@ -131,7 +131,7 @@ export function AssessmentQuestionPage() {
           type="button"
           aria-label="Next question"
           className="min-h-[44px] min-w-[44px] px-4 py-2.5 border border-border rounded-md bg-surface text-sm text-text transition-colors hover:bg-primary-lighter active:bg-primary-light disabled:opacity-40 disabled:cursor-not-allowed"
-          onClick={() => navigate(`/assessment/${questionNumber + 1}`)}
+          onClick={() => navigate(`/assessment/question/${questionNumber + 1}`)}
           disabled={questionNumber === totalItems}
         >
           Next &rarr;

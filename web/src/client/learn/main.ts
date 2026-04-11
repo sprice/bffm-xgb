@@ -1,5 +1,6 @@
 import type { Chapter } from "./types";
 import { chapters } from "./content";
+import { getLearnPath } from "./routes";
 
 const visitedStorageKey = "bffm-xgb-learn-visited";
 
@@ -38,12 +39,6 @@ function saveVisited(visited: Set<string>): void {
   }
 }
 
-function currentSlug(): string {
-  const hash = window.location.hash.replace(/^#/, "").trim();
-  if (!hash) return chapters[0].slug;
-  return hash;
-}
-
 function chapterBySlug(slug: string): Chapter {
   return chapters.find((chapter) => chapter.slug === slug) ?? chapters[0];
 }
@@ -76,7 +71,8 @@ function renderSidebar(current: Chapter, visited: Set<string>): string {
               <li>
                 <a
                   class="chapter-link ${isCurrent ? "is-current" : ""} ${isVisited ? "is-visited" : ""}"
-                  href="#${chapter.slug}"
+                  href="${getLearnPath(chapter.slug)}"
+                  data-chapter-slug="${chapter.slug}"
                   ${isCurrent ? 'aria-current="page"' : ""}
                 >
                   <span class="chapter-order">${String(chapter.order).padStart(2, "0")}</span>
@@ -99,30 +95,49 @@ function renderPrevNext(current: Chapter): string {
   const prev = currentIndex > 0 ? chapters[currentIndex - 1] : null;
   const next = currentIndex < chapters.length - 1 ? chapters[currentIndex + 1] : null;
 
-  return `
-    <div class="prev-next">
-      ${
-        prev
-          ? `<a class="nav-card" href="#${prev.slug}">
+  const items: string[] = [];
+
+  if (prev) {
+    items.push(`<a class="nav-card" href="${getLearnPath(prev.slug)}" data-chapter-slug="${prev.slug}">
               <span class="nav-label">Previous</span>
               <strong>${prev.title}</strong>
-            </a>`
-          : `<div class="nav-card nav-card-empty"><span class="nav-label">Previous</span><strong>Start here</strong></div>`
-      }
-      ${
-        next
-          ? `<a class="nav-card" href="#${next.slug}">
+            </a>`);
+  }
+
+  if (next) {
+    items.push(`<a class="nav-card" href="${getLearnPath(next.slug)}" data-chapter-slug="${next.slug}">
               <span class="nav-label">Next</span>
               <strong>${next.title}</strong>
-            </a>`
-          : `<div class="nav-card nav-card-empty"><span class="nav-label">Next</span><strong>Course complete</strong></div>`
-      }
+            </a>`);
+  }
+
+  if (items.length === 0) {
+    return "";
+  }
+
+  return `
+    <div class="prev-next">
+      ${items.join("")}
     </div>
   `;
 }
 
-export function mountLearnApp(host: HTMLElement): () => void {
+type LearnAppOptions = {
+  initialSlug: string;
+  onNavigate: (slug: string) => void;
+};
+
+export type LearnAppHandle = {
+  update: (slug: string) => void;
+  destroy: () => void;
+};
+
+export function mountLearnApp(
+  host: HTMLElement,
+  { initialSlug, onNavigate }: LearnAppOptions,
+): LearnAppHandle {
   const app = host;
+  let currentChapterSlug = initialSlug;
 
   app.classList.add("learn-page");
   const mathMlMode = detectMathMlSupport() ? "mathml-supported" : "mathml-fallback";
@@ -239,7 +254,7 @@ export function mountLearnApp(host: HTMLElement): () => void {
     }
 
     const visited = loadVisited();
-    const chapter = chapterBySlug(currentSlug());
+    const chapter = chapterBySlug(currentChapterSlug);
     visited.add(chapter.slug);
     saveVisited(visited);
 
@@ -290,8 +305,31 @@ export function mountLearnApp(host: HTMLElement): () => void {
     wireGlossaryTooltips(app);
   }
 
-  const handleHashChange = (): void => {
-    renderApp();
+  const handleAppClick = (event: MouseEvent): void => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const link = target.closest<HTMLAnchorElement>("a[data-chapter-slug]");
+    if (!link) return;
+
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      link.target ||
+      link.hasAttribute("download") ||
+      event.metaKey ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.shiftKey
+    ) {
+      return;
+    }
+
+    const slug = link.dataset.chapterSlug;
+    if (!slug || slug === currentChapterSlug) return;
+
+    event.preventDefault();
+    onNavigate(slug);
   };
 
   const handleKeydown = (event: KeyboardEvent): void => {
@@ -301,12 +339,12 @@ export function mountLearnApp(host: HTMLElement): () => void {
     if (event.key === "Escape") {
       hideGlossaryTooltip();
     }
-    const currentIndex = chapters.findIndex((chapter) => chapter.slug === chapterBySlug(currentSlug()).slug);
+    const currentIndex = chapters.findIndex((chapter) => chapter.slug === chapterBySlug(currentChapterSlug).slug);
     if (event.key === "ArrowRight" && currentIndex < chapters.length - 1) {
-      window.location.hash = chapters[currentIndex + 1].slug;
+      onNavigate(chapters[currentIndex + 1].slug);
     }
     if (event.key === "ArrowLeft" && currentIndex > 0) {
-      window.location.hash = chapters[currentIndex - 1].slug;
+      onNavigate(chapters[currentIndex - 1].slug);
     }
   };
 
@@ -322,27 +360,34 @@ export function mountLearnApp(host: HTMLElement): () => void {
     }
   };
 
-  window.addEventListener("hashchange", handleHashChange);
+  app.addEventListener("click", handleAppClick);
   window.addEventListener("keydown", handleKeydown);
   window.addEventListener("resize", handleResize);
   window.addEventListener("scroll", handleScroll, true);
   renderApp();
 
-  return () => {
-    window.removeEventListener("hashchange", handleHashChange);
-    window.removeEventListener("keydown", handleKeydown);
-    window.removeEventListener("resize", handleResize);
-    window.removeEventListener("scroll", handleScroll, true);
+  return {
+    update: (slug: string) => {
+      if (slug === currentChapterSlug) return;
+      currentChapterSlug = slug;
+      renderApp();
+    },
+    destroy: () => {
+      app.removeEventListener("click", handleAppClick);
+      window.removeEventListener("keydown", handleKeydown);
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("scroll", handleScroll, true);
 
-    hideGlossaryTooltip();
-    if (mathMlModeWasAdded) {
-      app.classList.remove(mathMlMode);
-    }
-    if (glossaryTooltip) {
-      glossaryTooltip.remove();
-    }
+      hideGlossaryTooltip();
+      if (mathMlModeWasAdded) {
+        app.classList.remove(mathMlMode);
+      }
+      if (glossaryTooltip) {
+        glossaryTooltip.remove();
+      }
 
-    app.classList.remove("learn-page");
-    app.innerHTML = "";
+      app.classList.remove("learn-page");
+      app.innerHTML = "";
+    },
   };
 }

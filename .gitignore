@@ -76,3 +76,6 @@ infra/gpu/*.tfstate.backup
 infra/gpu/.terraform.lock.hcl
 infra/gpu/terraform.tfvars
 *.tfstate.lock.info
+
+# Web
+web/.impeccable.md

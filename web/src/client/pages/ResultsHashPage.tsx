@@ -23,12 +23,12 @@ export function ResultsHashPage() {
     return <NotFoundPage />;
   }
 
-  const shareUrl = `${window.location.origin}/shared/${hash}`;
+  const shareUrl = `${window.location.origin}/assessment/shared/${hash}`;
 
   function handleRetake() {
     clearSession();
     clearResultsHash();
-    navigate("/start", { replace: true });
+    navigate("/assessment/start", { replace: true });
   }
 
   return (
