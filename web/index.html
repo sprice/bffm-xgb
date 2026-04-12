@@ -4,15 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="Discover your Big Five personality traits in under 3 minutes. 20 questions, machine-learning scored with the BFFM-XGB model." />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f8f6f3" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a1816" />
     <script>
       (function () {
         try {
           var root = document.documentElement;
           var saved = localStorage.getItem("bffm-xgb-theme");
+          var effective =
+            saved === "light" || saved === "dark"
+              ? saved
+              : window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
 
           if (saved === "light" || saved === "dark") {
             root.classList.add(saved);
           }
+          root.style.colorScheme = effective;
         } catch (e) {}
       })();
     </script>

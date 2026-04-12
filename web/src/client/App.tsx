@@ -4,7 +4,7 @@ import { trackPageview } from "./lib/analytics";
 import { AppHeader } from "./components/AppHeader";
 import { defaultLearnPath } from "./learn/routes";
 import { HomePage } from "./pages/HomePage";
-import { LandingPage } from "./pages/LandingPage";
+import { AssessmentPage } from "./pages/AssessmentPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { ResultsPage } from "./pages/ResultsPage";
 
@@ -40,6 +40,7 @@ const LearnPage = lazy(() =>
 export function App() {
   const location = useLocation();
   useEffect(() => {
+    window.scrollTo(0, 0);
     trackPageview(location.pathname);
   }, [location.pathname]);
 
@@ -91,7 +92,7 @@ export function App() {
         <Suspense>
           <Routes>
             <Route path="/" element={<HomePage />} />
-            <Route path="/assessment" element={<LandingPage />} />
+            <Route path="/assessment" element={<AssessmentPage />} />
             <Route path="/assessment/start" element={<PreAssessmentPage />} />
             <Route path="/assessment/question/:questionNumber" element={<AssessmentQuestionPage />} />
             <Route path="/assessment/done" element={<AssessmentDonePage />} />

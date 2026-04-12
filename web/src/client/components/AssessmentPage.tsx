@@ -1,16 +1,16 @@
 import { InfoCards } from "./InfoCards";
 
-interface LandingPageProps {
+interface AssessmentContentProps {
   onStart: () => void;
   primaryActionLabel: string;
   children?: React.ReactNode;
 }
 
-export function LandingPage({
+export function AssessmentPage({
   onStart,
   primaryActionLabel,
   children,
-}: LandingPageProps) {
+}: AssessmentContentProps) {
   return (
     <div className="flex flex-col gap-10">
       <div className="pt-2 pb-4">

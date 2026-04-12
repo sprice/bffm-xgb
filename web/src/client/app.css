@@ -51,6 +51,7 @@
   :root {
     /* Warm neutrals – deepened text for contrast */
     --app-surface: #fefdfb;
+    /* Keep the light/dark --app-bg hex values in sync with web/index.html theme-color meta tags. */
     --app-bg: #f8f6f3;
     --app-text: #1a1816;
     --app-text-muted: #6b6460;

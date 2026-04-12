@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ThemeSwitcher } from "./theme-switcher";
+import { ThemeSwitcher } from "./ThemeSwitcher";
 import { defaultLearnPath } from "../learn/routes";
 
 const GITHUB_URL = "https://github.com/sprice/bffm-xgb";
@@ -12,7 +12,7 @@ export function AppHeader() {
           to="/"
           className="font-display text-xl sm:text-2xl font-semibold tracking-tight text-text hover:text-primary"
         >
-          Big Five
+          Big Five - BFFM-XGB
         </Link>
         <nav className="flex items-center gap-2 text-sm sm:gap-4">
           <Link
