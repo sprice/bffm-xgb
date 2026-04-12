@@ -39,7 +39,9 @@ export function AssessmentQuestionPage() {
     };
   }, [questionNumber]);
 
-  // Keyboard navigation
+  // Keyboard navigation: arrow keys advance between questions,
+  // EXCEPT when focus is inside the Likert radiogroup — there, the
+  // QuestionCard handler owns arrow keys (moving between options).
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (
@@ -47,6 +49,12 @@ export function AssessmentQuestionPage() {
         e.target instanceof HTMLTextAreaElement
       )
         return;
+      if (
+        e.target instanceof Element &&
+        e.target.closest('[role="radiogroup"]')
+      ) {
+        return;
+      }
       if (e.key === "ArrowRight" || e.key === "ArrowDown") {
         e.preventDefault();
         if (questionNumber < totalItems)

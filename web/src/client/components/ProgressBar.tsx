@@ -4,7 +4,7 @@ interface ProgressBarProps {
 }
 
 export function ProgressBar({ current, total }: ProgressBarProps) {
-  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  const pct = total > 0 ? current / total : 0;
   return (
     <div className="mb-6">
       <div className="text-base text-text-muted mb-2 text-center font-medium">
@@ -19,8 +19,8 @@ export function ProgressBar({ current, total }: ProgressBarProps) {
         aria-label={`Assessment progress: ${current} of ${total} questions answered`}
       >
         <div
-          className="h-full bg-primary rounded-full transition-[width] duration-500 ease-out"
-          style={{ width: `${pct}%` }}
+          className="h-full w-full origin-left bg-primary rounded-full transition-transform duration-500 ease-out"
+          style={{ transform: `scaleX(${pct})` }}
         />
       </div>
     </div>

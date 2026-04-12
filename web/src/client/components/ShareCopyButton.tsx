@@ -58,7 +58,7 @@ export function ShareCopyButton({ shareUrl }: ShareCopyButtonProps) {
     <button
       type="button"
       aria-live="polite"
-      className="min-h-[36px] px-4 py-2 border border-border rounded-md bg-surface text-sm text-text transition-colors hover:bg-primary-lighter active:bg-primary-light grid"
+      className="min-h-[44px] px-4 py-2 border border-border rounded-md bg-surface text-sm text-text transition-colors hover:bg-primary-lighter active:bg-primary-light grid"
       onClick={handleCopy}
     >
       <span className={`col-start-1 row-start-1 flex items-center gap-2 ${copied ? "invisible" : ""}`}>

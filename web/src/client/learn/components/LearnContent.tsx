@@ -35,10 +35,8 @@ export const LearnContent = forwardRef<HTMLElement, LearnContentProps>(
       <article
         ref={ref}
         className={cn(
-          "rounded-2xl border border-border bg-surface shadow-sm",
-          "p-6 sm:p-8 lg:p-10",
           "font-display text-text text-base leading-relaxed",
-          "[&>section+section]:mt-8 [&>section+section]:pt-8",
+          "[&>section+section]:mt-10 [&>section+section]:pt-10",
           "[&>section+section]:border-t [&>section+section]:border-border",
           "[&_code]:font-mono [&_code]:text-[0.9em]",
           "[&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-text/10",

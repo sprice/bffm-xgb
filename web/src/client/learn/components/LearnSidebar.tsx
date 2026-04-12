@@ -34,9 +34,9 @@ export function LearnSidebar({
         <div className="font-body text-xs uppercase tracking-widest text-text-muted">
           BFFM-XGB Learning Course
         </div>
-        <h1 className="mt-2 mb-3 font-display text-2xl font-semibold leading-tight text-text">
+        <p className="mt-2 mb-3 font-display text-2xl font-semibold leading-tight text-text">
           Understand the whole pipeline
-        </h1>
+        </p>
         <p className="text-sm leading-relaxed text-text-muted">
           Linear pages for psychometrics, statistics, XGBoost, training,
           evaluation, export, and safe modification.

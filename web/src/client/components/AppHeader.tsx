@@ -15,17 +15,23 @@ export function AppHeader() {
           Big Five
         </Link>
         <nav className="flex items-center gap-2 text-sm sm:gap-4">
-          <Link className="min-h-[36px] px-3 py-2 rounded-md text-text-muted hover:text-text transition-colors" to={defaultLearnPath}>
+          <Link
+            className="inline-flex items-center min-h-[44px] px-3 py-2 rounded-md text-text-muted hover:text-text transition-colors"
+            to={defaultLearnPath}
+          >
             Learn
           </Link>
-          <Link className="min-h-[36px] px-3 py-2 rounded-md text-text-muted hover:text-text transition-colors" to="/assessment">
+          <Link
+            className="inline-flex items-center min-h-[44px] px-3 py-2 rounded-md text-text-muted hover:text-text transition-colors"
+            to="/assessment"
+          >
             Take the Assessment
           </Link>
           <a
             href={GITHUB_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="min-h-[36px] px-3 py-2 rounded-md text-text-muted hover:text-text transition-colors"
+            className="inline-flex items-center min-h-[44px] px-3 py-2 rounded-md text-text-muted hover:text-text transition-colors"
           >
             GitHub
           </a>

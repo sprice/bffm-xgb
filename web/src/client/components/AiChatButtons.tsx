@@ -91,8 +91,7 @@ export function AiChatButtons({ results, mode }: AiChatButtonsProps) {
     <div className="flex flex-col sm:flex-row flex-wrap gap-3 justify-center">
       <button
         type="button"
-        className="min-h-[36px] px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 transition-opacity hover:opacity-85 active:opacity-75"
-        style={{ backgroundColor: "#000000", color: "#ffffff" }}
+        className="min-h-[44px] px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 bg-brand-openai text-brand-openai-text transition-opacity hover:opacity-85 active:opacity-75"
         onClick={() => handleClick("chatgpt")}
       >
         <OpenAiIcon className="w-4 h-4" />
@@ -101,8 +100,7 @@ export function AiChatButtons({ results, mode }: AiChatButtonsProps) {
 
       <button
         type="button"
-        className="hidden sm:flex min-h-[36px] px-4 py-2 rounded-md text-sm font-medium items-center gap-2 transition-opacity hover:opacity-85 active:opacity-75"
-        style={{ backgroundColor: "#a8614a", color: "#ffffff" }}
+        className="hidden sm:flex min-h-[44px] px-4 py-2 rounded-md text-sm font-medium items-center gap-2 bg-brand-anthropic text-brand-anthropic-text transition-opacity hover:opacity-85 active:opacity-75"
         onClick={() => handleClick("claude")}
       >
         <ClaudeIcon className="w-4 h-4" />
@@ -112,7 +110,7 @@ export function AiChatButtons({ results, mode }: AiChatButtonsProps) {
       <button
         type="button"
         aria-live="polite"
-        className="min-h-[36px] px-4 py-2 rounded-md bg-primary text-white text-sm font-medium grid transition-opacity hover:opacity-85 active:opacity-75"
+        className="min-h-[44px] px-4 py-2 rounded-md bg-primary text-white text-sm font-medium grid transition-opacity hover:opacity-85 active:opacity-75"
         onClick={handleCopy}
       >
         <span className={`col-start-1 row-start-1 flex items-center gap-2 ${copied ? "invisible" : ""}`}>

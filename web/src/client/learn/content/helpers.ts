@@ -17,7 +17,7 @@ function escapeHtml(value: string): string {
 export function abbr(label: string, description: string): string {
   const safeDescription = escapeHtml(description);
   const safeAria = escapeHtml(`${label}: ${description}`);
-  return `<button type="button" data-glossary-term data-tooltip="${safeDescription}" aria-label="${safeAria}" class="[font:inherit] [color:inherit] bg-transparent border-0 p-0 m-0 cursor-help underline decoration-dotted decoration-primary/60 underline-offset-4 hover:text-primary hover:decoration-primary focus-visible:text-primary focus-visible:outline-none data-[tooltip-open=true]:text-primary">${label}</button>`;
+  return `<button type="button" data-glossary-term data-tooltip="${safeDescription}" aria-label="${safeAria}" class="[font:inherit] [color:inherit] bg-transparent border-0 p-0 m-0 cursor-help underline decoration-dotted decoration-primary/60 underline-offset-4 hover:text-primary hover:decoration-primary focus-visible:text-primary focus-visible:decoration-primary data-[tooltip-open=true]:text-primary">${label}</button>`;
 }
 
 // ─── Section ──────────────────────────────────────────────────────

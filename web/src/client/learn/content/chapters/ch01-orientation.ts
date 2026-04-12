@@ -27,7 +27,7 @@ export const chapter01Orientation: Chapter = {
       "The Big Picture",
       `
         ${lead(
-          `This repository is a ${abbr("research pipeline", "A staged, reproducible workflow for turning data into results and artifacts.")} and ${abbr("runtime product", "The packaged system that is actually used after training, rather than the training code itself.")} for predicting ${abbr("Big Five personality scores", "Scores for the five broad personality domains: Extraversion, Agreeableness, Conscientiousness, Emotional Stability, and Intellect or Openness.")} from partial answers to the 50-item ${abbr("IPIP-BFFM inventory", "The IPIP Big Five Factor Markers questionnaire: a public-domain 50-item Big Five personality measure.")}.`,
+          `This project is a ${abbr("research pipeline", "A staged, reproducible workflow for turning data into results and artifacts.")} and ${abbr("runtime product", "The packaged system that is actually used after training, rather than the training code itself.")} for predicting ${abbr("Big Five personality scores", "Scores for the five broad personality domains: Extraversion, Agreeableness, Conscientiousness, Emotional Stability, and Intellect or Openness.")} from partial answers to the 50-item ${abbr("IPIP-BFFM inventory", "The IPIP Big Five Factor Markers questionnaire: a public-domain 50-item Big Five personality measure.")}.`,
         )}
         ${paragraph(
           `If a person answers only part of a long personality questionnaire, can a model recover the score they would have received from all 50 items? Yes—but only under a specific design: ${abbr("domain-balanced short forms", "Short questionnaires that keep coverage spread across all five Big Five domains instead of over-sampling one or two domains.")}, ${abbr("sparse-input training", "Training the model on examples where many items are deliberately hidden or missing so it learns to handle partial responses.")}, ${abbr("quantile regression", "A regression approach that predicts multiple quantiles, such as lower, median, and upper estimates, instead of only one average prediction.")}, and strong ${abbr("provenance checks", "Hash and metadata checks that verify where an artifact came from and whether it still matches the data and code that produced it.")}.`,
@@ -176,7 +176,7 @@ export const chapter01Orientation: Chapter = {
         {
           label: "Current repo README",
           href: "https://github.com/sprice/bffm-xgb",
-          note: "Repository-level overview and install/run guide",
+          note: "Project-level overview and install/run guide",
         },
       ]),
     )}`,

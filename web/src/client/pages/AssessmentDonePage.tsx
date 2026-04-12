@@ -1,4 +1,3 @@
-import confetti from "canvas-confetti";
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { ProgressBar } from "../components/ProgressBar";
@@ -15,12 +14,6 @@ export function AssessmentDonePage() {
 
   useEffect(() => {
     document.title = "All Done - Big Five Personality Assessment";
-    confetti({
-      particleCount: 60,
-      spread: 55,
-      origin: { y: 0.7 },
-      disableForReducedMotion: true,
-    });
   }, []);
 
   if (!allAnswered) {
@@ -56,15 +49,17 @@ export function AssessmentDonePage() {
     <div className="max-w-[540px] mx-auto">
       <ProgressBar current={answeredCount} total={totalItems} />
 
-      <div className="bg-surface border border-border rounded-lg p-5 sm:p-6 shadow-sm flex flex-col items-center justify-center min-h-[380px] animate-in">
-        <h2 className="font-display text-4xl font-semibold mb-2">You're all done!</h2>
-        <p className="text-text-muted text-base mb-6">
+      <div className="bg-surface border border-border rounded-lg p-5 sm:p-6 shadow-sm flex flex-col items-center justify-center min-h-[380px] text-center">
+        <h2 className="font-display text-5xl sm:text-6xl font-semibold text-text mb-4 tracking-tight animate-in">
+          You're all done.
+        </h2>
+        <p className="text-text-muted text-base mb-10 animate-in stagger-2">
           All {totalItems} questions answered. Ready to see your results?
         </p>
 
         <button
           type="button"
-          className="min-h-[48px] px-9 py-3.5 bg-primary text-white rounded-lg text-lg font-bold shadow-lg hover:bg-primary-hover hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 active:shadow-md transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          className="min-h-[48px] px-9 py-3.5 bg-primary text-white rounded-lg text-lg font-bold shadow-lg hover:bg-primary-hover hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 active:shadow-md transition-all disabled:opacity-60 disabled:cursor-not-allowed animate-in stagger-3"
           onClick={handleSubmit}
           disabled={loading}
         >

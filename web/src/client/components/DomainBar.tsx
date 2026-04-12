@@ -5,11 +5,14 @@ interface DomainBarProps {
   label: string;
   description: string;
   result: DomainResult;
+  /** Fill color for bar and median dot visuals (3:1 OK for non-text). */
   color: string;
+  /** Darker shade for heading label and percentile number (passes AA 4.5:1 as text). */
+  textColor: string;
   index: number;
 }
 
-export function DomainBar({ label, description, result, color, index }: DomainBarProps) {
+export function DomainBar({ label, description, result, color, textColor, index }: DomainBarProps) {
   const { q05, q50, q95 } = result.percentile;
   const roundedQ05 = Math.round(q05);
   const roundedQ50 = Math.round(q50);
@@ -18,50 +21,58 @@ export function DomainBar({ label, description, result, color, index }: DomainBa
   const baseDelay = 0.25 + index * 0.1;
 
   return (
-    <div
+    <article
       className="animate-in"
       style={{ animationDelay: `${index * 0.08}s` }}
-      role="img"
-      aria-label={`${label}: ${ordinal(roundedQ50)} percentile, 90% confidence interval ${ordinal(roundedQ05)} to ${ordinal(roundedQ95)}`}
     >
-      <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 items-baseline" aria-hidden="true">
-        <div className="font-semibold text-base col-start-1 row-start-1" style={{ color }}>{label}</div>
+      <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 items-baseline">
+        <h3
+          className="font-semibold text-base col-start-1 row-start-1 m-0"
+          style={{ color: textColor }}
+        >
+          {label}
+        </h3>
         <div
           className="text-3xl font-bold col-start-2 row-start-1 text-right font-display"
-          style={{ color }}
+          style={{ color: textColor }}
         >
-          {roundedQ50}<span className="text-lg">{ordinalSuffix(roundedQ50)}</span>
+          <span aria-hidden="true">
+            {roundedQ50}<span className="text-lg">{ordinalSuffix(roundedQ50)}</span>
+          </span>
+          <span className="sr-only">
+            {ordinal(roundedQ50)} percentile. 90 percent confidence interval: {ordinal(roundedQ05)} to {ordinal(roundedQ95)}.
+          </span>
         </div>
 
-        <div className="col-span-full row-start-2 h-4 bg-border/30 rounded-md relative overflow-visible">
+        <div
+          className="col-span-full row-start-2 h-4 bg-border/30 rounded-md relative overflow-visible"
+          aria-hidden="true"
+        >
           {/* CI range bar – sweeps in from left */}
           <div
-            className="absolute top-0 h-full rounded-md opacity-30"
+            className="absolute top-0 h-full rounded-md opacity-30 animate-scale-x-in"
             style={{
               left: `${q05}%`,
               width: `${Math.max(q95 - q05, 1)}%`,
               backgroundColor: color,
-              animation: `scale-in-x 0.7s cubic-bezier(0.16, 1, 0.3, 1) both`,
               animationDelay: `${baseDelay}s`,
-              transformOrigin: "left",
             }}
           />
           {/* Median dot – pops in after bar fills */}
           <div
-            className="absolute top-1/2 w-4 h-4 rounded-full border-2 border-surface shadow-md"
+            className="absolute top-1/2 w-4 h-4 rounded-full border-2 border-surface shadow-md animate-dot-pop-in"
             style={{
               left: `${q50}%`,
               backgroundColor: color,
-              animation: `dot-pop 0.45s cubic-bezier(0.16, 1, 0.3, 1) both`,
               animationDelay: `${baseDelay + 0.25}s`,
             }}
           />
         </div>
       </div>
 
-      <p className="text-sm text-text-muted leading-relaxed mt-2" aria-hidden="true">
+      <p className="text-sm text-text-muted leading-relaxed mt-2">
         {description}
       </p>
-    </div>
+    </article>
   );
 }

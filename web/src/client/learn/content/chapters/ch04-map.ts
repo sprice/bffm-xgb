@@ -14,7 +14,7 @@ export const chapter04Map: Chapter = {
   slug: "04-codebase-map",
   order: 4,
   title: "Codebase Map",
-  kicker: "How the repository is organized, and how artifacts move through it",
+  kicker: "How the project is organized, and how artifacts move through it",
   summary:
     "Build a mental model of the repo as an artifact pipeline: numbered Python stages, shared libraries, runtime packages, web app, infrastructure, and the variant/evaluation layout.",
   content: `
@@ -43,15 +43,30 @@ export const chapter04Map: Chapter = {
           ["Path", "Role"],
           [
             ["pipeline/", "The numbered end-to-end research pipeline"],
-            ["lib/", "Shared Python utilities: constants, sparsity, scoring, provenance, bootstrap"],
+            [
+              "lib/",
+              "Shared Python utilities: constants, sparsity, scoring, provenance, bootstrap",
+            ],
             ["configs/", "Variant configs for reference and ablation runs"],
-            ["data/processed/", "SQLite DB, split parquets, item metadata, first-item outputs"],
+            [
+              "data/processed/",
+              "SQLite DB, split parquets, item metadata, first-item outputs",
+            ],
             ["models/", "Trained model bundles and training reports"],
-            ["artifacts/", "Norms, tuned params, cross-variant summaries, published metadata"],
-            ["output/", "Final ONNX export bundles used by inference and Hugging Face"],
+            [
+              "artifacts/",
+              "Norms, tuned params, cross-variant summaries, published metadata",
+            ],
+            [
+              "output/",
+              "Final ONNX export bundles used by inference and Hugging Face",
+            ],
             ["python/ and typescript/", "Standalone inference packages"],
             ["web/", "The deployment-facing web app and API server"],
-            ["infra/", `${abbr("Terraform", "Infrastructure-as-code tooling for defining and creating cloud resources reproducibly.")} for CPU and GPU ${abbr("AWS", "Amazon Web Services, the cloud platform used for remote compute in this repo.")} instances`],
+            [
+              "infra/",
+              `${abbr("Terraform", "Infrastructure-as-code tooling for defining and creating cloud resources reproducibly.")} for CPU and GPU ${abbr("AWS", "Amazon Web Services, the cloud platform used for remote compute in this repo.")} instances`,
+            ],
           ],
         )}
         ${internalFiles([
@@ -74,16 +89,36 @@ export const chapter04Map: Chapter = {
             ["01", "download", "raw ZIP + extracted CSV"],
             ["02", "load SQLite", "cleaned SQLite response table"],
             ["03", "compute norms", "locked norm JSON"],
-            ["04", "prepare data", "train / val / test parquets + split metadata"],
-            ["05", "compute correlations", "item correlations, item_info, first_item"],
+            [
+              "04",
+              "prepare data",
+              "train / val / test parquets + split metadata",
+            ],
+            [
+              "05",
+              "compute correlations",
+              "item correlations, item_info, first_item",
+            ],
             ["06", "tune", "locked XGBoost hyperparameters"],
             ["07", "train", "15 model files + training report + calibration"],
             ["08", "validate", "held-out validation metrics with bootstrap"],
             ["09", "baselines", "comparison of item-selection strategies"],
-            ["10", "simulate", `adaptive / ${abbr("SEM", "Standard error of measurement: an estimate of score precision used in stopping logic.").replace("SEM", "SEM")} stopping simulation outputs`],
-            ["11", "export ONNX", `merged ${abbr("ONNX", "An open model format used to package trained models for portable inference across languages and runtimes.").replace("ONNX", "ONNX")} model + config + provenance`],
+            [
+              "10",
+              "simulate",
+              `adaptive / ${abbr("SEM", "Standard error of measurement: an estimate of score precision used in stopping logic.").replace("SEM", "SEM")} stopping simulation outputs`,
+            ],
+            [
+              "11",
+              "export ONNX",
+              `merged ${abbr("ONNX", "An open model format used to package trained models for portable inference across languages and runtimes.").replace("ONNX", "ONNX")} model + config + provenance`,
+            ],
             ["12", "generate figures", "publication charts"],
-            ["13", "upload HF", `published model bundle on ${abbr("Hugging Face", "A platform for sharing machine-learning models, datasets, and demos.")}`],
+            [
+              "13",
+              "upload HF",
+              `published model bundle on ${abbr("Hugging Face", "A platform for sharing machine-learning models, datasets, and demos.")}`,
+            ],
           ],
         )}
         ${paragraph(
@@ -100,10 +135,19 @@ export const chapter04Map: Chapter = {
         ${table(
           ["Config", "Meaning"],
           [
-            ["reference.yaml", "Focused sparsity + Mini-IPIP injection + imbalanced patterns"],
+            [
+              "reference.yaml",
+              "Focused sparsity + Mini-IPIP injection + imbalanced patterns",
+            ],
             ["ablation_none.yaml", "No sparsity augmentation"],
-            ["ablation_focused.yaml", "Focused sparsity without imbalanced patterns"],
-            ["ablation_stratified.yaml", "Alternative split regime using ext-est-opn"],
+            [
+              "ablation_focused.yaml",
+              "Focused sparsity without imbalanced patterns",
+            ],
+            [
+              "ablation_stratified.yaml",
+              "Alternative split regime using ext-est-opn",
+            ],
           ],
         )}
         ${callout(

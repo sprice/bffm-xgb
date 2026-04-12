@@ -19,20 +19,36 @@
   --color-primary-light: var(--app-primary-light);
   --color-primary-lighter: var(--app-primary-lighter);
 
+  /* Domain trait fills (used for bar + dot visualizations) */
   --color-ext: var(--app-ext);
   --color-agr: var(--app-agr);
   --color-csn: var(--app-csn);
   --color-est: var(--app-est);
   --color-opn: var(--app-opn);
 
+  /* Domain trait text (darker shades that pass AA on surface) */
+  --color-ext-text: var(--app-ext-text);
+  --color-agr-text: var(--app-agr-text);
+  --color-csn-text: var(--app-csn-text);
+  --color-est-text: var(--app-est-text);
+  --color-opn-text: var(--app-opn-text);
+
+  /* Third-party brand identity (stay dark regardless of user theme) */
+  --color-brand-openai: var(--app-brand-openai);
+  --color-brand-openai-text: var(--app-brand-openai-text);
+  --color-brand-anthropic: var(--app-brand-anthropic);
+  --color-brand-anthropic-text: var(--app-brand-anthropic-text);
+
   --font-display: "Fraunces", "Georgia", serif;
   --font-body: "Outfit", system-ui, sans-serif;
 }
 
 @layer base {
-  :root {
-    color-scheme: light;
+  html {
+    background-color: var(--color-bg);
+  }
 
+  :root {
     /* Warm neutrals – deepened text for contrast */
     --app-surface: #fefdfb;
     --app-bg: #f8f6f3;
@@ -46,20 +62,28 @@
     --app-primary-light: #d2eeeb;
     --app-primary-lighter: #edf7f6;
 
-    /* Domain trait colors – more saturated */
+    /* Domain trait fills – used for bar + dot visuals (3:1 on surface OK for graphics) */
     --app-ext: #d47a1e;
     --app-agr: #2e8f5e;
     --app-csn: #3b6fa3;
     --app-est: #c44848;
     --app-opn: #7d52b3;
+
+    /* Domain trait text – darker shades that pass WCAG AA 4.5:1 on surface */
+    --app-ext-text: #8a4d10;
+    --app-agr-text: #1d6d45;
+    --app-csn-text: #2c5582;
+    --app-est-text: #9a3636;
+    --app-opn-text: #5f3c8e;
+
+    /* Brand identity – always dark button with light text */
+    --app-brand-openai: #1a1816;
+    --app-brand-openai-text: #f2f0ed;
+    --app-brand-anthropic: #a8614a;
+    --app-brand-anthropic-text: #fefdfb;
   }
 
-  :root[data-theme="light"] {
-    color-scheme: light;
-  }
-
-  :root[data-theme="dark"] {
-    color-scheme: dark;
+  :root.dark {
     --app-surface: #252220;
     --app-bg: #1a1816;
     --app-text: #f2f0ed;
@@ -71,16 +95,29 @@
     --app-primary-light: #1a2f2e;
     --app-primary-lighter: #1f2928;
 
+    /* Domain trait fills */
     --app-ext: #e8922f;
     --app-agr: #4cb87a;
     --app-csn: #5a93c5;
     --app-est: #dc6060;
     --app-opn: #a07ad0;
+
+    /* Domain trait text – fills already pass AA on dark surface, reuse them */
+    --app-ext-text: #e8922f;
+    --app-agr-text: #4cb87a;
+    --app-csn-text: #5a93c5;
+    --app-est-text: #dc6060;
+    --app-opn-text: #a07ad0;
+
+    /* Brand identity – lift OpenAI button slightly so it reads against the dark page */
+    --app-brand-openai: #2a2623;
+    --app-brand-openai-text: #f2f0ed;
+    --app-brand-anthropic: #a8614a;
+    --app-brand-anthropic-text: #fefdfb;
   }
 
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme]) {
-      color-scheme: dark;
+    :root:not(.light):not(.dark) {
       --app-surface: #252220;
       --app-bg: #1a1816;
       --app-text: #f2f0ed;
@@ -97,6 +134,17 @@
       --app-csn: #5a93c5;
       --app-est: #dc6060;
       --app-opn: #a07ad0;
+
+      --app-ext-text: #e8922f;
+      --app-agr-text: #4cb87a;
+      --app-csn-text: #5a93c5;
+      --app-est-text: #dc6060;
+      --app-opn-text: #a07ad0;
+
+      --app-brand-openai: #2a2623;
+      --app-brand-openai-text: #f2f0ed;
+      --app-brand-anthropic: #a8614a;
+      --app-brand-anthropic-text: #fefdfb;
     }
   }
 
@@ -105,6 +153,7 @@
   }
 
   body {
+    min-height: 100%;
     font-family: var(--font-body);
     background-color: var(--color-bg);
     color: var(--color-text);
@@ -112,6 +161,10 @@
     -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
     transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  #root {
+    min-height: 100%;
   }
 
   :focus-visible {
@@ -168,6 +221,17 @@
 
 .animate-fade {
   animation: fade-in 0.4s ease both;
+}
+
+/* DomainBar CI range bar — scales in from the left */
+.animate-scale-x-in {
+  animation: scale-in-x 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: left;
+}
+
+/* DomainBar median dot — pops in after the range bar fills */
+.animate-dot-pop-in {
+  animation: dot-pop 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .stagger-1 { animation-delay: 0.06s; }

@@ -11,7 +11,7 @@ export function NotFoundPage() {
       </p>
       <button
         type="button"
-        className="mt-2 min-h-[48px] px-9 py-3.5 rounded-lg text-lg font-bold bg-primary text-white transition-colors hover:bg-primary/90 active:bg-primary/80"
+        className="mt-2 min-h-[48px] px-9 py-3.5 rounded-lg text-lg font-bold bg-primary text-white transition-colors hover:bg-primary-hover active:bg-primary-hover"
         onClick={() => navigate("/")}
       >
         Go Home

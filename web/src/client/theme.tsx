@@ -1,42 +1,26 @@
 import {
   createContext,
+  useCallback,
   useContext,
-  useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
 
-export type ThemePreference = "system" | "light" | "dark";
-export type ResolvedTheme = "light" | "dark";
+export type Theme = "light" | "dark";
 
 export const themeStorageKey = "bffm-xgb-theme";
 
 type ThemeContextValue = {
-  preference: ThemePreference;
-  resolvedTheme: ResolvedTheme;
-  setPreference: (preference: ThemePreference) => void;
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
 };
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-export function getStoredThemePreference(): ThemePreference {
-  if (typeof window === "undefined") return "system";
-
-  try {
-    const stored = window.localStorage.getItem(themeStorageKey);
-    if (stored === "light" || stored === "dark" || stored === "system") {
-      return stored;
-    }
-  } catch {
-    // Ignore storage failures and fall back to system theme.
-  }
-
-  return "system";
-}
-
-export function getSystemTheme(): ResolvedTheme {
+export function getSystemTheme(): Theme {
   if (
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
@@ -48,85 +32,61 @@ export function getSystemTheme(): ResolvedTheme {
   return "light";
 }
 
-export function resolveTheme(
-  preference: ThemePreference,
-  systemTheme: ResolvedTheme,
-): ResolvedTheme {
-  return preference === "system" ? systemTheme : preference;
+export function getInitialTheme(): Theme {
+  if (typeof window === "undefined") return "light";
+
+  try {
+    const stored = window.localStorage.getItem(themeStorageKey);
+    if (stored === "light" || stored === "dark") {
+      return stored;
+    }
+  } catch {
+    // Ignore storage failures and fall through to system detection.
+  }
+
+  return getSystemTheme();
 }
 
-export function getToggledTheme(theme: ResolvedTheme): ResolvedTheme {
+export function getToggledTheme(theme: Theme): Theme {
   return theme === "light" ? "dark" : "light";
 }
 
-function applyTheme(
-  preference: ThemePreference,
-  resolvedTheme: ResolvedTheme,
-): void {
+function applyTheme(theme: Theme): void {
   if (typeof document === "undefined") return;
 
   const root = document.documentElement;
-  if (preference === "system") {
-    root.removeAttribute("data-theme");
-  } else {
-    root.setAttribute("data-theme", preference);
-  }
-  root.style.colorScheme = resolvedTheme;
+  root.classList.remove("light", "dark");
+  root.classList.add(theme);
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [preference, setPreference] = useState<ThemePreference>(
-    getStoredThemePreference,
-  );
-  const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(getSystemTheme);
+  const [theme, setThemeState] = useState<Theme>(getInitialTheme);
 
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return;
-    }
+  // Swap the theme class on <html> synchronously before paint so the page
+  // doesn't flash the wrong theme between state update and CSS cascade.
+  useLayoutEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleChange = () => {
-      setSystemTheme(mediaQuery.matches ? "dark" : "light");
-    };
-
-    handleChange();
-    if (typeof mediaQuery.addEventListener === "function") {
-      mediaQuery.addEventListener("change", handleChange);
-      return () => mediaQuery.removeEventListener("change", handleChange);
-    }
-
-    mediaQuery.addListener(handleChange);
-    return () => mediaQuery.removeListener(handleChange);
-  }, []);
-
-  const resolvedTheme = resolveTheme(preference, systemTheme);
-
-  useEffect(() => {
-    applyTheme(preference, resolvedTheme);
-
+  const setTheme = useCallback((next: Theme) => {
+    setThemeState(next);
     if (typeof window === "undefined") return;
     try {
-      if (preference === "system") {
-        window.localStorage.removeItem(themeStorageKey);
-      } else {
-        window.localStorage.setItem(themeStorageKey, preference);
-      }
+      window.localStorage.setItem(themeStorageKey, next);
     } catch {
       // Ignore storage failures and keep the theme in memory.
     }
-  }, [preference, resolvedTheme]);
+  }, []);
 
   const value = useMemo<ThemeContextValue>(
     () => ({
-      preference,
-      resolvedTheme,
-      setPreference,
+      theme,
+      setTheme,
       toggleTheme: () => {
-        setPreference(getToggledTheme(resolvedTheme));
+        setTheme(getToggledTheme(theme));
       },
     }),
-    [preference, resolvedTheme, setPreference],
+    [theme, setTheme],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

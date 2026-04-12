@@ -19,9 +19,9 @@ export function LearnTopbar({
         <div className="font-body text-xs uppercase tracking-widest text-text-muted">
           Chapter {String(chapter.order).padStart(2, "0")}
         </div>
-        <h2 className="mt-2 mb-3 font-display text-4xl font-semibold leading-tight text-text lg:text-5xl">
+        <h1 className="mt-2 mb-3 font-display text-4xl font-semibold leading-tight text-text lg:text-5xl">
           {chapter.title}
-        </h2>
+        </h1>
         <p className="max-w-2xl text-base leading-relaxed text-text-muted">
           {chapter.summary}
         </p>

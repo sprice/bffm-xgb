@@ -115,7 +115,7 @@ export function LearnShell({ chapter }: LearnShellProps) {
       readMinutes: estimatedMinutes(chapter),
       prev: i > 0 ? chapters[i - 1] : null,
       next: i < chapters.length - 1 ? chapters[i + 1] : null,
-      progress: ((i + 1) / chapters.length) * 100,
+      progress: (i + 1) / chapters.length,
     };
   }, [chapter]);
 
@@ -135,7 +135,7 @@ export function LearnShell({ chapter }: LearnShellProps) {
         />
         <main
           id="main-content"
-          className="min-h-0 overflow-y-auto overscroll-contain px-4 pt-8 pb-24 sm:px-8 lg:px-10"
+          className="min-h-0 overflow-y-auto overscroll-contain px-6 pt-10 pb-24 sm:px-10 lg:px-12"
         >
           <div className="mx-auto max-w-[56rem]">
             <LearnTopbar
@@ -149,8 +149,8 @@ export function LearnShell({ chapter }: LearnShellProps) {
               aria-hidden="true"
             >
               <div
-                className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
-                style={{ width: `${progress.toFixed(2)}%` }}
+                className="h-full w-full origin-left rounded-full bg-primary transition-transform duration-500 ease-out"
+                style={{ transform: `scaleX(${progress})` }}
               />
             </div>
             <LearnContent ref={articleRef} chapter={chapter} />

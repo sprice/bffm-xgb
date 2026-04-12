@@ -16,6 +16,14 @@ const DOMAIN_COLORS: Record<string, string> = {
   opn: "var(--color-opn)",
 };
 
+const DOMAIN_TEXT_COLORS: Record<string, string> = {
+  ext: "var(--color-ext-text)",
+  agr: "var(--color-agr-text)",
+  csn: "var(--color-csn-text)",
+  est: "var(--color-est-text)",
+  opn: "var(--color-opn-text)",
+};
+
 const DOMAIN_DESCRIPTIONS: Record<string, string> = {
   ext: "How energized you are by social interaction and external stimulation.",
   agr: "How much you prioritize cooperation, empathy, and getting along with others.",
@@ -48,6 +56,7 @@ export function ResultsView({ results, heading = "Your Big Five Profile", thirdP
             description={(thirdPerson ? DOMAIN_DESCRIPTIONS_THIRD_PERSON : DOMAIN_DESCRIPTIONS)[domain]}
             result={results[domain]}
             color={DOMAIN_COLORS[domain]}
+            textColor={DOMAIN_TEXT_COLORS[domain]}
             index={i}
           />
         ))}

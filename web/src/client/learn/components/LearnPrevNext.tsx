@@ -43,7 +43,15 @@ function NavCard({
       )}
     >
       <span className="font-body text-xs uppercase tracking-widest text-text-muted">
-        {isNext ? "Next →" : "← Previous"}
+        {isNext ? (
+          <>
+            Next <span aria-hidden="true">→</span>
+          </>
+        ) : (
+          <>
+            <span aria-hidden="true">←</span> Previous
+          </>
+        )}
       </span>
       <strong className="font-display text-lg font-semibold leading-snug text-text">
         {chapter.title}
