@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -12,7 +12,11 @@ function readJson<T>(relativePath: string): T {
   return JSON.parse(readFileSync(fullPath, "utf-8")) as T;
 }
 
-describe("repo facts used by the course", () => {
+const hasArtifacts = existsSync(
+  resolve(repoRoot, "data/processed/load_metadata.json"),
+);
+
+describe.skipIf(!hasArtifacts)("repo facts used by the course", () => {
   it("matches cleaned-row and split metadata artifacts", () => {
     const loadMetadata = readJson<{
       row_counts: { n_valid: number };
