@@ -2,8 +2,26 @@ import { Link } from "react-router-dom";
 import { defaultLearnPath } from "../learn/routes";
 
 export function HomePage() {
+  const ctas = (
+    <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+      <Link
+        to="/assessment"
+        className="min-h-[52px] min-w-[200px] px-6 py-3 bg-primary text-white rounded-lg text-xl font-bold text-center hover:bg-primary-hover active:bg-primary-hover transition-colors"
+      >
+        Take the assessment
+      </Link>
+      <Link
+        to={defaultLearnPath}
+        className="min-h-[52px] min-w-[200px] px-6 py-3 border border-border rounded-lg text-xl font-bold text-text text-center bg-surface hover:bg-primary-lighter transition-colors"
+      >
+        Learn about the project
+      </Link>
+    </div>
+  );
+
   return (
     <div className="min-h-[70vh] flex flex-col items-center justify-center gap-10 px-4 py-12">
+      {ctas}
       <div className="max-w-prose space-y-5 text-xl leading-9 text-text-muted text-left">
         <h2 className="text-text text-3xl">History of the Big Five</h2>
         <p>
@@ -100,20 +118,7 @@ export function HomePage() {
         </p>
       </div>
 
-      <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-        <Link
-          to="/assessment"
-          className="min-h-[52px] min-w-[200px] px-6 py-3 bg-primary text-white rounded-lg text-xl font-bold text-center hover:bg-primary-hover active:bg-primary-hover transition-colors"
-        >
-          Take the assessment
-        </Link>
-        <Link
-          to={defaultLearnPath}
-          className="min-h-[52px] min-w-[200px] px-6 py-3 border border-border rounded-lg text-xl font-bold text-text text-center bg-surface hover:bg-primary-lighter transition-colors"
-        >
-          Learn about the project
-        </Link>
-      </div>
+      {ctas}
     </div>
   );
 }
