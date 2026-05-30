@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-"""Simulate adaptive assessment on held-out IPIP-BFFM test data.
+"""Simulate sequential (SEM-stopping) item selection on held-out IPIP-BFFM test data.
 
-This script simulates the actual adaptive testing process:
+NOTE: This is a NEGATIVE-RESULT probe, not the deployed system. Under the checked-in
+operating point (SEM threshold 0.45, min 4 items/domain) the sequential loop collapses
+to a fixed 4-4-4-4-4 20-item form -- every respondent stops at exactly 20 items, so the
+SEM stop never actually binds -- and it delivers no adaptive efficiency gain over the
+fixed balanced form. It is retained to document that adaptive item selection does not help.
+
+The simulated process is:
 1. Start with the universal first item
 2. Use cross-domain correlation utility to select subsequent items
 3. Stop when SEM threshold is met for all domains (or max items reached)

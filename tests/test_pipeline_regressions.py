@@ -710,6 +710,36 @@ def test_validate_percentile_metric_fn_uses_nan_for_degenerate_pearson() -> None
     assert np.isfinite(metrics["mae"])
 
 
+def test_validate_domain_metrics_reports_raw_crossing_and_no_fake_zero() -> None:
+    """A4.3: raw_crossing_rate is the headline metric; the misleading constant
+    quantile_crossing_rate=0.0 is gone, replaced by monotonized_crossing_rate."""
+    validate = _load_pipeline_module("08_validate.py")
+    rng = np.random.default_rng(0)
+    true = rng.uniform(0, 100, size=400)
+    pred = true + rng.normal(0, 5, size=400)
+    pred = np.clip(pred, 0, 100)
+    per_domain = {
+        "ext": {
+            "true": true,
+            "pred": pred,
+            "lower": np.clip(pred - 10, 0, 100),
+            "upper": np.clip(pred + 10, 0, 100),
+            "raw_crossing_rate": 0.25,
+        }
+    }
+    metrics = validate._compute_domain_metrics(per_domain)
+    ext = metrics["ext"]
+    assert ext["raw_crossing_rate"] == 0.25
+    assert ext["monotonized_crossing_rate"] == 0.0
+    assert "quantile_crossing_rate" not in ext  # guard against the misleading key
+    # A4.4: tail vs central coverage surfaced per-domain and overall.
+    assert "coverage_central" in ext and "coverage_tail" in ext
+    overall = metrics["overall"]
+    assert overall["raw_crossing_rate"] == 0.25  # mean over the one domain
+    assert overall["monotonized_crossing_rate"] == 0.0
+    assert "coverage_central" in overall and "coverage_tail" in overall
+
+
 def test_figures_include_worst_k_with_distinct_color() -> None:
     figures = _load_pipeline_module("12_generate_figures.py")
 
@@ -972,6 +1002,50 @@ def test_correlations_item_info_embeds_provenance_metadata(tmp_path) -> None:
     assert provenance.get("source_sha256") == source_sha
 
 
+def test_cronbach_alpha_distinguishes_correlated_from_independent() -> None:
+    """A4.5: alpha is high for a coherent scale, low for independent items, and
+    None when there are too few rows/items to define it."""
+    correlations = _load_pipeline_module("05_compute_correlations.py")
+    rng = np.random.default_rng(7)
+    n = 500
+    latent = rng.normal(size=n)
+    coherent = pd.DataFrame(
+        {f"ext{i}": latent + rng.normal(scale=0.4, size=n) for i in range(1, 5)}
+    )
+    a_coherent = correlations.cronbach_alpha(coherent, [f"ext{i}" for i in range(1, 5)])
+    assert a_coherent["k"] == 4 and a_coherent["n"] == n
+    assert a_coherent["alpha"] is not None and a_coherent["alpha"] > 0.7
+
+    independent = pd.DataFrame({f"agr{i}": rng.normal(size=n) for i in range(1, 5)})
+    a_indep = correlations.cronbach_alpha(independent, [f"agr{i}" for i in range(1, 5)])
+    assert a_indep["alpha"] is not None and a_indep["alpha"] < 0.3
+
+    a_small = correlations.cronbach_alpha(coherent.head(10), [f"ext{i}" for i in range(1, 5)])
+    assert a_small["alpha"] is None and a_small["n"] == 10
+
+
+def test_write_reliability_embeds_provenance(tmp_path) -> None:
+    """A4.5: reliability.json carries stage-05 provenance, split=train, and the three forms."""
+    correlations = _load_pipeline_module("05_compute_correlations.py")
+    source_path = tmp_path / "train.parquet"
+    source_path.write_bytes(b"synthetic-train")
+    reliability = {
+        "method": {"cronbach_alpha": "...", "omega": "..."},
+        "full_50": {
+            "ext": {"alpha": 0.8, "alpha_std": 0.81, "r_bar": 0.3, "omega": 0.79, "n": 500, "k": 10}
+        },
+        "domain_balanced_20": {},
+        "mini_ipip_20": {},
+    }
+    out_path = tmp_path / "reliability.json"
+    correlations.write_reliability(out_path, reliability, source_path)
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["split"] == "train"
+    assert payload["provenance"]["script"] == "05_compute_correlations.py"
+    assert "source_sha256" in payload
+    assert {"full_50", "domain_balanced_20", "mini_ipip_20"} <= set(payload)
+
+
 def test_correlations_item_correlations_embeds_standard_provenance(tmp_path) -> None:
     correlations = _load_pipeline_module("05_compute_correlations.py")
     source_path = tmp_path / "train.parquet"
@@ -1179,11 +1253,121 @@ def test_baselines_ml_vs_avg_fails_closed_when_any_domain_percentile_missing() -
             mini_ipip_norms={domain: {"mean": 3.0, "sd": 1.0} for domain in DOMAINS},
             sparse_calibration={},
             full_calibration={},
+            train_df=X_test,
             n_bootstrap=3,
         )
         raise AssertionError("Expected fail-closed error for missing domain percentile columns")
     except ValueError as exc:
         assert "complete domain targets" in str(exc).lower() or "percentile" in str(exc).lower()
+
+
+def test_baselines_subset_norms_match_train_subset_average() -> None:
+    """A4.7: subset norms = mean/sd(ddof=1) of the per-domain subset average over train."""
+    baselines = _load_pipeline_module("09_baselines.py")
+    rng = np.random.default_rng(1)
+    train = pd.DataFrame(
+        rng.uniform(1.0, 5.0, size=(200, len(ITEM_COLUMNS))),
+        columns=ITEM_COLUMNS,
+    )
+    cols_by_domain = {"ext": ["ext1", "ext2", "ext3", "ext4"], "agr": ["agr1", "agr2"]}
+    norms = baselines._compute_subset_norms(train, cols_by_domain)
+    expected_ext = train[["ext1", "ext2", "ext3", "ext4"]].mean(axis=1)
+    assert norms["ext"]["mean"] == pytest.approx(float(expected_ext.mean()))
+    assert norms["ext"]["sd"] == pytest.approx(float(expected_ext.std(ddof=1)))
+    # Only requested domains are present; full-domain default is NOT used.
+    assert "agr" in norms and "csn" not in norms
+
+
+def test_baselines_subset_norms_fail_closed_on_degenerate_sd() -> None:
+    """A4.7: a constant subset (sd<=0) must fail closed rather than emit NaN percentiles."""
+    baselines = _load_pipeline_module("09_baselines.py")
+    train = pd.DataFrame({"ext1": [3.0] * 50, "ext2": [3.0] * 50})
+    with pytest.raises(ValueError):
+        baselines._compute_subset_norms(train, {"ext": ["ext1", "ext2"]})
+
+
+def test_baselines_mini_ipip_standalone_bootstrap_attaches_cis() -> None:
+    """A4.1: the Mini-IPIP comparator gets respondent-level bootstrap CIs like every
+    XGBoost method, but NO coverage CI (averaging has no prediction intervals)."""
+    baselines = _load_pipeline_module("09_baselines.py")
+    rng = np.random.default_rng(2)
+    n = 300
+    mapping = {d: [f"{d}{i}" for i in range(1, 5)] for d in DOMAINS}
+    item_cols = [it for d in DOMAINS for it in mapping[d]]
+    X_test = pd.DataFrame(rng.uniform(1.0, 5.0, size=(n, len(item_cols))), columns=item_cols)
+    y_test = pd.DataFrame({f"{d}_percentile": rng.uniform(0, 100, size=n) for d in DOMAINS})
+    norms = {d: {"mean": 3.0, "sd": 1.0} for d in DOMAINS}
+
+    overall, per_domain = baselines._evaluate_mini_ipip_standalone(
+        X_test, y_test, mini_ipip_mapping=mapping, mini_ipip_norms=norms, n_bootstrap=64,
+    )
+    assert "pearson_r_ci" in overall and len(overall["pearson_r_ci"]) == 2
+    assert overall["pearson_r_ci"][0] <= overall["pearson_r_ci"][1]
+    assert "coverage_90_ci" not in overall  # averaging has no intervals
+    for d in DOMAINS:
+        assert "pearson_r_ci" in per_domain[d]
+
+    overall0, _ = baselines._evaluate_mini_ipip_standalone(
+        X_test, y_test, mini_ipip_mapping=mapping, mini_ipip_norms=norms, n_bootstrap=0,
+    )
+    assert "pearson_r_ci" not in overall0
+
+
+def test_baselines_ml_vs_avg_emits_paired_xgb_vs_mini_ipip() -> None:
+    """A4.1 (part B): a paired domain_balanced-ML vs Mini-IPIP-averaging bootstrap
+    with a 95% CI is emitted on the shared test respondents."""
+    baselines = _load_pipeline_module("09_baselines.py")
+    rng = np.random.default_rng(3)
+    n_rows = 200
+    X_test = pd.DataFrame(
+        rng.uniform(1.0, 5.0, size=(n_rows, len(ITEM_COLUMNS))),
+        columns=ITEM_COLUMNS,
+    )
+    cols = {f"{d}_percentile": rng.uniform(0, 100, size=n_rows) for d in DOMAINS}
+    cols.update({f"{d}_score": rng.uniform(1.5, 4.5, size=n_rows) for d in DOMAINS})
+    y_test = pd.DataFrame(cols)
+    item_pool = [
+        {"id": item_id, "home_domain": item_id[:3], "own_domain_r": 0.3 + rank * 1e-4, "rank": rank}
+        for rank, item_id in enumerate(ITEM_COLUMNS, start=1)
+    ]
+
+    class _LinearModel:
+        def __init__(self, offset: float) -> None:
+            self.offset = float(offset)
+
+        def predict(self, X: pd.DataFrame) -> np.ndarray:
+            arr = X.to_numpy(dtype=np.float64, copy=False)
+            base = np.nanmean(arr, axis=1)
+            return np.clip(0.6 * base + self.offset, 1.0, 5.0)
+
+    domain_models = {
+        d: {"q05": _LinearModel(0.0), "q50": _LinearModel(0.1), "q95": _LinearModel(0.2)}
+        for d in DOMAINS
+    }
+
+    out = baselines._run_ml_vs_averaging_comparison(
+        domain_models=domain_models,
+        X_values=X_test.values,
+        all_columns=list(X_test.columns),
+        X_test=X_test,
+        y_test=y_test,
+        item_pool=item_pool,
+        available_items=list(X_test.columns),
+        mini_ipip_mapping={d: [f"{d}{i}" for i in range(1, 5)] for d in DOMAINS},
+        mini_ipip_norms={d: {"mean": 3.0, "sd": 1.0} for d in DOMAINS},
+        sparse_calibration={},
+        full_calibration={},
+        train_df=X_test,
+        n_bootstrap=64,
+    )
+    paired = out["xgb_vs_mini_ipip_paired"]
+    assert paired["n_items"] == 20
+    assert paired["comparison"] == "domain_balanced_ml"
+    assert paired["reference"] == "mini_ipip_averaging"
+    assert len(paired["delta_pearson_r_ci"]) == 2
+    assert paired["delta_pearson_r_ci"][0] <= paired["delta_pearson_r_ci"][1]
+    # Mini-IPIP arm now also carries CIs within the same comparison artifact.
+    assert "comparisons" in out
 
 
 def test_baselines_compute_metrics_fails_closed_on_constant_inputs() -> None:
@@ -2243,9 +2427,10 @@ def test_baselines_run_comparisons_routes_mini_ipip_to_standalone(
 
     captured: dict[str, Any] = {}
 
-    def _fake_standalone(X_arg, y_arg, mini_ipip_mapping, mini_ipip_norms):  # type: ignore[no-untyped-def]
+    def _fake_standalone(X_arg, y_arg, mini_ipip_mapping, mini_ipip_norms, n_bootstrap=0, seed=42):  # type: ignore[no-untyped-def]
         captured["mapping"] = mini_ipip_mapping
         captured["norms"] = mini_ipip_norms
+        captured["n_bootstrap"] = n_bootstrap
         return _fake_overall(0.77), fake_domain
 
     monkeypatch.setattr(baselines, "_evaluate_mini_ipip_standalone", _fake_standalone)
@@ -4219,6 +4404,53 @@ def test_notes_calibration_policy_parses_current_baselines_schema(
     assert "`sparse_20_balanced`" in table
 
 
+def test_notes_ml_vs_averaging_per_domain_decomposition() -> None:
+    """A4.2: per-domain matched-item table isolates the scoring gain and shows
+    Emotional Stability is a Mini-IPIP-item win under ML scoring."""
+    notes = _load_paper_module("generate_notes_data.py")
+    notes_inputs = {
+        "ml_vs_averaging_comparison": {
+            "comparisons": [
+                {
+                    "method": "domain_balanced",
+                    "n_items": 20,
+                    "ml_per_domain": {"ext": 0.947, "agr": 0.920, "csn": 0.919, "est": 0.9366, "opn": 0.910},
+                    "avg_per_domain": {"ext": 0.939, "agr": 0.911, "csn": 0.909, "est": 0.929, "opn": 0.842},
+                },
+                {
+                    "method": "mini_ipip",
+                    "n_items": 20,
+                    "ml_per_domain": {"ext": 0.945, "agr": 0.918, "csn": 0.915, "est": 0.9434, "opn": 0.860},
+                    "avg_per_domain": {"ext": 0.939, "agr": 0.911, "csn": 0.909, "est": 0.929, "opn": 0.842},
+                },
+            ]
+        }
+    }
+    table = notes._gen_ml_vs_averaging_per_domain_from_notes_inputs(notes_inputs)
+    assert "scoring" in table  # the scoring-gain columns are present
+    # EST: the Mini-IPIP item set under ML (0.9434) beats the domain-balanced set (0.9366).
+    assert "0.9434" in table and "0.9366" in table
+
+
+def test_notes_reliability_renders_and_degrades_gracefully() -> None:
+    """A4.5: the reliability table renders per-domain alpha, and degrades to a
+    placeholder (never raises) when reliability.json is absent from the bundle."""
+    notes = _load_paper_module("generate_notes_data.py")
+
+    rel = {
+        "full_50": {d: {"alpha": 0.80 + 0.01 * i} for i, d in enumerate(DOMAINS)},
+        "domain_balanced_20": {d: {"alpha": 0.70 + 0.01 * i} for i, d in enumerate(DOMAINS)},
+        "mini_ipip_20": {d: {"alpha": 0.65 + 0.01 * i} for i, d in enumerate(DOMAINS)},
+    }
+    table = notes._gen_reliability_from_notes_inputs({"reliability": rel})
+    assert "Full 50-item" in table and "Domain-balanced 20" in table and "Mini-IPIP 20" in table
+    assert "0.800" in table  # ext full-50 alpha
+
+    # Missing/absent reliability -> placeholder, no exception.
+    placeholder = notes._gen_reliability_from_notes_inputs({})
+    assert "not available" in placeholder.lower()
+
+
 def test_notes_data_splits_renders_current_split_schema(
     tmp_path,
     monkeypatch,
@@ -5151,7 +5383,7 @@ def test_export_readme_includes_variant_tag(tmp_path) -> None:
             artifact["overall"] = {
                 "20": {
                     "full_50": {"pearson_r": 0.95},
-                    "domain_balanced": {"pearson_r": 0.90},
+                    "domain_balanced": {"pearson_r": 0.90, "coverage_90": 0.895},
                     "mini_ipip": {"pearson_r": 0.85},
                     "adaptive_topk": {"pearson_r": 0.92},
                 },
@@ -5251,7 +5483,7 @@ def test_export_readme_reference_variant_note(tmp_path) -> None:
             artifact["overall"] = {
                 "20": {
                     "full_50": {"pearson_r": 0.95},
-                    "domain_balanced": {"pearson_r": 0.90},
+                    "domain_balanced": {"pearson_r": 0.90, "coverage_90": 0.895},
                     "mini_ipip": {"pearson_r": 0.85},
                     "adaptive_topk": {"pearson_r": 0.92},
                 },

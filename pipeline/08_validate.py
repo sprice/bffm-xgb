@@ -363,8 +363,13 @@ def _compute_domain_metrics(
             "coverage_tail": tail_coverage,
             "mean_interval_width": mean_width,
             "std_interval_width": std_width,
-            "quantile_crossing_rate": 0.0,  # post-sort is always 0
+            # raw_crossing_rate is the PRE-sort (true) quantile-crossing rate -- the
+            # headline metric (the three quantile models are not jointly monotone).
+            # After np.sort monotonization the rate is 0 BY CONSTRUCTION, so we report
+            # that as monotonized_crossing_rate rather than as a measured
+            # quantile_crossing_rate (which would misleadingly read as 0% crossing).
             "raw_crossing_rate": d.get("raw_crossing_rate", 0.0),
+            "monotonized_crossing_rate": 0.0,
         }
 
         # Raw-scale metrics
@@ -408,6 +413,14 @@ def _compute_domain_metrics(
         central_coverage = float(np.mean(in_interval[central_mask])) if central_mask.sum() > 0 else float("nan")
         tail_coverage = float(np.mean(in_interval[tail_mask])) if tail_mask.sum() > 0 else float("nan")
 
+        # Headline crossing rate, aggregated as the mean of the per-domain pre-sort
+        # rates (all domains share the same N here). monotonized rate is 0 by design.
+        raw_rates = [
+            m["raw_crossing_rate"]
+            for m in metrics.values()
+            if isinstance(m, dict) and "raw_crossing_rate" in m
+        ]
+
         metrics["overall"] = {
             "n": int(len(all_true)),
             "pearson_r": _pearsonr_strict(
@@ -425,6 +438,8 @@ def _compute_domain_metrics(
             "coverage_tail": tail_coverage,
             "mean_interval_width": float(np.mean(interval_widths)),
             "std_interval_width": float(np.std(interval_widths)),
+            "raw_crossing_rate": float(np.mean(raw_rates)) if raw_rates else 0.0,
+            "monotonized_crossing_rate": 0.0,
         }
 
     return metrics
@@ -646,7 +661,7 @@ def _create_validation_plots(
     ax.fill_between([-0.5, len(labels) - 0.5], 0.88, 0.92,
                      alpha=0.15, color="red", label="+/-2% tolerance")
     ax.set_xlabel("Domain")
-    ax.set_ylabel("90% CI Coverage")
+    ax.set_ylabel("90% PI Coverage")
     ax.set_title(f"{prefix}Calibration: Observed vs Target Coverage")
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation=45, ha="right")

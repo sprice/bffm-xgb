@@ -1,6 +1,6 @@
 # BFFM-XGB: Big Five From 20 Questions
 
-Open-source pipeline for training XGBoost quantile regression models that predict Big Five personality scores from partial questionnaire responses. Trained on [~603k respondents](https://openpsychometrics.org/_rawdata) from the [IPIP-BFFM](https://ipip.ori.org/newBigFive5broadKey.htm) dataset with sparsity augmentation, the 15 exported ONNX models (5 domains x 3 quantiles) produce percentile scores with calibrated 90% prediction intervals from as few as 20 items.
+Open-source pipeline for training XGBoost quantile regression models that predict Big Five personality scores from partial questionnaire responses. Trained on [~603k respondents](https://openpsychometrics.org/_rawdata) from the [IPIP-BFFM](https://ipip.ori.org/newBigFive5broadKey.htm) dataset with sparsity augmentation, the 15 exported ONNX models (5 domains x 3 quantiles) produce percentile scores with empirical 90% prediction intervals from as few as 20 items (validated to ~90% coverage at the 20-item operating point; no post-hoc width adjustment is applied).
 
 **What's here:**
 - **Models** — Pre-trained ONNX models, public domain, on [HuggingFace](https://huggingface.co/shawnprice/bffm-xgb)
@@ -10,7 +10,7 @@ Open-source pipeline for training XGBoost quantile regression models that predic
 
 ### Comparison with the Mini-IPIP
 
-The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) is the standard short personality test in psychology research (Donnellan et al., 2006). Both approaches use 20 items (4 per domain) to recover the full 50-item IPIP-BFFM scale scores. All *r* values are Pearson correlations with the full 50-item scale on a held-out test set (*N* = 90,499).
+The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) is the standard short personality test in psychology research (Donnellan et al., 2006). Both approaches use 20 items (4 per domain) to recover the full 50-item IPIP-BFFM scale scores. All *r* values are Pearson correlations with the full 50-item scale on a held-out test set (*N* = 90,499). "Overall *r*" is a respondent-pooled correlation across all five domains' stacked percentile vectors (numerically ≈ the mean of the per-domain *r*).
 
 |                              | Mini-IPIP              | BFFM-XGB-20                 |
 | ---------------------------- | ---------------------- | --------------------------- |
@@ -20,6 +20,8 @@ The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) is the standard short pe
 | **Overall *r***              | .906                   | **.927**                    |
 | **MAE (percentile pts)**     | 9.2                    | **8.2**                     |
 | **90% prediction intervals** | —                      | ✓ (89.5% coverage)          |
+
+The BFFM-XGB-20 figures above (*r* = .927, 89.5% coverage) are the **fixed, pre-specified domain-balanced 20-item form** — the top-4 items per domain — which is the deployed web form, not a post-hoc best-of-grid selection. Evaluated instead under *random* balanced 20-item masking, the model's general partial-response accuracy is *r* ≈ .909 (≈90% coverage).
 
 **Per-domain accuracy at *K* = 20:**
 
@@ -31,7 +33,9 @@ The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) is the standard short pe
 | Emotional Stability   | .68           | .929          | **.937**        |
 | Intellect/Imagination | .65           | .842          | **.910**        |
 
-At 15 items, BFFM-XGB already matches the Mini-IPIP's 20-item accuracy (*r* = .908 vs .906).
+With 15 items and XGBoost scoring (3 per domain), BFFM-XGB reaches *r* = .908, matching the 20-item simple-averaging Mini-IPIP (*r* = .906) — fewer items, though the comparison also differs in scoring method and item set.
+
+The 20-item gain combines two levers: the **scoring method** (XGBoost vs simple averaging) and the **item set** (top-4-by-*r* vs the expert-curated Mini-IPIP items). Holding the item set fixed, XGBoost scoring alone adds roughly +0.01 *r* per domain over averaging; the remainder is item selection. The split is not uniform — for Emotional Stability the Mini-IPIP items scored with XGBoost slightly *beat* the top-4-by-*r* selection, so that domain's improvement is scoring, not selection. See the per-domain decomposition in [NOTES.md](notes/NOTES.md) and `artifacts/variants/reference/ml_vs_averaging_comparison.json`.
 
 ## Quick Start
 
@@ -40,7 +44,7 @@ At 15 items, BFFM-XGB already matches the Mini-IPIP's 20-item accuracy (*r* = .9
 | Python     | [`python/`](python/)         | `pip install onnxruntime numpy scipy pytest` | [Inference guide](docs/inference.md)          |
 | TypeScript | [`typescript/`](typescript/) | `npm ci`                                     | [Inference guide](docs/inference.md)          |
 
-Give it answers (1–5 scale, reverse-scored), get percentiles with 90% confidence intervals. See [docs/inference.md](docs/inference.md) for full code examples.
+Give it answers (1–5 scale, reverse-scored), get percentiles with 90% prediction intervals. See [docs/inference.md](docs/inference.md) for full code examples.
 
 ## Reproduce
 

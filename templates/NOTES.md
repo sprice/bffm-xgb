@@ -308,10 +308,16 @@ the primary evaluation.
 *Data will be populated after training run.*
 <!-- END:validation -->
 
-Coverage: all domains exceed the 90% nominal target, as the table shows. Raw
-crossing rates confirm that the nonlinear raw-to-percentile CDF transform
-frequently inverts quantile ordering. The post-transform sort operation catches
-and corrects these inversions.
+Coverage is **not uniform across the score range**: aggregate (90%) coverage
+meets or exceeds the nominal target in the central band (20-80 percentile), but
+the intervals **under-cover at the score extremes** (below the 20th / above the
+80th percentile) — compare the "Central Cov" and "Tail Cov" columns. The quintile
+table below shows the same pattern more finely. The "Raw Crossing Rate" column is
+the **pre-sort** rate: the three independently-trained q05/q50/q95 models are not
+jointly monotone and disagree on ordering for a substantial fraction of
+full-information predictions. The reported intervals are forced monotonic with a
+sort before use, so the post-sort crossing rate is zero **by construction** — it
+is therefore not reported as if it were a measured quantity.
 
 ### Ceiling Check by Quintile (50 Items, 90K Test)
 
@@ -369,6 +375,31 @@ The ML advantage holds across all tested item counts, as the table shows, and is
 largest at fewer items where cross-domain information sharing matters most. Both
 correlation and MAE improvements are consistent across budgets.
 
+#### Decomposing the Headline: Scoring vs Item Selection (K = 20)
+
+The headline BFFM-XGB-20 vs Mini-IPIP gap mixes two distinct levers — the
+**scoring method** (XGBoost vs simple averaging) and the **item set**
+(top-4-by-*r* vs the expert-curated Mini-IPIP items). The table below holds the
+item set fixed and reports the *scoring* gain (ML − averaging) separately for each
+set, so the two contributions are not conflated.
+
+<!-- BEGIN:ml_vs_averaging_per_domain -->
+*Data will be populated after training run.*
+<!-- END:ml_vs_averaging_per_domain -->
+
+Reading the table: the "scoring Δr" columns are the pure ML-over-averaging gain on
+identical items. Note **Emotional Stability is a Mini-IPIP-item win** — under ML
+scoring the Mini-IPIP EST items recover slightly *better* than the
+top-4-by-*r* domain-balanced EST items, so the headline EST improvement is driven
+by the scoring method, not the item selection. The full per-row decomposition is in
+`artifacts/variants/reference/ml_vs_averaging_comparison.json`.
+
+The Mini-IPIP comparator now carries the same respondent-level bootstrap 95% CIs as
+every XGBoost method (see the item-selection table above), and the headline
+domain-balanced-ML vs Mini-IPIP-averaging gap is reported with a *paired*
+(same-respondent) bootstrap CI in the `xgb_vs_mini_ipip_paired` block of that
+artifact — so the .927-vs-.906 contrast can be judged for significance.
+
 ### Simulation Results (20-Item Operating Point)
 
 Held-out respondents from the test split, correlation-ranked selection,
@@ -380,9 +411,12 @@ exactly 20 items (4-4-4-4-4).
 <!-- END:simulation -->
 
 Simulation results closely match the static baseline evaluation (compare the
-overall *r* here to the headline results table). Correlation-ranked selection is
-equivalent to the optimal static strategy; the agreement between the two also
-confirms the pipeline end-to-end.
+overall *r* here to the headline results table). Note the simulation is run on a
+random subsample of the test split (see the table caption for the count), not the
+full *N* = 90,499 used for the baseline and validation tables, so its estimates are
+less precise and should not be read as co-powered with the headline numbers.
+Correlation-ranked selection is equivalent to the optimal static strategy; the
+agreement between the two also confirms the pipeline end-to-end.
 
 ### Calibration
 
@@ -419,6 +453,24 @@ by the `domain_balanced` strategy.
 This 20-item set differs from the Mini-IPIP: the domain-balanced set selects by
 maximum within-domain correlation, while Mini-IPIP was designed for brevity and
 broad coverage.
+
+Note the deployed Emotional Stability four-item subset (est1, est6, est7, est8) is
+entirely **reverse-keyed** — a consequence of ranking purely by within-domain
+correlation. This maximizes discrimination but makes the EST short-form score
+vulnerable to acquiescence (yea-saying) bias; the other four domains mix keyed
+directions, and the full 50-item assessment is unaffected.
+
+### Internal-Consistency Reliability
+
+Cronbach's alpha for each domain across three forms — the full 10-item domains, the
+deployed domain-balanced 20-item form (4 items/domain), and the Mini-IPIP 4-item
+form — computed on the training split. (Reliability bounds how high score-recovery
+*r* can plausibly go; standardized alpha, mean inter-item *r*, and McDonald's omega
+are in `reliability.json`.)
+
+<!-- BEGIN:reliability -->
+*Data will be populated after training run.*
+<!-- END:reliability -->
 
 ### Greedy Item Ranking (Cross-Domain Info Score)
 

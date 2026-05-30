@@ -1,5 +1,5 @@
 """
-Single-source-of-truth constants for the IPIP-BFFM adaptive assessment pipeline.
+Single-source-of-truth constants for the IPIP-BFFM sparse quantile model pipeline.
 
 Contains domain configuration, quantile settings, default hyperparameters,
 reverse-keyed item definitions, and column name mappings.

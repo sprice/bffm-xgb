@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate publication-quality figures for the IPIP-BFFM adaptive assessment paper.
+"""Generate publication-quality figures for the IPIP-BFFM sparse quantile model paper.
 
 Reads data from JSON/CSV artifacts and saves figures to figures/.
 
@@ -716,6 +716,10 @@ def figure_4_per_domain_k20(df: pd.DataFrame, fig_dir: Path) -> None:
     strategy_short = {
         "domain_balanced": "Domain-Balanced",
         "mini_ipip": "Mini-IPIP",
+        # "Greedy Top-K" is the display label for the CSV's `adaptive_topk` method
+        # (greedy selection by cross-domain correlation utility -- the negative
+        # result). The label->method map is recorded in figures/manifest.json so the
+        # figure is reconcilable with baseline_comparison_per_domain.csv.
         "adaptive_topk": "Greedy Top-K",
     }
 
@@ -986,6 +990,13 @@ def main() -> int:
                 "filename": "fig4_per_domain_k20",
                 "formats": ["png", "pdf"],
                 "source_artifacts": ["baseline_comparison_per_domain_csv"],
+                # Maps each displayed bar label to its `method` value in the source
+                # CSV, so "Greedy Top-K" is reconcilable with the `adaptive_topk` row.
+                "series_labels": {
+                    "Domain-Balanced": "domain_balanced",
+                    "Mini-IPIP": "mini_ipip",
+                    "Greedy Top-K": "adaptive_topk",
+                },
             },
         ],
     }

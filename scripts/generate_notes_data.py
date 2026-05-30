@@ -257,7 +257,17 @@ def _gen_validation_from_notes_inputs(notes_inputs: dict) -> str:
     val = _notes_input_dict(notes_inputs, "validation_results")
     metrics = val["metrics"]
     rows = [
-        ["Domain", "r", "MAE", "RMSE", "Within-5", "90% Coverage", "Raw Crossing Rate"]
+        [
+            "Domain",
+            "r",
+            "MAE",
+            "RMSE",
+            "Within-5",
+            "90% Coverage",
+            "Central Cov (20-80)",
+            "Tail Cov (<20,>80)",
+            "Raw Crossing Rate",
+        ]
     ]
     for d in DOMAIN_ORDER:
         dm = metrics[d]
@@ -269,10 +279,9 @@ def _gen_validation_from_notes_inputs(notes_inputs: dict) -> str:
                 fmt_f(dm["rmse"], 2),
                 fmt_pct(dm["within_5_pct"] * 100),
                 fmt_pct(dm["coverage_90"] * 100),
-                fmt_pct(
-                    dm.get("raw_crossing_rate", dm.get("quantile_crossing_rate", 0))
-                    * 100
-                ),
+                fmt_pct(dm.get("coverage_central", float("nan")) * 100),
+                fmt_pct(dm.get("coverage_tail", float("nan")) * 100),
+                fmt_pct(dm.get("raw_crossing_rate", 0.0) * 100),
             ]
         )
     ov = metrics["overall"]
@@ -283,8 +292,10 @@ def _gen_validation_from_notes_inputs(notes_inputs: dict) -> str:
             f"**{fmt_f(ov['mae'], 2)}**",
             f"**{fmt_f(ov['rmse'], 2)}**",
             f"**{fmt_pct(ov['within_5_pct'] * 100)}**",
-            "---",
-            "---",
+            f"**{fmt_pct(ov['coverage_90'] * 100)}**",
+            f"**{fmt_pct(ov.get('coverage_central', float('nan')) * 100)}**",
+            f"**{fmt_pct(ov.get('coverage_tail', float('nan')) * 100)}**",
+            f"**{fmt_pct(ov.get('raw_crossing_rate', 0.0) * 100)}**",
         ]
     )
     return pad_table(rows)
@@ -454,6 +465,58 @@ def _gen_ml_vs_averaging_from_notes_inputs(notes_inputs: dict) -> str:
     return pad_table(rows)
 
 
+def gen_ml_vs_averaging_per_domain() -> str:
+    notes_inputs = load_reference_notes_inputs()
+    return _gen_ml_vs_averaging_per_domain_from_notes_inputs(notes_inputs)
+
+
+def _gen_ml_vs_averaging_per_domain_from_notes_inputs(notes_inputs: dict) -> str:
+    """Per-domain matched-item decomposition at K=20: isolate the SCORING gain
+    (ML minus averaging on the SAME items) for the domain-balanced vs the
+    Mini-IPIP item set, so the reader can separate scoring from item selection.
+    """
+    comp = _notes_input_dict(notes_inputs, "ml_vs_averaging_comparison")
+    by_method: dict[str, dict] = {}
+    for entry in comp["comparisons"]:
+        if entry.get("n_items") == 20 and entry.get("method") in ("domain_balanced", "mini_ipip"):
+            by_method[entry["method"]] = entry
+    missing = [m for m in ("domain_balanced", "mini_ipip") if m not in by_method]
+    if missing:
+        raise KeyError(
+            "ml_vs_averaging_comparison must contain K=20 rows for: " + ", ".join(missing)
+        )
+    db = by_method["domain_balanced"]
+    mi = by_method["mini_ipip"]
+    rows = [
+        [
+            "Domain",
+            "DB items: ML r",
+            "DB items: Avg r",
+            "DB scoring Δr",
+            "Mini-IPIP items: ML r",
+            "Mini-IPIP items: Avg r",
+            "Mini-IPIP scoring Δr",
+        ]
+    ]
+    for d in DOMAIN_ORDER:
+        db_ml = db["ml_per_domain"][d]
+        db_avg = db["avg_per_domain"][d]
+        mi_ml = mi["ml_per_domain"][d]
+        mi_avg = mi["avg_per_domain"][d]
+        rows.append(
+            [
+                DOMAIN_LABELS[d],
+                fmt_r(db_ml, 4),
+                fmt_r(db_avg, 4),
+                f"{db_ml - db_avg:+.4f}",
+                fmt_r(mi_ml, 4),
+                fmt_r(mi_avg, 4),
+                f"{mi_ml - mi_avg:+.4f}",
+            ]
+        )
+    return pad_table(rows)
+
+
 def gen_simulation() -> str:
     notes_inputs = load_reference_notes_inputs()
     return _gen_simulation_from_notes_inputs(notes_inputs)
@@ -487,7 +550,16 @@ def _gen_simulation_from_notes_inputs(notes_inputs: dict) -> str:
             f"**{fmt_pct(ov['coverage_90'] * 100)}**",
         ]
     )
-    return pad_table(rows)
+    n_resp = analysis.get("n_respondents")
+    caption = ""
+    if isinstance(n_resp, int):
+        caption = (
+            f"Simulated on a random {n_resp:,}-respondent subsample of the held-out "
+            "test split (the baseline and validation tables use the full *N* = 90,499), "
+            "so these estimates carry wider confidence intervals and are not co-powered "
+            "with the headline numbers.\n\n"
+        )
+    return caption + pad_table(rows)
 
 
 def gen_calibration() -> str:
@@ -1026,11 +1098,52 @@ def gen_ablation_simulation_details() -> str:
     return "\n\n".join(parts)
 
 
+def gen_reliability() -> str:
+    notes_inputs = load_reference_notes_inputs()
+    return _gen_reliability_from_notes_inputs(notes_inputs)
+
+
+def _gen_reliability_from_notes_inputs(notes_inputs: dict) -> str:
+    """Per-domain Cronbach's alpha for the three forms (train split). Degrades to a
+    placeholder when reliability.json was not present in the bundle."""
+    rel = notes_inputs.get("reliability")
+    if not isinstance(rel, dict) or rel.get("__error__"):
+        return "*Reliability data not available (regenerate stage 05 to produce `reliability.json`).*"
+
+    forms = [
+        ("Full 50-item", "full_50"),
+        ("Domain-balanced 20", "domain_balanced_20"),
+        ("Mini-IPIP 20", "mini_ipip_20"),
+    ]
+
+    def _alpha_cell(block: object) -> str:
+        if isinstance(block, dict):
+            a = block.get("alpha")
+            if isinstance(a, (int, float)):
+                return fmt_r(float(a), 3)
+        return "---"
+
+    rows = [["Domain", *[label for label, _ in forms]]]
+    for d in DOMAIN_ORDER:
+        cells = [DOMAIN_LABELS[d]]
+        for _, key in forms:
+            form = rel.get(key)
+            cells.append(_alpha_cell(form.get(d) if isinstance(form, dict) else None))
+        rows.append(cells)
+
+    header = (
+        "Cronbach's alpha by domain, computed on the **training split**. Standardized "
+        "alpha, mean inter-item *r*, and McDonald's omega are in `reliability.json`.\n\n"
+    )
+    return header + pad_table(rows)
+
+
 # ---------------------------------------------------------------------------
 # Marker replacement
 # ---------------------------------------------------------------------------
 
 SECTION_GENERATORS = {
+    "reliability": gen_reliability,
     "data_splits": gen_data_splits,
     "training_config": gen_training_config,
     "model_config": gen_model_config,
@@ -1043,6 +1156,7 @@ SECTION_GENERATORS = {
     "per_domain_k20": gen_per_domain_k20,
     "domain_starvation": gen_domain_starvation,
     "ml_vs_averaging": gen_ml_vs_averaging,
+    "ml_vs_averaging_per_domain": gen_ml_vs_averaging_per_domain,
     "simulation": gen_simulation,
     "calibration": gen_calibration,
     "headline_k20": gen_headline_k20,

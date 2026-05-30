@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export IPIP-BFFM adaptive XGBoost models to ONNX format.
+"""Export IPIP-BFFM sparse quantile XGBoost models to ONNX format.
 
 Converts 15 joblib models (5 domains × 3 quantiles) to ONNX, merges
 them into a single model graph, validates parity, generates config.json,
@@ -600,7 +600,12 @@ def generate_config(
             "shape": [None, 1],
             "dtype": "float32",
             "scale": "raw_score",
+            # Raw scores are the per-item MEAN of a domain's items (1-5), not the
+            # 10-50 summed scale. value_range is the nominal/target range: the
+            # gradient-boosted regressors can predict slightly outside [1, 5].
+            "scale_basis": "per_item_mean_1_to_5",
             "value_range": [1, 5],
+            "value_range_is_nominal": True,
         },
         "norms": norms,
     }
@@ -632,7 +637,7 @@ def generate_config(
         or f"git:{git_hash}"
     )
     config["provenance"] = {
-        "source": report_prov.get("source", "ipip-bffm-adaptive-v1-reference"),
+        "source": report_prov.get("source", "ipip-bffm-sparse-quantile-v1-reference"),
         "training_script": training_script,
         "git_hash": git_hash,
         "preprocessing_version": preprocessing_version,
@@ -905,7 +910,7 @@ def generate_readme(config: dict, artifacts_dir: Path, model_dir: Path, *, varia
     perf_table = _format_md_table(
         ["Strategy", "Items (K)", "Correlation (r)"],
         [
-            ["Full assessment", "50", f"{_r_at(k50.get('full_50'), method='full_50', k=50):.3f}"],
+            ["Full assessment", "50", f"{_r_at(k50.get('full_50'), method='full_50', k=50):.4f}"],
             ["Domain-balanced", "20", f"{_r_at(k20.get('domain_balanced'), method='domain_balanced', k=20):.3f}"],
             ["Mini-IPIP mapping", "20", f"{_r_at(k20.get('mini_ipip'), method='mini_ipip', k=20):.3f}"],
             ["Adaptive top-K", "20", f"{_r_at(k20.get('adaptive_topk'), method='adaptive_topk', k=20):.3f}"],
@@ -921,6 +926,9 @@ def generate_readme(config: dict, artifacts_dir: Path, model_dir: Path, *, varia
         if isinstance(validation_metrics.get("overall"), dict) else None,
         label="validation full_50 coverage_90",
     )
+    # General partial-response coverage under random balanced 20-item masking
+    # (stage-08 validation). Reported alongside, but NOT paired with the headline
+    # accuracy, which comes from the fixed domain-balanced form (stage 09).
     sparse_cov = _require_metric(
         validation_sparse.get("metrics", {}).get("overall", {}).get("coverage_90")
         if isinstance(validation_sparse.get("metrics"), dict)
@@ -928,9 +936,20 @@ def generate_readme(config: dict, artifacts_dir: Path, model_dir: Path, *, varia
         else None,
         label="validation sparse_20 coverage_90",
     )
+    # Headline coverage must come from the SAME evaluation as the headline accuracy:
+    # the fixed domain-balanced 20-item form (stage-09 baselines), not the random
+    # sparse_20 validation pass. This keeps the .927 r and its coverage paired.
+    domain_balanced_cov = _require_metric(
+        k20.get("domain_balanced", {}).get("coverage_90")
+        if isinstance(k20.get("domain_balanced"), dict)
+        else None,
+        label="baseline domain_balanced@K=20 coverage_90",
+    )
     coverage_line = (
-        f"90% CI coverage: {sparse_cov * 100:.1f}% (sparse 20-item), "
-        f"{full_cov * 100:.1f}% (full 50-item)."
+        f"90% prediction-interval coverage: {domain_balanced_cov * 100:.1f}% "
+        "(deployed domain-balanced 20-item form), "
+        f"{full_cov * 100:.1f}% (full 50-item). Under *random* balanced 20-item "
+        f"masking the model's general coverage is {sparse_cov * 100:.1f}%."
     )
 
     comparisons = ml_vs_avg.get("comparisons")
@@ -1052,14 +1071,14 @@ Sparse-input XGBoost quantile regression models for the 50-item IPIP Big-Five Fa
 
 ## Model Description
 
-This package contains a **single merged ONNX model** with 15 outputs (5 personality domains × 3 quantiles) that predicts Big Five personality scores from item responses. The model is designed for **adaptive assessment** — it produces accurate predictions even when many items are missing (answered as NaN), enabling short-form assessments of 20 items or fewer.
+This package contains a **single merged ONNX model** with 15 outputs (5 personality domains × 3 quantiles) that predicts Big Five personality scores from item responses. The model performs **sparse-input scoring** — it produces accurate predictions even when many items are unanswered (NaN), enabling fixed short-form assessments such as the primary domain-balanced 20-item form. (Adaptive item *selection* was tested and underperforms the fixed balanced form; see the performance table.)
 
 {domain_table}
 
 Each domain has three quantile models:
-- **q05** -- 5th percentile (lower bound of 90% CI)
+- **q05** -- 5th percentile (lower bound of 90% prediction interval, PI)
 - **q50** -- median (point estimate)
-- **q95** -- 95th percentile (upper bound of 90% CI)
+- **q95** -- 95th percentile (upper bound of 90% prediction interval, PI)
 
 ## Input Specification
 
@@ -1070,9 +1089,10 @@ Each domain has three quantile models:
 
 ## Output Specification
 
-- **Shape:** `[batch_size, 1]`
-- **Scale:** Raw domain score (1-5 range)
-- **Percentile conversion:** Use the provided norms (z-score -> CDF)
+- **Shape:** `[batch_size, 1]` per quantile output; the merged `scores` tensor is `[batch_size, 15]` (5 domains × 3 quantiles, in `config.outputs` order).
+- **Scale:** Raw domain score on the **per-item-mean 1-5 scale** — the mean of the 10 item responses for the domain, **not** the 10-50 summed scale a 10-item sum would give. A domain mean of 3.0 is neutral; see the Norms table for population means/SDs.
+- **Nominal range:** `[1, 5]`. Because these are gradient-boosted regressors (not bounded transforms), the raw `q05`/`q50`/`q95` predictions can fall **slightly outside** `[1, 5]` (observed within ~±0.02 of the bounds). They are **not** clamped: treat `[1, 5]` as the nominal/target range, not a hard guarantee, if you consume the raw `scores` tensor.
+- **Percentile conversion:** Use the provided norms (z-score → CDF). The transform is monotonic and saturates near 0/100, so the small out-of-range raw values have negligible effect on the reported percentile; the reference inference packages report percentiles, not raw scores.
 
 ## Quick Start (Python)
 
@@ -1163,6 +1183,8 @@ Evaluated on held-out test respondents:
 
 {perf_table}
 
+> The domain-balanced 20-item form is the pre-specified primary operating point and the deployed web form (not a post-hoc best-of-grid selection). The full-50 row recovers a target computed from the same 50 items, so *r* ≈ 1 reflects score recovery, not external validity.
+
 {coverage_line}
 
 {ml_advantage_line}
@@ -1179,6 +1201,7 @@ Population norms for raw-score -> percentile conversion (from OSPP dataset):
 - Models are trained on English-language IPIP items only
 - Standalone Python/TypeScript inference expects reverse-keyed items to be preprocessed before scoring; the web app applies that transform server-side
 - Exported calibration regimes are `full_50` and `sparse_20_balanced`; arbitrary sub-50 response patterns use the sparse regime as a fallback rather than a separately fit calibration curve
+- The deployed 20-item domain-balanced Emotional Stability subscale (est1, est6, est7, est8) is composed entirely of reverse-keyed items, so the short-form EST score is vulnerable to acquiescence (yea-saying) response bias; the other four domains mix keyed directions, and the full 50-item assessment is unaffected
 - Accuracy degrades with fewer items; 20 items is the recommended minimum for reliable scoring
 - Not intended for clinical diagnosis or high-stakes selection decisions
 
@@ -1245,7 +1268,7 @@ def generate_repo_readme(variants: list[tuple[str, Path]]) -> str:
         "50-item completion and the primary domain-balanced 20-item sparse regime.",
         "",
         "**Key capability: sparse input.** The models produce accurate predictions even "
-        "when most items are unanswered (NaN). This allows adaptive and short-form "
+        "when most items are unanswered (NaN). This allows fixed short-form "
         "assessments (as few as 20 items) without retraining or switching models.",
         "",
         "## How It Works",
@@ -1256,8 +1279,9 @@ def generate_repo_readme(variants: list[tuple[str, Path]]) -> str:
         "masked to simulate missing items, teaching the model to handle arbitrary "
         "missing-item patterns",
         "- **Quantile regression** -- pinball loss at tau = 0.05, 0.50, 0.95 provides "
-        "median predictions with uncertainty bounds that are explicitly calibrated "
-        "for full_50 and sparse_20_balanced runtime regimes",
+        "median predictions with empirical 90% prediction intervals whose coverage is "
+        "validated for the full_50 and sparse_20_balanced runtime regimes (raw quantile "
+        "spreads; no post-hoc width adjustment is applied)",
         "- **Norms-based percentiles** -- raw predictions are converted to population "
         "percentiles using z-score norms derived from ~603k respondents",
         "",

@@ -110,6 +110,7 @@ def _variant_paths(
         "simulation_results": artifact_dir / "simulation_results.json",
         "split_metadata": data_dir / "split_metadata.json",
         "item_info": data_dir / "item_info.json",
+        "reliability": data_dir / "reliability.json",
     }
 
 
@@ -152,6 +153,14 @@ def _collect_variant_summary(
             )
         except (OSError, csv.Error) as exc:
             errors.append(f"parse:baseline_comparison_per_domain_csv:{type(exc).__name__}:{exc}")
+
+    # reliability.json is OPTIONAL (added after some bundles were built), so it is not
+    # in `required` and a parse failure never flips a variant to incomplete.
+    if paths["reliability"].exists():
+        try:
+            loaded["reliability"] = _load_json(paths["reliability"])
+        except (OSError, json.JSONDecodeError, ValueError):
+            loaded["reliability"] = None
 
     # Provenance consistency checks (split/test hash must agree across pipeline artifacts).
     # NOTE: split_metadata.json is excluded because it is a prepare-stage build artifact
@@ -248,6 +257,7 @@ def _collect_variant_summary(
             "simulation_results": loaded.get("simulation_results"),
             "split_metadata": loaded.get("split_metadata"),
             "item_info": loaded.get("item_info"),
+            "reliability": loaded.get("reliability"),
         }),
         "errors": errors,
     }
@@ -317,6 +327,7 @@ def main() -> int:
         "simulation_results": reference_loaded.get("simulation_results"),
         "split_metadata": reference_loaded.get("split_metadata"),
         "item_info": reference_loaded.get("item_info"),
+        "reliability": reference_loaded.get("reliability"),
     })
 
     # Global reference artifacts used by NOTES.
