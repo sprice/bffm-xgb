@@ -28,7 +28,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-DEFAULT_DATA_DIR = Path("data/processed/ext_est")
+DEFAULT_DATA_DIR = Path("data/processed/canonical_v1")
 
 ITEM_COLUMNS = [f"{d}{i}" for d in DOMAINS for i in range(1, ITEMS_PER_DOMAIN + 1)]
 SCORE_COLUMNS = [f"{d}_score" for d in DOMAINS]
@@ -103,7 +103,7 @@ def parse_args() -> argparse.Namespace:
         "--data-dir",
         type=Path,
         default=DEFAULT_DATA_DIR,
-        help="Directory with train.parquet; outputs written here (default: data/processed/ext_est)",
+        help="Directory with train.parquet; outputs written here (default: data/processed/canonical_v1)",
     )
     add_provenance_args(parser)
     return parser.parse_args()

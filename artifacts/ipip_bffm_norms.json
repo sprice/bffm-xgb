@@ -1,55 +1,63 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "dataset": "IPIP-FFM (openpsychometrics.org)",
   "table": "responses",
-  "scope": "full cleaned dataset from stage 02 SQLite (not split-specific)",
-  "n_respondents": 603322,
+  "scope": "training split of canonical_v1 (plain random 70/15/15, seed 42) from the stage 02 SQLite; held-out val/test rows are excluded so norms do not leak into the percentile targets",
+  "split": {
+    "id": "canonical_v1",
+    "scheme": "random",
+    "seed": 42,
+    "test_size": 0.15,
+    "val_size": 0.15,
+    "fit_on": "train"
+  },
+  "n_respondents": 422326,
   "mini_ipip_mapping": {
     "file": "mini_ipip_mapping.json",
     "sha256": "b709a7a5e297a03c6f4d3c2f2067f8bc80d4d2dba59cf81c4cd3593526996450"
   },
   "norms": {
     "ext": {
-      "mean": 2.913822303844382,
-      "sd": 0.9112317774936253
+      "mean": 2.9146164337502305,
+      "sd": 0.911158974670893
     },
     "agr": {
-      "mean": 3.75890983587537,
-      "sd": 0.7363302058000516
+      "mean": 3.7589838181878457,
+      "sd": 0.7365659197651669
     },
     "csn": {
-      "mean": 3.342564666960595,
-      "sd": 0.7390534942476729
+      "mean": 3.342639098705739,
+      "sd": 0.7390359186597035
     },
     "est": {
-      "mean": 2.9186823951389145,
-      "sd": 0.8606772235454255
+      "mean": 2.918995752096721,
+      "sd": 0.8610764182500696
     },
     "opn": {
-      "mean": 3.938876420883044,
-      "sd": 0.618255254688003
+      "mean": 3.9387115640524146,
+      "sd": 0.6182717542790234
     }
   },
   "mini_ipip_norms": {
     "ext": {
-      "mean": 2.8050738245911804,
-      "sd": 1.0287265134850925
+      "mean": 2.8061083144300847,
+      "sd": 1.0287421649343655
     },
     "agr": {
-      "mean": 3.800007707327099,
-      "sd": 0.8952101374459086
+      "mean": 3.800206475566269,
+      "sd": 0.8957281650735923
     },
     "csn": {
-      "mean": 3.2001675722085388,
-      "sd": 0.9029097463745694
+      "mean": 3.200326288222842,
+      "sd": 0.9028569990640011
     },
     "est": {
-      "mean": 3.0645513506883555,
-      "sd": 0.9093891400661973
+      "mean": 3.0646804837968773,
+      "sd": 0.9097757449383987
     },
     "opn": {
-      "mean": 4.053896592532677,
-      "sd": 0.7664723563640424
+      "mean": 4.05336102915757,
+      "sd": 0.7667937193483743
     }
   }
 }

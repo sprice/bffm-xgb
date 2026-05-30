@@ -51,13 +51,11 @@ VARIANT_ORDER = [
     "reference",
     "ablation_none",
     "ablation_focused",
-    "ablation_stratified",
 ]
 VARIANT_LABELS = {
     "reference": "Reference",
     "ablation_none": "Ablation: No Sparsity",
     "ablation_focused": "Ablation: Focused Only",
-    "ablation_stratified": "Ablation: Stratified Split",
 }
 
 
@@ -667,7 +665,7 @@ def gen_validation_quintiles() -> str:
 
 
 def gen_data_splits() -> str:
-    """Dataset split sizes and stratification from pipeline stage 04."""
+    """Dataset split sizes from pipeline stage 04 (single plain random split)."""
     notes_inputs = load_reference_notes_inputs()
     sm = _notes_input_dict(notes_inputs, "split_metadata")
     rows = [
@@ -679,9 +677,9 @@ def gen_data_splits() -> str:
     ]
     header = pad_table(rows)
 
-    strat = (
-        f"\n\nStratification: {sm['stratification']} "
-        f"({sm['n_strata']} strata, seed={sm['seed']}).\n\n"
+    split_note = (
+        f"\n\nSplit: {sm.get('split_id', 'canonical_v1')} — plain random partition "
+        f"(70/15/15, seed={sm.get('seed', 42)}).\n\n"
     )
 
     val = sm.get("validation", {})
@@ -697,9 +695,9 @@ def gen_data_splits() -> str:
                     fmt_f(dv.get("ks_pvalue", 0), 3),
                 ]
             )
-        strat += pad_table(vrows)
+        split_note += pad_table(vrows)
 
-    return header + strat
+    return header + split_note
 
 
 def gen_training_config() -> str:

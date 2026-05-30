@@ -12,9 +12,11 @@ function readJson<T>(relativePath: string): T {
   return JSON.parse(readFileSync(fullPath, "utf-8")) as T;
 }
 
-const hasArtifacts = existsSync(
-  resolve(repoRoot, "data/processed/load_metadata.json"),
-);
+const hasArtifacts =
+  existsSync(resolve(repoRoot, "data/processed/load_metadata.json")) &&
+  existsSync(
+    resolve(repoRoot, "data/processed/canonical_v1/split_metadata.json"),
+  );
 
 describe.skipIf(!hasArtifacts)("repo facts used by the course", () => {
   it("matches cleaned-row and split metadata artifacts", () => {
@@ -26,21 +28,21 @@ describe.skipIf(!hasArtifacts)("repo facts used by the course", () => {
       train_rows: number;
       val_rows: number;
       test_rows: number;
-      stratification_scheme: string;
-    }>("data/processed/ext_est/split_metadata.json");
+      split_scheme: string;
+    }>("data/processed/canonical_v1/split_metadata.json");
 
     expect(repoFacts.totalValidRespondents).toBe(loadMetadata.row_counts.n_valid);
     expect(repoFacts.totalValidRespondents).toBe(splitMetadata.total_valid);
     expect(repoFacts.trainRows).toBe(splitMetadata.train_rows);
     expect(repoFacts.valRows).toBe(splitMetadata.val_rows);
     expect(repoFacts.testRows).toBe(splitMetadata.test_rows);
-    expect(repoFacts.splitScheme).toBe(splitMetadata.stratification_scheme);
+    expect(repoFacts.splitScheme).toBe(splitMetadata.split_scheme);
   });
 
   it("matches the first-item artifact", () => {
     const firstItem = readJson<{
       selected_item: { id: string; text: string; cross_domain_info: number };
-    }>("data/processed/ext_est/first_item.json");
+    }>("data/processed/canonical_v1/first_item.json");
 
     expect(repoFacts.firstItemId).toBe(firstItem.selected_item.id);
     expect(repoFacts.firstItemText).toBe(firstItem.selected_item.text);

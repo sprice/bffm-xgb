@@ -58,6 +58,10 @@ logs/
 
 # Claude settings
 .claude/settings.local.json
+.claude/workflows
+.codex
+tasks
+.agents
 
 # Terraform
 *.tfstate

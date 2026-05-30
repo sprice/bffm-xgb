@@ -48,10 +48,10 @@ make remote-reference
 so expensive outputs are synced locally before final teardown.
 
 `make remote-reference` follows the same remote CPU path but only builds the
-reference data/model path after load/norms: `prepare-default`,
-`correlations-default`, `train 1`, `research-eval-reference`,
+reference data/model path after load/norms: `prepare`,
+`correlations`, `train 1`, `research-eval-reference`,
 `export-reference`, `export-repo-readme`, and `figures`. It skips `notes`
-because notes generation still requires all four variants.
+because notes generation still requires all three variants.
 
 `make remote-push` excludes `data/` by design. Use `make remote-push-data`
 when you intentionally want to seed the remote box with your local `data/`
@@ -111,7 +111,7 @@ Runs on the GPU instance (`g5.xlarge` with Deep Learning AMI).
    - `prepare` — prepare train/val/test splits
    - `correlations` — compute correlations
    - `tune` — Optuna hyperparameter search (GPU-accelerated)
-   - `train` — train all 4 model variants (GPU-accelerated)
+   - `train` — train all 3 model variants (GPU-accelerated)
 
 **After remote completion:**
 - Pulls `models/`, `artifacts/tuned_params.json`, `artifacts/tuned_params.original.json`, `artifacts/ipip_bffm_norms.json`

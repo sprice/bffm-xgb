@@ -19,15 +19,13 @@ RESEARCH_EVAL_PARALLEL ?= 4
 _RESEARCH_EVAL_PARALLEL_FLAG := $(if $(RESEARCH_EVAL_PARALLEL),-j$(RESEARCH_EVAL_PARALLEL),)
 GPU ?=
 _GPU_FLAG := $(if $(GPU),--gpu,)
-# train-1 runs alone before train-2/3/4, so give it all cores (N_JOBS × TRAIN_PARALLEL)
+# train-1 runs alone before train-2/3, so give it all cores (N_JOBS × TRAIN_PARALLEL)
 _TRAIN1_NJOBS = $(if $(and $(TRAIN_PARALLEL),$(N_JOBS)),$(shell echo $$(( $(N_JOBS) * $(TRAIN_PARALLEL) ))),$(N_JOBS))
 MODEL_DIR ?= models/reference
 MODEL_DIR_NORM := $(patsubst %/,%,$(MODEL_DIR))
 MODEL_NAME := $(notdir $(MODEL_DIR_NORM))
 DATA_ROOT ?= data/processed
-DATA_DIR_DEFAULT ?= $(DATA_ROOT)/ext_est
-DATA_DIR_STRATIFIED ?= $(DATA_ROOT)/ext_est_opn
-DATA_DIR ?=
+DATA_DIR ?= $(DATA_ROOT)/canonical_v1
 ARTIFACTS_DIR ?= artifacts
 SKIP_PROVENANCE ?=
 FORCE ?=
@@ -39,43 +37,34 @@ EVAL_DIR = $(ARTIFACTS_VARIANTS_DIR)/$(MODEL_NAME)
 RESEARCH_SUMMARY_PATH ?= $(ARTIFACTS_DIR)/research_summary.json
 LOGS_DIR ?= logs
 
-TRAIN_DATA_DIR ?=
-TRAIN_DATA_DIR_STRATIFIED ?=
-
-ifeq ($(strip $(DATA_DIR)),)
-ifeq ($(MODEL_NAME),ablation_stratified)
-DATA_DIR := $(DATA_DIR_STRATIFIED)
-else
-DATA_DIR := $(DATA_DIR_DEFAULT)
-endif
-endif
-
-ifeq ($(strip $(TRAIN_DATA_DIR)),)
-TRAIN_DATA_DIR := $(DATA_DIR)
-endif
-
-ifeq ($(strip $(TRAIN_DATA_DIR_STRATIFIED)),)
-ifneq ($(strip $(TRAIN_DATA_DIR)),)
-ifneq ($(TRAIN_DATA_DIR),$(DATA_DIR_DEFAULT))
-TRAIN_DATA_DIR_STRATIFIED := $(TRAIN_DATA_DIR)
-else
-TRAIN_DATA_DIR_STRATIFIED := $(DATA_DIR_STRATIFIED)
-endif
-else
-TRAIN_DATA_DIR_STRATIFIED := $(DATA_DIR_STRATIFIED)
-endif
-endif
+TRAIN_DATA_DIR ?= $(DATA_DIR)
 
 TRAIN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 TRAIN_RUN := $(firstword $(TRAIN_ARGS))
 TRAIN_EXTRA_ARGS := $(wordlist 2,$(words $(TRAIN_ARGS)),$(TRAIN_ARGS))
-VALID_TRAIN_RUNS := 1 2 3 4
-RESEARCH_EVAL_TARGETS := research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-eval-ablation-stratified
+VALID_TRAIN_RUNS := 1 2 3
+RESEARCH_EVAL_TARGETS := research-eval-reference research-eval-ablation-none research-eval-ablation-focused
 _CALLER_PARALLEL_MAKEFLAGS = $(filter -j% -j --jobserver-auth=% --jobserver-fds=%,$(MAKEFLAGS))
 
-.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full prepare prepare-default prepare-stratified correlations correlations-default correlations-stratified tune train train-1 train-2 train-3 train-4 check-model-data-pairing validate baselines simulate export export-all export-repo-readme export-reference export-ablation-none export-ablation-focused export-ablation-stratified figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-eval-ablation-stratified research-summary research-summary-strict notes upload-hf upload-hf-reference test test-lib test-inference test-web archive clean restore web-setup web-dev web-build deploy-web
+.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full prepare correlations tune train train-1 train-2 train-3 validate baselines simulate export export-all export-repo-readme export-reference export-ablation-none export-ablation-focused figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-summary research-summary-strict notes upload-hf upload-hf-reference test test-lib test-inference test-web archive clean restore web-setup web-dev web-build deploy-web
 
-all: download load norms norms-check prepare correlations tune train research-eval export-all notes figures
+# Ordered phases. Each stage is a sub-make so the order holds even under `make -j`
+# (recipe lines run sequentially), while each stage keeps its own internal
+# parallelism (train / research-eval fan-out). This matters now that prepare
+# depends on the stage-03 norms artifact (train-only norms coupling).
+all:
+	$(MAKE) download
+	$(MAKE) load
+	$(MAKE) norms
+	$(MAKE) norms-check
+	$(MAKE) prepare
+	$(MAKE) correlations
+	$(MAKE) tune
+	$(MAKE) train
+	$(MAKE) research-eval
+	$(MAKE) export-all
+	$(MAKE) notes
+	$(MAKE) figures
 
 setup: setup-python setup-typescript setup-web
 
@@ -109,36 +98,26 @@ provenance-check-full:
 	$(MAKE) norms-check
 	$(PY) scripts/check_provenance.py --strict --full
 
-prepare: prepare-default prepare-stratified
+prepare:
+	$(PY) pipeline/04_prepare_data.py --output-dir $(DATA_DIR)
 
-prepare-default:
-	$(PY) pipeline/04_prepare_data.py --stratification ext-est --output-dir $(DATA_DIR_DEFAULT)
-
-prepare-stratified:
-	$(PY) pipeline/04_prepare_data.py --stratification ext-est-opn --output-dir $(DATA_DIR_STRATIFIED)
-
-correlations: correlations-default correlations-stratified
-
-correlations-default:
-	$(PY) pipeline/05_compute_correlations.py --data-dir $(DATA_DIR_DEFAULT)
-
-correlations-stratified:
-	$(PY) pipeline/05_compute_correlations.py --data-dir $(DATA_DIR_STRATIFIED)
+correlations:
+	$(PY) pipeline/05_compute_correlations.py --data-dir $(DATA_DIR)
 
 tune:
-	$(PY) pipeline/06_tune.py --config configs/reference.yaml --data-dir $(DATA_DIR_DEFAULT) --artifacts-dir $(ARTIFACTS_DIR) $(_N_JOBS_FLAG) $(_PARALLEL_TRIALS_FLAG) $(_GPU_FLAG)
+	$(PY) pipeline/06_tune.py --config configs/reference.yaml --data-dir $(DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_N_JOBS_FLAG) $(_PARALLEL_TRIALS_FLAG) $(_GPU_FLAG)
 
 train:
 ifneq ($(strip $(TRAIN_EXTRA_ARGS)),)
-	@echo "Too many train run arguments: $(TRAIN_ARGS). Use: make train [1|2|3|4]"
+	@echo "Too many train run arguments: $(TRAIN_ARGS). Use: make train [1|2|3]"
 	@exit 2
 else ifeq ($(TRAIN_RUN),)
 	@$(MAKE) train-1 PARAMS="$(PARAMS)" N_JOBS="$(_TRAIN1_NJOBS)"
-	@$(MAKE) $(_TRAIN_PARALLEL_FLAG) train-2 train-3 train-4 PARAMS="$(PARAMS)" N_JOBS="$(N_JOBS)"
+	@$(MAKE) $(_TRAIN_PARALLEL_FLAG) train-2 train-3 PARAMS="$(PARAMS)" N_JOBS="$(N_JOBS)"
 else ifeq ($(filter $(TRAIN_RUN),$(VALID_TRAIN_RUNS)),$(TRAIN_RUN))
 	@$(MAKE) train-$(TRAIN_RUN) PARAMS="$(PARAMS)" N_JOBS="$(N_JOBS)"
 else
-	@echo "Invalid train run index: $(TRAIN_RUN). Use: make train [1|2|3|4]"
+	@echo "Invalid train run index: $(TRAIN_RUN). Use: make train [1|2|3]"
 	@exit 2
 endif
 
@@ -157,54 +136,34 @@ train-3:
 	@$(PY) scripts/run_labeled.py --label "train ablation_focused" --log-file "$(LOGS_DIR)/train-ablation-focused.log" -- \
 		$(PY) pipeline/07_train.py --config configs/ablation_focused.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG)
 
-train-4:
-	@mkdir -p $(LOGS_DIR)
-	@$(PY) scripts/run_labeled.py --label "train ablation_stratified" --log-file "$(LOGS_DIR)/train-ablation-stratified.log" -- \
-		$(PY) pipeline/07_train.py --config configs/ablation_stratified.yaml --data-dir $(TRAIN_DATA_DIR_STRATIFIED) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG)
-
-check-model-data-pairing:
-	@expected=""; \
-	case "$(MODEL_NAME)" in \
-		reference|ablation_none|ablation_focused) expected="$(DATA_DIR_DEFAULT)" ;; \
-		ablation_stratified) expected="$(DATA_DIR_STRATIFIED)" ;; \
-	esac; \
-	if [ -n "$$expected" ] && [ "$(DATA_DIR)" != "$$expected" ]; then \
-		echo "Model/data mismatch: MODEL_DIR=$(MODEL_DIR_NORM) expects DATA_DIR=$$expected but got DATA_DIR=$(DATA_DIR)"; \
-		echo "Override MODEL_DIR or DATA_DIR to a matching regime."; \
-		exit 2; \
-	fi
-
-validate: check-model-data-pairing
+validate:
 	@mkdir -p $(EVAL_DIR)
 	$(PY) pipeline/08_validate.py --model-dir $(MODEL_DIR_NORM) --data-dir $(DATA_DIR) --artifacts-dir $(EVAL_DIR)
 
-baselines: check-model-data-pairing
+baselines:
 	@mkdir -p $(EVAL_DIR)
 	$(PY) pipeline/09_baselines.py --model-dir $(MODEL_DIR_NORM) --data-dir $(DATA_DIR) --artifacts-dir $(EVAL_DIR) --bootstrap-n 1000
 
-simulate: check-model-data-pairing
+simulate:
 	@mkdir -p $(EVAL_DIR)
 	$(PY) pipeline/10_simulate.py --model-dir $(MODEL_DIR_NORM) --data-dir $(DATA_DIR) --artifacts-dir $(EVAL_DIR) --n-sample 5000
 
-export: check-model-data-pairing
+export:
 	$(PY) pipeline/11_export_onnx.py --model-dir $(MODEL_DIR_NORM) --data-dir $(DATA_DIR) --artifacts-dir $(EVAL_DIR) --output-dir output/$(MODEL_NAME)
 
-export-all: export-reference export-ablation-none export-ablation-focused export-ablation-stratified export-repo-readme
+export-all: export-reference export-ablation-none export-ablation-focused export-repo-readme
 
 export-repo-readme:
 	$(PY) pipeline/11_export_onnx.py --repo-readme --output-dir output
 
 export-reference:
-	$(MAKE) export MODEL_DIR=models/reference DATA_DIR=$(DATA_DIR_DEFAULT)
+	$(MAKE) export MODEL_DIR=models/reference DATA_DIR=$(DATA_DIR)
 
 export-ablation-none:
-	$(MAKE) export MODEL_DIR=models/ablation_none DATA_DIR=$(DATA_DIR_DEFAULT)
+	$(MAKE) export MODEL_DIR=models/ablation_none DATA_DIR=$(DATA_DIR)
 
 export-ablation-focused:
-	$(MAKE) export MODEL_DIR=models/ablation_focused DATA_DIR=$(DATA_DIR_DEFAULT)
-
-export-ablation-stratified:
-	$(MAKE) export MODEL_DIR=models/ablation_stratified DATA_DIR=$(DATA_DIR_STRATIFIED)
+	$(MAKE) export MODEL_DIR=models/ablation_focused DATA_DIR=$(DATA_DIR)
 
 figures:
 	$(PY) pipeline/12_generate_figures.py --artifacts-dir $(EVAL_DIR)
@@ -219,22 +178,17 @@ research-eval:
 research-eval-reference:
 	@mkdir -p $(LOGS_DIR)
 	@$(PY) scripts/run_labeled.py --label "eval reference" --log-file "$(LOGS_DIR)/eval-reference.log" -- \
-		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/reference DATA_DIR=$(DATA_DIR_DEFAULT)
+		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/reference DATA_DIR=$(DATA_DIR)
 
 research-eval-ablation-none:
 	@mkdir -p $(LOGS_DIR)
 	@$(PY) scripts/run_labeled.py --label "eval ablation_none" --log-file "$(LOGS_DIR)/eval-ablation-none.log" -- \
-		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/ablation_none DATA_DIR=$(DATA_DIR_DEFAULT)
+		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/ablation_none DATA_DIR=$(DATA_DIR)
 
 research-eval-ablation-focused:
 	@mkdir -p $(LOGS_DIR)
 	@$(PY) scripts/run_labeled.py --label "eval ablation_focused" --log-file "$(LOGS_DIR)/eval-ablation-focused.log" -- \
-		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/ablation_focused DATA_DIR=$(DATA_DIR_DEFAULT)
-
-research-eval-ablation-stratified:
-	@mkdir -p $(LOGS_DIR)
-	@$(PY) scripts/run_labeled.py --label "eval ablation_stratified" --log-file "$(LOGS_DIR)/eval-ablation-stratified.log" -- \
-		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/ablation_stratified DATA_DIR=$(DATA_DIR_STRATIFIED)
+		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/ablation_focused DATA_DIR=$(DATA_DIR)
 
 research-summary:
 	$(PY) scripts/build_research_summary.py --output $(RESEARCH_SUMMARY_PATH) --artifacts-variants-dir $(ARTIFACTS_VARIANTS_DIR)
@@ -489,7 +443,7 @@ remote-pull-reference:
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/raw/ ./data/raw/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/processed/ipip_bffm.db ./data/processed/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/processed/load_metadata.json ./data/processed/ 2>/dev/null || true
-	$(RSYNC_DELETE) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/processed/ext_est/ ./data/processed/ext_est/ 2>/dev/null || true
+	$(RSYNC_DELETE) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/processed/canonical_v1/ ./data/processed/canonical_v1/ 2>/dev/null || true
 	$(RSYNC_DELETE) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/models/reference/ ./models/reference/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/tuned_params.json ./artifacts/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/tuned_params.original.json ./artifacts/ 2>/dev/null || true
@@ -521,13 +475,13 @@ remote-tune:
 			"make tune N_JOBS=$(REMOTE_NJOBS) PARALLEL_TRIALS=$(REMOTE_PARALLEL_TRIALS) 2>&1; \
 			 echo; echo \">>> Done. Press Enter to close.\"; read"'
 
-REMOTE_TRAIN_PARALLEL ?= 3
+REMOTE_TRAIN_PARALLEL ?= 2
 REMOTE_TRAIN_NJOBS = $(shell echo $$(( $(REMOTE_NJOBS) / $(REMOTE_TRAIN_PARALLEL) )) )
 
 remote-train:
 	@echo "==> Running 'make train' on $(REMOTE_HOST)..."
-	@echo "    Config 1 first, then 2-4 in parallel. Domains train concurrently."
-	@echo "    train-1: $(REMOTE_NJOBS) cores (all), train-2/3/4: $(REMOTE_TRAIN_NJOBS) each ($(REMOTE_NJOBS)/$(REMOTE_TRAIN_PARALLEL)), $(REMOTE_PARALLEL_DOMAINS) parallel domains, $(REMOTE_CV_PARALLEL_FOLDS) parallel CV folds"
+	@echo "    Config 1 first, then 2-3 in parallel. Domains train concurrently."
+	@echo "    train-1: $(REMOTE_NJOBS) cores (all), train-2/3: $(REMOTE_TRAIN_NJOBS) each ($(REMOTE_NJOBS)/$(REMOTE_TRAIN_PARALLEL)), $(REMOTE_PARALLEL_DOMAINS) parallel domains, $(REMOTE_CV_PARALLEL_FOLDS) parallel CV folds"
 	@echo "    If disconnected, run: make remote-attach"
 	$(SSH) -t 'tmux kill-session -t pipeline 2>/dev/null; \
 		cd $(REMOTE_DIR) && \
@@ -614,7 +568,7 @@ remote-reference: remote-reference-preflight remote-push remote-setup
 	$(SSH) 'rm -f $(REMOTE_DIR)/.pipeline-exit-code && rm -rf $(REMOTE_DIR)/.pipeline-checkpoints && \
 		rm -rf $(REMOTE_DIR)/models/reference $(REMOTE_DIR)/artifacts/variants/reference $(REMOTE_DIR)/output/reference $(REMOTE_DIR)/figures && \
 		rm -f $(REMOTE_DIR)/output/README.md $(REMOTE_DIR)/artifacts/research_summary.json $(REMOTE_DIR)/notes/NOTES.md $(REMOTE_DIR)/$(LOGS_DIR)/train-reference.log $(REMOTE_DIR)/$(LOGS_DIR)/eval-reference.log && \
-		mkdir -p $(REMOTE_DIR)/models/reference $(REMOTE_DIR)/artifacts/variants/reference $(REMOTE_DIR)/output/reference $(REMOTE_DIR)/figures $(REMOTE_DIR)/$(LOGS_DIR) $(REMOTE_DIR)/data/processed/ext_est && \
+		mkdir -p $(REMOTE_DIR)/models/reference $(REMOTE_DIR)/artifacts/variants/reference $(REMOTE_DIR)/output/reference $(REMOTE_DIR)/figures $(REMOTE_DIR)/$(LOGS_DIR) $(REMOTE_DIR)/data/processed/canonical_v1 && \
 		: > $(REMOTE_DIR)/output/README.md && : > $(REMOTE_DIR)/$(LOGS_DIR)/train-reference.log && : > $(REMOTE_DIR)/$(LOGS_DIR)/eval-reference.log && \
 		tmux kill-session -t pipeline 2>/dev/null || true && \
 		tmux new-session -d -s pipeline \

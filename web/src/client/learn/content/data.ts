@@ -1,13 +1,12 @@
 export const repoFacts = {
   totalValidRespondents: 603322,
-  trainRows: 422324,
-  valRows: 90499,
-  testRows: 90499,
+  trainRows: 422326,
+  valRows: 90498,
+  testRows: 90498,
   firstItemId: "ext3",
   firstItemText: "I feel comfortable around people.",
   firstItemCrossDomainInfo: 1.5482,
-  splitScheme: "ext-est",
-  altSplitScheme: "ext-est-opn",
+  splitScheme: "random",
   baselineK20: {
     domainBalancedR: 0.9267,
     domainBalancedMae: 8.18,

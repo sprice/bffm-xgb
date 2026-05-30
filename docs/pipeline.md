@@ -49,18 +49,18 @@ The pipeline consists of 13 numbered scripts, executed in order. Each script is 
 | 01  | `01_download.py`             | `download`                                                        | Downloads the IPIP-FFM dataset ZIP from openpsychometrics.org                                                                           |
 | 02  | `02_load_sqlite.py`          | `load`                                                            | Loads raw CSV, filters valid responses and duplicate IPs (IPC=1), reverse-scores items, writes to SQLite                                |
 | 03  | `03_compute_norms.py`        | `norms`, `norms-check`                                            | Computes deterministic full-50 and Mini-IPIP norm stats from stage-02 SQLite; writes lock+meta artifacts; `norms-check` validates drift |
-| 04  | `04_prepare_data.py`         | `prepare`, `prepare-default`, `prepare-stratified`                | Builds isolated train/val/test splits for two regimes (`ext-est`, `ext-est-opn`) and writes Parquet                                     |
-| 05  | `05_compute_correlations.py` | `correlations`, `correlations-default`, `correlations-stratified` | Computes ranking artifacts per isolated data regime (`item_info.json`, `first_item.json`, correlations)                                 |
+| 04  | `04_prepare_data.py`         | `prepare`                                                         | Builds the single plain random train/val/test split (`canonical_v1`, 70/15/15) with train-only norms; writes Parquet                    |
+| 05  | `05_compute_correlations.py` | `correlations`                                                    | Computes ranking artifacts from the canonical split (`item_info.json`, `first_item.json`, correlations)                                 |
 | 06  | `06_tune.py`                 | `tune`                                                            | Runs Optuna TPE hyperparameter search (optional; results locked)                                                                        |
-| 07  | `07_train.py`                | `train`                                                           | Trains XGBoost quantile models with sparsity augmentation (4 configs); accepts `PARAMS=` override                                       |
-| 08  | `08_validate.py`             | `validate` (+ `check-model-data-pairing`)                         | Validates at two sparsity levels (full 50-item, sparse 20-item) with bootstrap CIs                                                      |
-| 09  | `09_baselines.py`            | `baselines` (+ `check-model-data-pairing`)                        | Evaluates 8 item-selection strategies at K=5,10,15,20,25,30,40,50; includes standalone Mini-IPIP baseline at K=20                       |
-| 10  | `10_simulate.py`             | `simulate` (+ `check-model-data-pairing`)                         | Simulates adaptive assessment with SEM-based stopping on held-out respondents                                                           |
-| 11  | `11_export_onnx.py`          | `export` (+ `check-model-data-pairing`)                           | Exports XGBoost models to ONNX, validates numerical parity, generates config.json                                                       |
+| 07  | `07_train.py`                | `train`                                                           | Trains XGBoost quantile models with sparsity augmentation (3 configs); accepts `PARAMS=` override                                       |
+| 08  | `08_validate.py`             | `validate`                                                        | Validates at two sparsity levels (full 50-item, sparse 20-item) with bootstrap CIs                                                      |
+| 09  | `09_baselines.py`            | `baselines`                                                       | Evaluates 8 item-selection strategies at K=5,10,15,20,25,30,40,50; includes standalone Mini-IPIP baseline at K=20                       |
+| 10  | `10_simulate.py`             | `simulate`                                                        | Simulates adaptive assessment with SEM-based stopping on held-out respondents                                                           |
+| 11  | `11_export_onnx.py`          | `export`                                                          | Exports XGBoost models to ONNX, validates numerical parity, generates config.json                                                       |
 | 12  | `12_generate_figures.py`     | `figures`                                                         | Generates publication figures from artifacts (efficiency curves, heatmaps, etc.)                                                        |
 | 13  | `13_upload_hf.py`            | `upload-hf`                                                       | Uploads exported model and model card to HuggingFace Hub (requires `HF_TOKEN`)                                                          |
 
-`make all` runs: download, load, norms, norms-check, prepare, correlations, tune, train, research-eval, export-all, notes, and figures. It excludes stage 13 (upload-hf). Evaluation stages (08-10) run via `research-eval`, which evaluates all four model variants in parallel by default and writes results to `artifacts/variants/<variant>/`.
+`make all` runs: download, load, norms, norms-check, prepare, correlations, tune, train, research-eval, export-all, notes, and figures. It excludes stage 13 (upload-hf). Evaluation stages (08-10) run via `research-eval`, which evaluates all three model variants in parallel by default and writes results to `artifacts/variants/<variant>/`.
 
 ## Hyperparameter Tuning
 
@@ -70,16 +70,16 @@ Tuning runs as part of `make all`. To re-tune independently:
 # Run Optuna hyperparameter search (~2-4 hours)
 make tune
 
-# Train all model variants (reference first, then 3 ablations in parallel)
+# Train all model variants (reference first, then 2 ablations in parallel)
 make train
 
 # Use explicit XGBoost parallelism (recommended for reproducible thread config)
 make tune N_JOBS=16
 make train N_JOBS=16
 
-# Train only one variant (N in 1..4)
+# Train only one variant (N in 1..3)
 make train 1
-make train 4
+make train 3
 
 # Control ablation fan-out after train-1 (inherits outer make parallelism by default)
 make train TRAIN_PARALLEL=3
@@ -89,9 +89,8 @@ make -j1 train
 # Force research-eval serially if needed
 make research-eval RESEARCH_EVAL_PARALLEL=1
 
-# Override training split paths
-make train DATA_DIR=data/processed/ext_est
-make train TRAIN_DATA_DIR=data/processed/ext_est TRAIN_DATA_DIR_STRATIFIED=data/processed/ext_est_opn
+# Override the training split path
+make train DATA_DIR=data/processed/canonical_v1
 ```
 
 **Make variables for training:**
@@ -102,8 +101,7 @@ make train TRAIN_DATA_DIR=data/processed/ext_est TRAIN_DATA_DIR_STRATIFIED=data/
 | `N_JOBS`                    | *(none)*                                                                                                    | XGBoost thread count; when unset, uses `training.n_jobs` from config                    |
 | `CV_PARALLEL_FOLDS`         | `1`                                                                                                         | Number of stage-07 CV folds to run concurrently on CPU (`1` on GPU)                     |
 | `TRAIN_DATA_DIR`            | `DATA_DIR`                                                                                                  | Training data for runs 1--3                                                             |
-| `TRAIN_DATA_DIR_STRATIFIED` | `data/processed/ext_est_opn` (falls back to `TRAIN_DATA_DIR` if it differs from the default `ext_est` path) | Training data for run 4 (stratified split)                                              |
-| `TRAIN_PARALLEL`            | *(inherit outer make)*                                                                                      | Fan-out for ablation runs 2--4                                                          |
+| `TRAIN_PARALLEL`            | *(inherit outer make)*                                                                                      | Fan-out for ablation runs 2--3                                                          |
 
 Thread count precedence: `N_JOBS` > `training.n_jobs` in config > `$BFFM_XGB_N_JOBS` > `os.cpu_count()`.
 The committed configs pin `training.n_jobs: 16` so defaults are machine-independent.
@@ -113,24 +111,19 @@ The committed configs pin `training.n_jobs: 16` so defaults are machine-independ
 Post-training stage targets (`validate`, `baselines`, `simulate`, `export`) use `MODEL_DIR` and `DATA_DIR` make variables. Evaluation output is always written to `artifacts/variants/<model_name>/` (derived automatically from `MODEL_DIR`).
 
 ```bash
-# Default: reference model + ext_est data -> artifacts/variants/reference/
+# Default: reference model + canonical_v1 data -> artifacts/variants/reference/
 make validate
 
-# Auto-selects stratified data path from model dir -> artifacts/variants/ablation_stratified/
-make validate MODEL_DIR=models/ablation_stratified
-
 # Explicit data override (must match model regime) -> artifacts/variants/ablation_none/
-make baselines MODEL_DIR=models/ablation_none DATA_DIR=data/processed/ext_est
+make baselines MODEL_DIR=models/ablation_none DATA_DIR=data/processed/canonical_v1
 ```
-
-The `check-model-data-pairing` guard runs before these targets and fails closed if a known model bundle is paired with the wrong data regime.
 
 ## Training Variants
 
-The `train` stage runs four model variants with a strict lock policy:
+The `train` stage runs three model variants with a strict lock policy:
 
 - `train-1` (`reference.yaml`) runs first.
-- `train-2`, `train-3`, and `train-4` then run in parallel.
+- `train-2` and `train-3` then run in parallel.
 - All runs use the same tuned hyperparameters from `artifacts/tuned_params.json`.
 - Ablations fail closed unless `models/reference/training_report.json` exists and the hyperparameter hash matches the reference model.
 
@@ -139,22 +132,20 @@ The `train` stage runs four model variants with a strict lock policy:
 | `reference.yaml`           | Focused + Mini-IPIP + Imbalanced | Published model (exported to ONNX)                           |
 | `ablation_none.yaml`       | None                             | Baseline: no sparsity augmentation                           |
 | `ablation_focused.yaml`    | Focused + Mini-IPIP              | Focused + Mini-IPIP (no imbalanced patterns)                 |
-| `ablation_stratified.yaml` | Focused + Mini-IPIP              | Ablation: ext-est-opn stratified data regime                 |
 
-Run a single training configuration in isolation with `make train N` where `N` is `1`, `2`, `3`, or `4`.
+Run a single training configuration in isolation with `make train N` where `N` is `1`, `2`, or `3`.
 
 Only the reference model is exported to ONNX.
 
 ## Cross-Variant Research Evaluation
 
-After training all 4 model variants, `make research-eval` runs the full evaluation pipeline (validate + baselines + simulate) for each variant, writing results to isolated artifact directories:
+After training all 3 model variants, `make research-eval` runs the full evaluation pipeline (validate + baselines + simulate) for each variant, writing results to isolated artifact directories:
 
 ```
-make research-eval          # runs all 4 variants in parallel by default
+make research-eval          # runs all 3 variants in parallel by default
 make research-eval-reference
 make research-eval-ablation-none
 make research-eval-ablation-focused
-make research-eval-ablation-stratified
 ```
 
 Each `research-eval-*` target runs `validate`, `baselines`, and `simulate` with the correct model/data pairing. Output is automatically routed to `artifacts/variants/<variant>/` via the `EVAL_DIR` Makefile variable, and each variant also writes a labeled logfile under `logs/`.
@@ -167,11 +158,11 @@ make notes                  # builds research_summary.json (strict), then refres
 make figures                # generates publication figures from artifacts
 ```
 
-The `notes` target runs `research-summary-strict` first, which fails closed unless all four variants have complete, provenance-consistent evaluation bundles under `artifacts/variants/`. The aggregated `artifacts/research_summary.json` serves as the single canonical manifest for all auto-generated data sections in `notes/NOTES.md`.
+The `notes` target runs `research-summary-strict` first, which fails closed unless all three variants have complete, provenance-consistent evaluation bundles under `artifacts/variants/`. The aggregated `artifacts/research_summary.json` serves as the single canonical manifest for all auto-generated data sections in `notes/NOTES.md`.
 
 | Target                    | Inputs                                                                              | Outputs                                                                                                             |
 | ------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `research-eval`           | `models/*/`, `data/processed/ext_est{,_opn}/`                                       | `artifacts/variants/*/validation_results.json`, `baseline_comparison_results.json`, `simulation_results.json`, etc. |
+| `research-eval`           | `models/*/`, `data/processed/canonical_v1/`                                       | `artifacts/variants/*/validation_results.json`, `baseline_comparison_results.json`, `simulation_results.json`, etc. |
 | `research-summary-strict` | `artifacts/variants/*/`, `models/*/training_report.json`                            | `artifacts/research_summary.json`                                                                                   |
 | `notes`                   | `artifacts/research_summary.json`                                                   | `notes/NOTES.md` (data sections refreshed)                                                                          |
 | `figures`                 | `artifacts/variants/<model>/` (defaults to `reference`; override with `MODEL_DIR=`) | `figures/*.png`                                                                                                     |

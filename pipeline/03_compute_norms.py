@@ -21,6 +21,14 @@ from lib.constants import DOMAINS, DOMAIN_LABELS, ITEM_COLUMNS
 from lib.item_info import file_sha256
 from lib.mini_ipip import load_mini_ipip_mapping
 from lib.provenance import add_provenance_args, build_provenance, relative_to_root
+from lib.splits import (
+    CANONICAL_SEED,
+    CANONICAL_SPLIT_ID,
+    CANONICAL_TEST_SIZE,
+    CANONICAL_VAL_SIZE,
+    SPLIT_SCHEME,
+    assign_splits,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,10 +37,14 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-NORM_SCHEMA_VERSION = 2
+NORM_SCHEMA_VERSION = 3
 NORM_DATASET = "IPIP-FFM (openpsychometrics.org)"
 NORM_TABLE = "responses"
-NORM_SCOPE = "full cleaned dataset from stage 02 SQLite (not split-specific)"
+NORM_SCOPE = (
+    "training split of canonical_v1 (plain random 70/15/15, seed 42) from the "
+    "stage 02 SQLite; held-out val/test rows are excluded so norms do not leak "
+    "into the percentile targets"
+)
 
 
 def _resolve_path(path: Path) -> Path:
@@ -55,7 +67,10 @@ def _load_domain_scores_from_sqlite(db_path: Path) -> pd.DataFrame:
 
     score_cols = [f"{d}_score" for d in DOMAINS]
     query_cols = ITEM_COLUMNS + score_cols
-    query = f"SELECT {', '.join(query_cols)} FROM {NORM_TABLE}"
+    query = (
+        f"SELECT respondent_id, {', '.join(query_cols)} "
+        f"FROM {NORM_TABLE} ORDER BY respondent_id"
+    )
     with sqlite3.connect(str(db_path)) as conn:
         df = pd.read_sql_query(query, conn)
 
@@ -131,6 +146,14 @@ def _build_lock_payload(
         "dataset": NORM_DATASET,
         "table": NORM_TABLE,
         "scope": NORM_SCOPE,
+        "split": {
+            "id": CANONICAL_SPLIT_ID,
+            "scheme": SPLIT_SCHEME,
+            "seed": CANONICAL_SEED,
+            "test_size": CANONICAL_TEST_SIZE,
+            "val_size": CANONICAL_VAL_SIZE,
+            "fit_on": "train",
+        },
         "n_respondents": n_total,
         "mini_ipip_mapping": {
             "file": mini_ipip_mapping_path.name,
@@ -282,10 +305,23 @@ def main() -> int:
 
     try:
         df = _load_domain_scores_from_sqlite(db_path)
+        labels = assign_splits(
+            df["respondent_id"].to_numpy(),
+            seed=CANONICAL_SEED,
+            test_size=CANONICAL_TEST_SIZE,
+            val_size=CANONICAL_VAL_SIZE,
+        )
+        train_df = df.loc[labels == "train"].reset_index(drop=True)
+        log.info(
+            "Fitting norms on TRAIN split only: %s of %s rows (%s)",
+            f"{len(train_df):,}",
+            f"{len(df):,}",
+            CANONICAL_SPLIT_ID,
+        )
         mini_ipip_mapping = load_mini_ipip_mapping(mini_ipip_mapping_path)
         mini_ipip_mapping_sha256 = file_sha256(mini_ipip_mapping_path)
-        computed = _compute_norms(df)
-        mini_ipip_computed = _compute_mini_ipip_norms(df, mini_ipip_mapping)
+        computed = _compute_norms(train_df)
+        mini_ipip_computed = _compute_mini_ipip_norms(train_df, mini_ipip_mapping)
     except (
         FileNotFoundError,
         sqlite3.Error,

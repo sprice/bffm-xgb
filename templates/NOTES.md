@@ -257,8 +257,8 @@ Adaptive simulation outcomes for each variant at the operating point.
 
 ### Dataset
 
-Valid respondents from the Open-Source Psychometrics Project, stratified
-split into train/validation/test.
+Valid respondents from the Open-Source Psychometrics Project, split at
+random into train/validation/test (70/15/15, seed-locked).
 
 <!-- BEGIN:data_splits -->
 *Data will be populated after training run.*
@@ -460,7 +460,7 @@ Placeholder sections for analyses under consideration.
 ### Sparsity Augmentation Ablation
 
 Preliminary results from ablation configs (reference vs focused-only vs
-stratified vs no-augmentation). Formalize when ablation artifacts are standardized.
+no-augmentation). Formalize when ablation artifacts are standardized.
 
 ### Per-Quintile Fairness Analysis
 

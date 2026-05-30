@@ -95,10 +95,7 @@ def _variant_paths(
     config_payload = _load_yaml(config_path)
     data_dir_raw = config_payload.get("data_dir")
     if not isinstance(data_dir_raw, str) or not data_dir_raw.strip():
-        if meta["default_data_regime"] == "ext_est_opn":
-            data_dir_raw = "data/processed/ext_est_opn"
-        else:
-            data_dir_raw = "data/processed/ext_est"
+        data_dir_raw = f"data/processed/{meta['default_data_regime']}"
     data_dir = _resolve(data_dir_raw)
 
     return {
@@ -182,7 +179,7 @@ def _collect_variant_summary(
         errors.append("provenance:test_sha256_mismatch")
 
     config_payload = _load_yaml(paths["config"])
-    data_regime = "ext_est_opn" if str(paths["data_dir"]).endswith("ext_est_opn") else "ext_est"
+    data_regime = paths["data_dir"].name
 
     training = loaded.get("training_report", {})
     validation = loaded.get("validation_results", {})

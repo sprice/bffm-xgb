@@ -13,7 +13,7 @@ via the locked_params key in each YAML config.
 
 Usage:
     python pipeline/06_tune.py --trials 200 --config configs/reference.yaml
-    python pipeline/06_tune.py --trials 200 --data-dir data/processed/ext_est --config configs/reference.yaml
+    python pipeline/06_tune.py --trials 200 --data-dir data/processed/canonical_v1 --config configs/reference.yaml
     python pipeline/06_tune.py --trials 200 --parallel-trials 4 --config configs/reference.yaml
     python pipeline/06_tune.py --trials 50 --output artifacts/tuned_params.json
 """
@@ -59,7 +59,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-DEFAULT_DATA_DIR = Path("data/processed/ext_est")
+DEFAULT_DATA_DIR = Path("data/processed/canonical_v1")
 DEFAULT_ARTIFACTS_DIR = Path("artifacts")
 
 # ---------------------------------------------------------------------------

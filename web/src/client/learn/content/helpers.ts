@@ -223,15 +223,3 @@ export function internalFiles(files: string[]): string {
 }
 
 // ─── Split-formula helpers (inline) ──────────────────────────────
-
-export function splitFormula(extQ: number, estQ: number): string {
-  return `${extQ} × 5 + ${estQ} = <strong>${extQ * 5 + estQ}</strong>`;
-}
-
-export function splitFormulaThree(
-  extQ: number,
-  estQ: number,
-  opnQ: number,
-): string {
-  return `${extQ} × 25 + ${estQ} × 5 + ${opnQ} = <strong>${extQ * 25 + estQ * 5 + opnQ}</strong>`;
-}

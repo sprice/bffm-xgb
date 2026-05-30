@@ -6,8 +6,8 @@ them into a single model graph, validates parity, generates config.json,
 and produces a HuggingFace-ready output/ directory.
 
 Usage:
-    python pipeline/11_export_onnx.py --data-dir data/processed/ext_est
-    python pipeline/11_export_onnx.py --data-dir data/processed/ext_est --model-dir models/reference
+    python pipeline/11_export_onnx.py --data-dir data/processed/canonical_v1
+    python pipeline/11_export_onnx.py --data-dir data/processed/canonical_v1 --model-dir models/reference
 """
 
 import sys

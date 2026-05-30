@@ -190,13 +190,8 @@ run_step "download" make download
 run_step "load" make load
 run_step "norms" make norms
 run_step "norms-check" make norms-check
-if [[ -n "$REFERENCE_ONLY" ]]; then
-    run_step "prepare" make prepare-default
-    run_step "correlations" make correlations-default
-else
-    run_step "prepare" make prepare
-    run_step "correlations" make correlations
-fi
+run_step "prepare" make prepare
+run_step "correlations" make correlations
 
 tune_cmd=(make tune)
 [[ -n "$TUNE_N_JOBS" ]] && tune_cmd+=("N_JOBS=$TUNE_N_JOBS")
@@ -223,7 +218,7 @@ run_step "research-eval" "${research_eval_cmd[@]}"
 
 if [[ -n "$REFERENCE_ONLY" ]]; then
     run_step "export" make export-reference export-repo-readme
-    skip_step "notes" "reference-only mode requires all four variants"
+    skip_step "notes" "reference-only mode requires all three variants"
 else
     run_step "export" make export-all
     run_step "notes" make notes

@@ -6,7 +6,6 @@ evaluation metrics across the adaptive personality assessment pipeline.
 
 Key functions:
 - paired_bootstrap_cis: Core paired percentile bootstrap with respondent-level resampling
-- stratified_paired_bootstrap_cis: Stratified resampling by split_stratum
 - bootstrap_metric_deltas: CIs for metric deltas between two prediction sets
 - vectorized_pearsonr_bootstrap: Fast bootstrap for per-domain Pearson r
 - respondent_bootstrap_multi_domain: Multi-domain respondent-level bootstrap
@@ -128,70 +127,6 @@ def paired_bootstrap_cis(
     all_idx = _generate_bootstrap_indices(n_respondents, n_bootstrap, rng)
 
     # First call to discover metric keys
-    point_estimate = metric_fn(*arrays)
-    metric_keys = list(point_estimate.keys())
-    boot_values: dict[str, list[float]] = {k: [] for k in metric_keys}
-
-    for i in range(n_bootstrap):
-        idx = all_idx[i]
-        resampled = tuple(a[idx] for a in arrays)
-        boot_metrics = metric_fn(*resampled)
-        for k in metric_keys:
-            boot_values[k].append(boot_metrics.get(k, float("nan")))
-
-    cis: dict[str, dict[str, float]] = {}
-    for k in metric_keys:
-        arr = np.array(boot_values[k])
-        valid = arr[~np.isnan(arr)]
-        if len(valid) > 0:
-            cis[k] = {
-                "lower": float(np.percentile(valid, ci_levels[0])),
-                "upper": float(np.percentile(valid, ci_levels[1])),
-            }
-        else:
-            cis[k] = {"lower": float("nan"), "upper": float("nan")}
-
-    return cis
-
-
-def stratified_paired_bootstrap_cis(
-    metric_fn: Callable[..., dict[str, float]],
-    *arrays: np.ndarray,
-    strata: np.ndarray | None = None,
-    n_bootstrap: int = 1000,
-    seed: int = 42,
-    ci_levels: tuple[float, float] = (2.5, 97.5),
-) -> dict[str, dict[str, float]]:
-    """Compute stratified paired percentile bootstrap 95% CIs.
-
-    Same as paired_bootstrap_cis but resamples within each stratum separately.
-    Falls back to plain paired bootstrap if strata is None.
-
-    Args:
-        metric_fn: Function that takes the same number of arrays as *arrays
-            and returns a dict of metric_name -> float.
-        *arrays: Arrays to resample. All must have the same first dimension.
-        strata: Array of stratum labels (e.g., split_stratum column).
-            If None, falls back to plain paired bootstrap.
-        n_bootstrap: Number of bootstrap resamples.
-        seed: Random seed.
-        ci_levels: Percentile levels for the CI.
-
-    Returns:
-        Dict of metric_name -> {"lower": float, "upper": float}.
-    """
-    if strata is None:
-        return paired_bootstrap_cis(
-            metric_fn, *arrays,
-            n_bootstrap=n_bootstrap, seed=seed, ci_levels=ci_levels,
-        )
-
-    rng = np.random.default_rng(seed)
-    n_respondents = arrays[0].shape[0]
-
-    all_idx = _generate_bootstrap_indices(n_respondents, n_bootstrap, rng, strata=strata)
-
-    # Discover metric keys
     point_estimate = metric_fn(*arrays)
     metric_keys = list(point_estimate.keys())
     boot_values: dict[str, list[float]] = {k: [] for k in metric_keys}

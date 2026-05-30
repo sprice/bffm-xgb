@@ -33,9 +33,9 @@ export const chapter06ItemAnalysis: Chapter = {
         )}
         ${internalFiles([
           "pipeline/05_compute_correlations.py",
-          "data/processed/ext_est/item_correlations.json",
-          "data/processed/ext_est/item_info.json",
-          "data/processed/ext_est/first_item.json",
+          "data/processed/canonical_v1/item_correlations.json",
+          "data/processed/canonical_v1/item_info.json",
+          "data/processed/canonical_v1/first_item.json",
         ])}
       `,
     )}

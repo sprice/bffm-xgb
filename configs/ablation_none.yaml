@@ -1,7 +1,7 @@
 name: ablation_none
 description: "Ablation: no sparsity augmentation (baseline)"
 output_dir: models/ablation_none
-data_dir: data/processed/ext_est
+data_dir: data/processed/canonical_v1
 artifacts_dir: artifacts
 
 sparsity:

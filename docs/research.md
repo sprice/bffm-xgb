@@ -37,13 +37,13 @@ This teaches the model to handle arbitrary missing-item patterns, enabling accur
 
 ## Norms
 
-Raw-score to percentile conversion uses z-score transformation with norms derived from the full cleaned stage-02 SQLite response table (`responses`, OSPP dataset). The single source of truth is `artifacts/ipip_bffm_norms.json` and includes both `norms` (full-50 scoring) and `mini_ipip_norms` (standalone Mini-IPIP scoring); regenerate with `make norms` and validate with `make norms-check`.
+Raw-score to percentile conversion uses z-score transformation with norms derived from the **training split** of the cleaned stage-02 SQLite response table (`responses`, OSPP dataset), so held-out validation/test rows do not leak into the percentile targets. The single source of truth is `artifacts/ipip_bffm_norms.json` and includes both `norms` (full-50 scoring) and `mini_ipip_norms` (standalone Mini-IPIP scoring); regenerate with `make norms` and validate with `make norms-check`.
 
 ## Data
 
 Training data comes from the [Open-Source Psychometrics Project](https://openpsychometrics.org/) (OSPP) dataset:
 
-- **Split:** Stratified train/val/test split (default 70/15/15) using EXT x EST quintile strata
+- **Split:** Single plain random train/val/test split (70/15/15, seed-locked) — the canonical `canonical_v1` partition used for every headline claim. At this dataset's scale a random split is already balanced on every domain, so no target stratification is applied.
 - **Augmentation:** Training set is augmented via 3 sparsity passes (see [Sparsity Augmentation](#sparsity-augmentation))
 - **Split before augmentation:** Train/val/test split is performed before augmentation to prevent data leakage
 - **RNG seed:** 42

@@ -66,21 +66,16 @@ VARIANTS = {
     "reference": {
         "config": "configs/reference.yaml",
         "model_dir": "models/reference",
-        "default_data_regime": "ext_est",
+        "default_data_regime": "canonical_v1",
     },
     "ablation_none": {
         "config": "configs/ablation_none.yaml",
         "model_dir": "models/ablation_none",
-        "default_data_regime": "ext_est",
+        "default_data_regime": "canonical_v1",
     },
     "ablation_focused": {
         "config": "configs/ablation_focused.yaml",
         "model_dir": "models/ablation_focused",
-        "default_data_regime": "ext_est",
-    },
-    "ablation_stratified": {
-        "config": "configs/ablation_stratified.yaml",
-        "model_dir": "models/ablation_stratified",
-        "default_data_regime": "ext_est_opn",
+        "default_data_regime": "canonical_v1",
     },
 }

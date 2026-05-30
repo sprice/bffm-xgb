@@ -144,10 +144,6 @@ export const chapter04Map: Chapter = {
               "ablation_focused.yaml",
               "Focused sparsity without imbalanced patterns",
             ],
-            [
-              "ablation_stratified.yaml",
-              "Alternative split regime using ext-est-opn",
-            ],
           ],
         )}
         ${callout(

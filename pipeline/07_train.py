@@ -35,7 +35,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from sklearn.metrics import mean_absolute_error, mean_squared_error
-from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
+from sklearn.model_selection import KFold, train_test_split
 import xgboost as xgb
 
 from lib.constants import (
@@ -156,20 +156,6 @@ def _load_mini_ipip_mapping(artifacts_dir: Path) -> dict[str, list[str]]:
     """Load Mini-IPIP item mapping from artifacts (fail closed)."""
     mapping_path = artifacts_dir / "mini_ipip_mapping.json"
     return load_mini_ipip_mapping(mapping_path)
-
-
-def _extract_split_strata(df: pd.DataFrame) -> Optional[pd.Series]:
-    """Return row-aligned split strata after the same target validity filtering."""
-    if "split_stratum" not in df.columns:
-        return None
-
-    target_cols = [f"{d}_score" for d in DOMAINS if f"{d}_score" in df.columns]
-    pct_cols = [f"{d}_percentile" for d in DOMAINS if f"{d}_percentile" in df.columns]
-    if not target_cols or not pct_cols:
-        return None
-
-    valid_mask = df[target_cols].notna().all(axis=1) & df[pct_cols].notna().all(axis=1)
-    return df.loc[valid_mask, "split_stratum"].reset_index(drop=True)
 
 
 def _stable_json_sha256(payload: Any) -> str:
@@ -880,7 +866,6 @@ def _run_cross_validation_robustness(
     n_folds: int = DEFAULT_STAGE07_CV_FOLDS,
     n_jobs: int = 1,
     mini_ipip_items: Optional[dict[str, list[str]]] = None,
-    strata: Optional[pd.Series] = None,
     parallel_domains: int = 1,
     parallel_folds: int = 1,
     gpu: bool = False,
@@ -894,35 +879,8 @@ def _run_cross_validation_robustness(
     n_augmentation_passes = sparsity_cfg.get("n_augmentation_passes", 1)
     random_state = config.get("training", {}).get("random_state", 42)
 
-    split_iter: Any
-    if strata is not None:
-        strata_values = np.asarray(strata)
-        if len(strata_values) != len(X):
-            raise ValueError(
-                "Strata length mismatch for cross-validation: "
-                f"len(strata)={len(strata_values)}, len(X)={len(X)}"
-            )
-        unique, counts = np.unique(strata_values, return_counts=True)
-        if len(unique) < 2:
-            raise ValueError(
-                "Cross-validation stratification requires at least 2 strata, "
-                f"found {len(unique)}."
-            )
-        min_count = int(np.min(counts))
-        if min_count < n_folds:
-            raise ValueError(
-                "Cross-validation stratification requires each stratum to appear at least "
-                f"n_folds times (n_folds={n_folds}, min_count={min_count})."
-            )
-        outer_cv = StratifiedKFold(
-            n_splits=n_folds,
-            shuffle=True,
-            random_state=random_state,
-        )
-        split_iter = outer_cv.split(X, strata_values)
-    else:
-        outer_cv = KFold(n_splits=n_folds, shuffle=True, random_state=random_state)
-        split_iter = outer_cv.split(X)
+    outer_cv = KFold(n_splits=n_folds, shuffle=True, random_state=random_state)
+    split_iter = outer_cv.split(X)
 
     split_plan = list(split_iter)
     requested_parallel_folds = max(parallel_folds, 1)
@@ -1654,8 +1612,6 @@ def main() -> int:
     try:
         X_train, y_train, y_train_pct = _prepare_features_targets(train_df)
         X_val, y_val, y_val_pct = _prepare_features_targets(val_df)
-        train_strata = _extract_split_strata(train_df)
-        val_strata = _extract_split_strata(val_df)
     except (ValueError, KeyError) as e:
         log.error("Invalid train/val data schema for training: %s", e)
         return 1
@@ -1721,21 +1677,6 @@ def main() -> int:
         X_trainval = pd.concat([X_train, X_val]).reset_index(drop=True)
         y_trainval = pd.concat([y_train, y_val]).reset_index(drop=True)
         y_trainval_pct = pd.concat([y_train_pct, y_val_pct]).reset_index(drop=True)
-        strata_trainval: Optional[pd.Series] = None
-        if train_strata is not None and val_strata is not None:
-            strata_trainval = pd.concat([train_strata, val_strata]).reset_index(drop=True)
-            log.info(
-                "  Using stratified cross-validation via split_stratum (%d strata)",
-                int(strata_trainval.nunique()),
-            )
-        elif train_strata is None and val_strata is None:
-            log.warning("  split_stratum unavailable; falling back to unstratified cross-validation.")
-        else:
-            log.error(
-                "split_stratum presence mismatch between train/val; "
-                "cannot safely run cross-validation. Re-run stage 04 prepare."
-            )
-            return 1
 
         cv_results = _run_cross_validation_robustness(
             X_trainval, y_trainval, y_trainval_pct,
@@ -1743,7 +1684,6 @@ def main() -> int:
             n_folds=cv_folds,
             n_jobs=xgb_n_jobs,
             mini_ipip_items=mini_ipip_items,
-            strata=strata_trainval,
             parallel_domains=args.parallel_domains,
             parallel_folds=cv_parallel_folds,
             gpu=args.gpu,

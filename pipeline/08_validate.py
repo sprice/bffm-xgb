@@ -10,8 +10,8 @@ Computes per-domain and overall metrics with bootstrap 95% CIs.
 Optionally generates validation plots (scatter, residual, calibration).
 
 Usage:
-    python pipeline/08_validate.py --data-dir data/processed/ext_est
-    python pipeline/08_validate.py --data-dir data/processed/ext_est --model-dir models/reference --plots --bootstrap-n 2000
+    python pipeline/08_validate.py --data-dir data/processed/canonical_v1
+    python pipeline/08_validate.py --data-dir data/processed/canonical_v1 --model-dir models/reference --plots --bootstrap-n 2000
 """
 
 import sys

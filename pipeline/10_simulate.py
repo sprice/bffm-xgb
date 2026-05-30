@@ -11,9 +11,9 @@ Reads models from models/reference/, item info from
 data/processed/item_info.json, and test data from data/processed/test.parquet.
 
 Usage:
-    python pipeline/10_simulate.py --data-dir data/processed/ext_est [options]
-    python pipeline/10_simulate.py --data-dir data/processed/ext_est --n-sample 5000 --sem-threshold 0.45
-    python pipeline/10_simulate.py --data-dir data/processed/ext_est --sweep-sem-thresholds
+    python pipeline/10_simulate.py --data-dir data/processed/canonical_v1 [options]
+    python pipeline/10_simulate.py --data-dir data/processed/canonical_v1 --n-sample 5000 --sem-threshold 0.45
+    python pipeline/10_simulate.py --data-dir data/processed/canonical_v1 --sweep-sem-thresholds
 """
 
 import sys

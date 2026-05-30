@@ -28,8 +28,8 @@ Output files:
   - artifacts/adaptive_item_order_analysis.json
 
 Usage:
-    python pipeline/09_baselines.py --data-dir data/processed/ext_est
-    python pipeline/09_baselines.py --data-dir data/processed/ext_est --model-dir models/reference --bootstrap-n 2000
+    python pipeline/09_baselines.py --data-dir data/processed/canonical_v1
+    python pipeline/09_baselines.py --data-dir data/processed/canonical_v1 --model-dir models/reference --bootstrap-n 2000
 """
 
 import sys
