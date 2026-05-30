@@ -15,7 +15,7 @@ This project's Python is managed entirely by [uv](https://docs.astral.sh/uv/).
 | `pip install <pkg>`      | `uv add <pkg>` (dev: `uv add --dev <pkg>`) |
 | `python -m venv .venv`   | `uv sync`                        |
 
-- The interpreter is pinned by `.python-version` (3.11) and is downloaded/managed by uv.
+- The interpreter is pinned by `.python-version` (3.14) and is downloaded/managed by uv. (`requires-python` is `>=3.11`, the supported floor; basedpyright type-checks against that floor.)
 - Dependencies live in `pyproject.toml` (`[project.dependencies]` + `[dependency-groups] dev`) and are locked in `uv.lock`. Install/refresh with `uv sync`. **There is no `requirements.txt`.**
 - The Makefile already routes all Python through uv (`PY := uv run python`); prefer the `make` targets below over ad-hoc commands.
 

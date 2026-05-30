@@ -913,7 +913,7 @@ def generate_readme(config: dict, artifacts_dir: Path, model_dir: Path, *, varia
             ["Full assessment", "50", f"{_r_at(k50.get('full_50'), method='full_50', k=50):.4f}"],
             ["Domain-balanced", "20", f"{_r_at(k20.get('domain_balanced'), method='domain_balanced', k=20):.3f}"],
             ["Mini-IPIP mapping", "20", f"{_r_at(k20.get('mini_ipip'), method='mini_ipip', k=20):.3f}"],
-            ["Adaptive top-K", "20", f"{_r_at(k20.get('adaptive_topk'), method='adaptive_topk', k=20):.3f}"],
+            ["Greedy top-K", "20", f"{_r_at(k20.get('adaptive_topk'), method='adaptive_topk', k=20):.3f}"],
         ],
     )
 
@@ -1091,8 +1091,8 @@ Each domain has three quantile models:
 
 - **Shape:** `[batch_size, 1]` per quantile output; the merged `scores` tensor is `[batch_size, 15]` (5 domains × 3 quantiles, in `config.outputs` order).
 - **Scale:** Raw domain score on the **per-item-mean 1-5 scale** — the mean of the 10 item responses for the domain, **not** the 10-50 summed scale a 10-item sum would give. A domain mean of 3.0 is neutral; see the Norms table for population means/SDs.
-- **Nominal range:** `[1, 5]`. Because these are gradient-boosted regressors (not bounded transforms), the raw `q05`/`q50`/`q95` predictions can fall **slightly outside** `[1, 5]` (observed within ~±0.02 of the bounds). They are **not** clamped: treat `[1, 5]` as the nominal/target range, not a hard guarantee, if you consume the raw `scores` tensor.
-- **Percentile conversion:** Use the provided norms (z-score → CDF). The transform is monotonic and saturates near 0/100, so the small out-of-range raw values have negligible effect on the reported percentile; the reference inference packages report percentiles, not raw scores.
+- **Nominal range:** `[1, 5]`. Because these are gradient-boosted regressors (not bounded transforms), the raw `q05`/`q50`/`q95` predictions can fall **outside** `[1, 5]` — typically near the extremes of a domain's score range, and more so for low-information sparse inputs. They are **not** clamped: treat `[1, 5]` as the nominal/target range, not a hard guarantee, if you consume the raw `scores` tensor.
+- **Percentile conversion:** Use the provided norms (z-score → CDF). The transform is monotonic and saturates near 0/100, so out-of-range raw values shift the reported percentile by well under one percentile point; the reference inference packages report percentiles, not raw scores.
 
 ## Quick Start (Python)
 
@@ -1199,6 +1199,8 @@ Population norms for raw-score -> percentile conversion (from OSPP dataset):
 
 - Norms are derived from self-selected online respondents (OSPP); they may not represent the general population
 - Models are trained on English-language IPIP items only
+- No demographic-subgroup or measurement-invariance analysis has been performed; accuracy may vary by gender, age, or region
+- No external / out-of-distribution validation: every reported number is on a held-out split of the *same* OSPP dataset, so these are score-recovery (recovering the full-scale score from a subset of its own items), not external-trait, metrics
 - Standalone Python/TypeScript inference expects reverse-keyed items to be preprocessed before scoring; the web app applies that transform server-side
 - Exported calibration regimes are `full_50` and `sparse_20_balanced`; arbitrary sub-50 response patterns use the sparse regime as a fallback rather than a separately fit calibration curve
 - The deployed 20-item domain-balanced Emotional Stability subscale (est1, est6, est7, est8) is composed entirely of reverse-keyed items, so the short-form EST score is vulnerable to acquiescence (yea-saying) response bias; the other four domains mix keyed directions, and the full 50-item assessment is unaffected

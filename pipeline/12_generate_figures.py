@@ -892,6 +892,19 @@ def figure_4_per_domain_k20(df: pd.DataFrame, fig_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _attach_figure_checksums(
+    figure_entries: list[dict[str, Any]], fig_dir: Path
+) -> list[dict[str, Any]]:
+    """Lock each figure to a content hash (A5.5), computed from the rendered files
+    on disk. Keyed by the same format strings already in each entry's `formats`."""
+    for entry in figure_entries:
+        entry["sha256"] = {
+            fmt: file_sha256(fig_dir / f"{entry['filename']}.{fmt}")
+            for fmt in entry["formats"]
+        }
+    return figure_entries
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Generate publication-quality figures for the IPIP-BFFM paper"
@@ -965,40 +978,46 @@ def main() -> int:
             "sha256": file_sha256(path),
         }
 
+    # Lock each rendered figure to a content hash (A5.5) so the committed images
+    # are provably the ones rendered from the locked source data. figure_1..4()
+    # ran above (each savefig + plt.close), so the files exist on disk now.
+    figure_entries: list[dict[str, Any]] = [
+        {
+            "filename": "fig1_efficiency_curves",
+            "formats": ["png", "pdf"],
+            "source_artifacts": ["baseline_comparison_results"],
+        },
+        {
+            "filename": "fig2_domain_starvation",
+            "formats": ["png", "pdf"],
+            "source_artifacts": ["baseline_comparison_per_domain_csv"],
+        },
+        {
+            "filename": "fig3_ml_vs_averaging",
+            "formats": ["png", "pdf"],
+            "source_artifacts": ["ml_vs_averaging_comparison"],
+        },
+        {
+            "filename": "fig4_per_domain_k20",
+            "formats": ["png", "pdf"],
+            "source_artifacts": ["baseline_comparison_per_domain_csv"],
+            # Maps each displayed bar label to its `method` value in the source
+            # CSV, so "Greedy Top-K" is reconcilable with the `adaptive_topk` row.
+            "series_labels": {
+                "Domain-Balanced": "domain_balanced",
+                "Mini-IPIP": "mini_ipip",
+                "Greedy Top-K": "adaptive_topk",
+            },
+        },
+    ]
+    _attach_figure_checksums(figure_entries, fig_dir)
+
     manifest = {
         "schema_version": 1,
         "provenance": build_provenance(Path(__file__).name),
         "model_dir": relative_to_root(common_model_dir),
         "source_artifacts": source_artifacts,
-        "figures": [
-            {
-                "filename": "fig1_efficiency_curves",
-                "formats": ["png", "pdf"],
-                "source_artifacts": ["baseline_comparison_results"],
-            },
-            {
-                "filename": "fig2_domain_starvation",
-                "formats": ["png", "pdf"],
-                "source_artifacts": ["baseline_comparison_per_domain_csv"],
-            },
-            {
-                "filename": "fig3_ml_vs_averaging",
-                "formats": ["png", "pdf"],
-                "source_artifacts": ["ml_vs_averaging_comparison"],
-            },
-            {
-                "filename": "fig4_per_domain_k20",
-                "formats": ["png", "pdf"],
-                "source_artifacts": ["baseline_comparison_per_domain_csv"],
-                # Maps each displayed bar label to its `method` value in the source
-                # CSV, so "Greedy Top-K" is reconcilable with the `adaptive_topk` row.
-                "series_labels": {
-                    "Domain-Balanced": "domain_balanced",
-                    "Mini-IPIP": "mini_ipip",
-                    "Greedy Top-K": "adaptive_topk",
-                },
-            },
-        ],
+        "figures": figure_entries,
     }
 
     manifest_path = fig_dir / "manifest.json"

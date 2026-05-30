@@ -8,13 +8,12 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
 from scripts.check_provenance import (
     ProvenanceChecker,
+    check_figures_manifest,
     check_norms_lock,
     check_norms_meta,
     check_output_bundle,
@@ -92,32 +91,199 @@ def test_check_norms_meta_sha_mismatch(tmp_path) -> None:
     assert "mismatch" in checker.results[0][2]
 
 
-def test_check_output_bundle_snapshot_mismatch(tmp_path) -> None:
-    """Verify failure when data_snapshot_id doesn't match norms."""
-    checker = ProvenanceChecker()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir(parents=True)
-
-    # Write config.json so the check doesn't skip
-    (output_dir / "config.json").write_text('{"test": true}', encoding="utf-8")
-
-    # Write provenance.json with wrong snapshot
-    prov_doc = {
-        "export": {
-            "script": "11_export_onnx.py",
-            "data_snapshot_id": "norms_sha256:wrong_hash",
-        },
-        "training": {"provenance": {}},
-        "artifacts": {},
+def _write_variant_bundle(
+    tmp_path: Path,
+    *,
+    variant: str = "reference",
+    git_hash: str = "abcdef0",
+    config_git_hash: str | None = None,
+    data_snapshot_id: str = "x",
+    payload_provenance_hash: str | None = None,
+) -> Path:
+    """Write a valid output/<variant>/ bundle (matching config checksum)."""
+    vdir = tmp_path / "output" / variant
+    vdir.mkdir(parents=True)
+    config_path = vdir / "config.json"
+    config_doc = {
+        "provenance": {"git_hash": config_git_hash or git_hash},
+        "model_file": "model.onnx",
     }
-    with open(output_dir / "provenance.json", "w") as f:
-        json.dump(prov_doc, f)
+    config_path.write_text(json.dumps(config_doc), encoding="utf-8")
+    config_sha = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    training: dict = {"provenance": {"git_hash": git_hash}}
+    if payload_provenance_hash is not None:
+        # The nested tune payload hash legitimately differs from the export/train
+        # hashes (as in the real committed bundle) and must NOT trip the
+        # intra-bundle agreement check.
+        training["config"] = {
+            "hyperparameters_source": {
+                "payload_provenance": {"git_hash": payload_provenance_hash}
+            }
+        }
+    prov_doc = {
+        "export": {"git_hash": git_hash, "data_snapshot_id": data_snapshot_id},
+        "training": training,
+        "artifacts": {"config_json_sha256": config_sha, "model_onnx_sha256": "deadbeef"},
+    }
+    (vdir / "provenance.json").write_text(json.dumps(prov_doc), encoding="utf-8")
+    return vdir
 
+
+def _write_research_summary(tmp_path: Path, *, git_hash: str, norms_sha: str) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    summary = {
+        "provenance": {
+            "git_hash": git_hash,
+            "input_artifacts": {"norms_lock_sha256": norms_sha},
+        },
+        "variants": {},
+    }
+    (artifacts_dir / "research_summary.json").write_text(json.dumps(summary), encoding="utf-8")
+
+
+def test_check_research_summary_norms_mismatch_at_head_fails(tmp_path) -> None:
+    """A5.2: a norms mismatch on a summary AT HEAD is a hard FAIL."""
+    _write_research_summary(tmp_path, git_hash="headhash", norms_sha="wronghash")
+    checker = ProvenanceChecker()
     with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
-        check_output_bundle(checker, norms_sha="correct_hash")
+        check_research_summary(checker, norms_sha="correcthash", head_hash="headhash")
+    assert any(r[0] == "FAIL" for r in checker.results)
 
-    assert checker.results[0][0] == "FAIL"
-    assert "mismatch" in checker.results[0][2]
+
+def test_check_research_summary_norms_mismatch_stale_warns(tmp_path) -> None:
+    """A5.2: a norms mismatch on a summary that predates HEAD is a WARN, not a FAIL."""
+    _write_research_summary(tmp_path, git_hash="oldhash", norms_sha="wronghash")
+    checker = ProvenanceChecker()
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_research_summary(checker, norms_sha="correcthash", head_hash="newhead")
+    assert any(r[0] == "WARN" for r in checker.results)
+    assert all(r[0] != "FAIL" for r in checker.results)
+
+
+def test_check_output_bundle_cross_variant_warns_then_strict_fails(tmp_path) -> None:
+    """A5.2: variants exported from different commits WARN by default, FAIL under strict_head."""
+    _write_variant_bundle(tmp_path, variant="reference", git_hash="hashAAAA")
+    _write_variant_bundle(tmp_path, variant="ablation_none", git_hash="hashBBBB")
+    checker = ProvenanceChecker()
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_output_bundle(checker, norms_sha=None, head_hash="hashAAAA", strict_head=False)
+    assert any(r[0] == "WARN" and "cross-variant" in r[1] for r in checker.results)
+    assert checker.print_summary() == 0
+
+    strict = ProvenanceChecker()
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_output_bundle(strict, norms_sha=None, head_hash="hashAAAA", strict_head=True)
+    assert any(r[0] == "FAIL" and "cross-variant" in r[1] for r in strict.results)
+
+
+def test_check_output_bundle_excludes_nested_payload_hash(tmp_path) -> None:
+    """A5.2: the nested tune payload_provenance git_hash differing must NOT trip the
+    intra-bundle agreement check (it legitimately differs in the real bundle)."""
+    _write_variant_bundle(tmp_path, git_hash="exportHASH", payload_provenance_hash="914d82eDIFF")
+    checker = ProvenanceChecker()
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_output_bundle(checker, norms_sha=None, head_hash="exportHASH", strict_head=True)
+    assert not any(r[0] == "FAIL" and "agreement" in r[1] for r in checker.results)
+
+
+def test_check_figures_manifest_detects_output_tamper(tmp_path) -> None:
+    """A5.5: a figure output whose sha256 no longer matches the manifest FAILs;
+    a matching one passes (and absent files / no sha256 key degrade to skip)."""
+    figs = tmp_path / "figures"
+    figs.mkdir(parents=True)
+    png = figs / "fig1_test.png"
+    png.write_bytes(b"real-figure-bytes")
+    good_sha = hashlib.sha256(png.read_bytes()).hexdigest()
+    manifest = {
+        "provenance": {"git_hash": "h"},
+        "source_artifacts": {},
+        "figures": [{"filename": "fig1_test", "formats": ["png"], "sha256": {"png": good_sha}}],
+    }
+    (figs / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    matching = ProvenanceChecker()
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_figures_manifest(matching)
+    assert all(r[0] != "FAIL" for r in matching.results)
+
+    png.write_bytes(b"tampered-bytes")
+    tampered = ProvenanceChecker()
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_figures_manifest(tampered)
+    assert any(r[0] == "FAIL" and "SHA-256 mismatch" in r[2] for r in tampered.results)
+
+
+def test_check_output_bundle_snapshot_mismatch(tmp_path) -> None:
+    """FAIL when data_snapshot_id mismatches AND the bundle is at HEAD."""
+    checker = ProvenanceChecker()
+    _write_variant_bundle(
+        tmp_path, git_hash="headhash", data_snapshot_id="norms_sha256:wrong_hash"
+    )
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_output_bundle(
+            checker, norms_sha="correct_hash", head_hash="headhash", strict_head=False
+        )
+    statuses = [r[0] for r in checker.results]
+    details = " ".join(r[2] for r in checker.results)
+    assert "FAIL" in statuses
+    assert "mismatch" in details
+
+
+def test_check_output_bundle_snapshot_stale_warns_not_fails(tmp_path) -> None:
+    """A snapshot mismatch on a bundle that predates HEAD is a WARN, not a FAIL."""
+    checker = ProvenanceChecker()
+    _write_variant_bundle(
+        tmp_path, git_hash="oldhash", data_snapshot_id="norms_sha256:wrong_hash"
+    )
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_output_bundle(
+            checker, norms_sha="correct_hash", head_hash="newhead", strict_head=False
+        )
+    assert all(r[0] != "FAIL" for r in checker.results)
+    assert any(r[0] == "WARN" for r in checker.results)
+
+
+def test_check_output_bundle_skips_when_no_variants(tmp_path) -> None:
+    """Empty output/ dir SKIPs gracefully (no silent pass on the wrong path)."""
+    checker = ProvenanceChecker()
+    (tmp_path / "output").mkdir(parents=True)
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_output_bundle(checker, norms_sha=None, head_hash="h")
+    assert checker.results[0][0] == "SKIP"
+
+
+def test_check_output_bundle_head_stale_warns_then_strict_fails(tmp_path) -> None:
+    """HEAD-staleness is WARN by default and FAIL under strict_head."""
+    checker = ProvenanceChecker()
+    _write_variant_bundle(tmp_path, git_hash="bundlehash")
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_output_bundle(checker, norms_sha=None, head_hash="otherhead", strict_head=False)
+    assert any(r[0] == "WARN" for r in checker.results)
+    assert checker.print_summary() == 0  # WARN is not a failure
+
+    strict = ProvenanceChecker()
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_output_bundle(strict, norms_sha=None, head_hash="otherhead", strict_head=True)
+    assert any(r[0] == "FAIL" for r in strict.results)
+
+
+def test_check_output_bundle_intra_hash_disagreement_fails(tmp_path) -> None:
+    """export vs config.provenance git_hash disagreement always FAILS (any mode)."""
+    checker = ProvenanceChecker()
+    _write_variant_bundle(tmp_path, git_hash="exportHASH", config_git_hash="configHASH")
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_output_bundle(checker, norms_sha=None, head_hash="exportHASH", strict_head=False)
+    assert any(r[0] == "FAIL" and "agreement" in r[1] for r in checker.results)
+
+
+def test_warned_status_not_counted_as_failure() -> None:
+    """checker.warned() surfaces an advisory without incrementing the failure count."""
+    checker = ProvenanceChecker()
+    checker.passed("a")
+    checker.warned("b", "stale")
+    assert checker.print_summary() == 0
+    assert any(s == "WARN" for s, _, _ in checker.results)
 
 
 def test_strict_exits_nonzero_on_failure(tmp_path) -> None:

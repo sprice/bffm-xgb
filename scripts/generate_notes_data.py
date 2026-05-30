@@ -13,6 +13,7 @@ Usage:
 
 import argparse
 import json
+import math
 import re
 import sys
 from collections import defaultdict
@@ -177,6 +178,14 @@ def fmt_pct(val: float) -> str:
     return f"{val:.1f}%"
 
 
+def _cov_cell(val: object) -> str:
+    """Format a coverage value as a percent, degrading to '---' when missing or
+    non-finite (e.g. an empty central/tail band) instead of rendering 'nan%'."""
+    if isinstance(val, (int, float)) and math.isfinite(val):
+        return fmt_pct(val * 100)
+    return "---"
+
+
 def fmt_f(val: float, places: int = 2) -> str:
     return f"{val:.{places}f}"
 
@@ -279,8 +288,8 @@ def _gen_validation_from_notes_inputs(notes_inputs: dict) -> str:
                 fmt_f(dm["rmse"], 2),
                 fmt_pct(dm["within_5_pct"] * 100),
                 fmt_pct(dm["coverage_90"] * 100),
-                fmt_pct(dm.get("coverage_central", float("nan")) * 100),
-                fmt_pct(dm.get("coverage_tail", float("nan")) * 100),
+                _cov_cell(dm.get("coverage_central")),
+                _cov_cell(dm.get("coverage_tail")),
                 fmt_pct(dm.get("raw_crossing_rate", 0.0) * 100),
             ]
         )
@@ -293,8 +302,8 @@ def _gen_validation_from_notes_inputs(notes_inputs: dict) -> str:
             f"**{fmt_f(ov['rmse'], 2)}**",
             f"**{fmt_pct(ov['within_5_pct'] * 100)}**",
             f"**{fmt_pct(ov['coverage_90'] * 100)}**",
-            f"**{fmt_pct(ov.get('coverage_central', float('nan')) * 100)}**",
-            f"**{fmt_pct(ov.get('coverage_tail', float('nan')) * 100)}**",
+            f"**{_cov_cell(ov.get('coverage_central'))}**",
+            f"**{_cov_cell(ov.get('coverage_tail'))}**",
             f"**{fmt_pct(ov.get('raw_crossing_rate', 0.0) * 100)}**",
         ]
     )
@@ -551,11 +560,16 @@ def _gen_simulation_from_notes_inputs(notes_inputs: dict) -> str:
         ]
     )
     n_resp = analysis.get("n_respondents")
+    # Derive the comparison base N from the bundle rather than hardcoding it, so the
+    # caption stays correct across split regenerations (canonical_v1 test_rows etc.).
+    sm = notes_inputs.get("split_metadata")
+    base_n = sm.get("test_rows") if isinstance(sm, dict) else None
+    base_n_str = f"the full *N* = {base_n:,}" if isinstance(base_n, int) else "the full held-out test split"
     caption = ""
     if isinstance(n_resp, int):
         caption = (
             f"Simulated on a random {n_resp:,}-respondent subsample of the held-out "
-            "test split (the baseline and validation tables use the full *N* = 90,499), "
+            f"test split (the baseline and validation tables use {base_n_str}), "
             "so these estimates carry wider confidence intervals and are not co-powered "
             "with the headline numbers.\n\n"
         )

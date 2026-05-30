@@ -50,16 +50,31 @@ Training data comes from the [Open-Source Psychometrics Project](https://openpsy
 
 ## Evaluation
 
-All accuracy metrics are computed on the held-out `canonical_v1` test split (*N* = 90,499). "Overall *r*" is a **respondent-pooled** Pearson correlation: the five domains' predicted and true percentile vectors are stacked into a single length-5*N* vector before correlating (numerically ≈ the mean of the per-domain *r*, because every domain is on a common 0--100 percentile scale). Prediction intervals are the raw q05/q95 quantile spreads (no post-hoc width adjustment; every fitted `scale_factor` is 1.0), validated to ~90% empirical coverage at the 20-item operating point.
+All accuracy metrics are computed on the held-out `canonical_v1` test split (*N* = 90,498). "Overall *r*" is a **respondent-pooled** Pearson correlation: the five domains' predicted and true percentile vectors are stacked into a single length-5*N* vector before correlating (numerically ≈ the mean of the per-domain *r*, because every domain is on a common 0--100 percentile scale). Prediction intervals are the raw q05/q95 quantile spreads (no post-hoc width adjustment; every fitted `scale_factor` is 1.0), validated to ~90% empirical coverage at the 20-item operating point.
 
 Headline 20-item numbers refer to the **fixed, pre-specified domain-balanced form** (top-4 items per domain — the deployed web form), not a post-hoc best-of-grid selection. The model's *general* partial-response accuracy under random balanced 20-item masking is lower (*r* ≈ .909). The full-50 self-recovery *r* ≈ 1 reflects score recovery against a target computed from the same 50 items, not external validity.
 
 **Internal-consistency reliability.** Stage 05 computes Cronbach's alpha (raw + standardized), the mean inter-item correlation, and McDonald's omega for each domain across three forms — the full 10-item domains, the deployed domain-balanced 20-item form, and the Mini-IPIP 4-item form — on the training split, written to `data/processed/canonical_v1/reliability.json` and surfaced in [NOTES.md](../notes/NOTES.md). Reliability bounds how high score-recovery *r* can plausibly go.
 
+## Validity Boundary
+
+What this project does and does not establish. The headline metrics are **score recovery**, not external-trait validity — be explicit about the boundary when citing them.
+
+| Validity dimension | Status | Evidence / notes |
+| --- | --- | --- |
+| Score recovery | **Established** | Recovers the full 50-item domain score from a subset on a held-out OSPP split: *r* ≈ .93 at the deployed 20-item form, ≈ 1.0 at 50 items (a near-tautological ceiling — same items) |
+| Internal-consistency reliability | **Reported** | Cronbach α / McDonald ω per domain and form (stage 05 → `reliability.json`) |
+| Construct validity | Not established | No factor-structure or convergent/discriminant analysis against external measures |
+| External / out-of-distribution validity | **Not established** | All evaluation is a held-out split of the *same* self-selected OSPP sample; no external dataset, so generalization beyond OSPP-like respondents is unverified |
+| Measurement invariance / subgroup | **Not established** | No gender/age/region breakdown of recovery accuracy |
+| Intended use | Educational only | Not validated for clinical diagnosis or high-stakes selection |
+
 ## Limitations
 
 - Norms are derived from self-selected online respondents (OSPP); they may not represent the general population
 - Models are trained on English-language IPIP items only
+- **No demographic-subgroup or measurement-invariance analysis** has been performed; accuracy may vary by gender, age, or region
+- **No external / out-of-distribution validation:** every reported number is on a held-out split of the *same* OSPP dataset — these are score-recovery, not external-trait, metrics (see the Validity Boundary table above)
 - The deployed 20-item domain-balanced Emotional Stability subscale (est1, est6, est7, est8) is composed entirely of reverse-keyed items. This maximizes within-domain discrimination but makes the EST short-form score vulnerable to acquiescence (yea-saying) response bias; the other four domains mix keyed directions, and the full 50-item assessment is unaffected. The selection rule (`_select_domain_balanced`) ranks purely by |own-domain *r*|, which is why this domain is single-keyed.
 - Accuracy degrades with fewer items; 20 items is the recommended minimum for reliable scoring
 - Not intended for clinical diagnosis

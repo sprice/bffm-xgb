@@ -154,10 +154,14 @@ resource "aws_spot_instance_request" "pipeline" {
 #!/bin/bash
 set -euo pipefail
 
-# Install Python 3.11, pip, tmux, htop (install everything before changing python3 symlink)
+# System tooling + a system python3 (dnf and helper scripts depend on it). NOTE:
+# the PROJECT interpreter is NOT this one -- `uv sync` downloads the version pinned
+# in .python-version (3.14) regardless of the system python below.
 dnf install -y python3.11 python3.11-pip python3.11-devel tmux htop gcc rsync
 
-# Install uv system-wide (project setup runs `uv sync`; see Makefile setup-python).
+# Install uv system-wide. `make setup-python` runs `uv sync`, which provisions the
+# .python-version interpreter (3.14) and the locked deps; the system python3 above
+# is only for OS tooling, not the project venv.
 curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
 
 # Create python3.11 alias without breaking system python3 (dnf depends on it)
@@ -202,10 +206,14 @@ resource "aws_instance" "pipeline" {
 #!/bin/bash
 set -euo pipefail
 
-# Install Python 3.11, pip, tmux, htop (install everything before changing python3 symlink)
+# System tooling + a system python3 (dnf and helper scripts depend on it). NOTE:
+# the PROJECT interpreter is NOT this one -- `uv sync` downloads the version pinned
+# in .python-version (3.14) regardless of the system python below.
 dnf install -y python3.11 python3.11-pip python3.11-devel tmux htop gcc rsync
 
-# Install uv system-wide (project setup runs `uv sync`; see Makefile setup-python).
+# Install uv system-wide. `make setup-python` runs `uv sync`, which provisions the
+# .python-version interpreter (3.14) and the locked deps; the system python3 above
+# is only for OS tooling, not the project venv.
 curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
 
 # Create python3.11 alias without breaking system python3 (dnf depends on it)

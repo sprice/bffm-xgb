@@ -28,6 +28,7 @@ from lib.splits import (
     CANONICAL_VAL_SIZE,
     SPLIT_SCHEME,
     assign_splits,
+    population_signature,
 )
 
 logging.basicConfig(
@@ -143,6 +144,7 @@ def _build_lock_payload(
     mini_ipip_computed: dict[str, dict[str, float | int]],
     mini_ipip_mapping_path: Path,
     mini_ipip_mapping_sha256: str,
+    population_sig: str,
 ) -> dict[str, Any]:
     n_total = int(min(int(computed[d]["n"]) for d in DOMAINS))
     return {
@@ -157,6 +159,10 @@ def _build_lock_payload(
             "test_size": CANONICAL_TEST_SIZE,
             "val_size": CANONICAL_VAL_SIZE,
             "fit_on": "train",
+            # Identity of the respondent population the split (and thus these
+            # train-only norms) were computed on; stage 04 re-checks it so a
+            # stale artifact from a different population fails closed (A5-review).
+            "population_signature": population_sig,
         },
         "n_respondents": n_total,
         "mini_ipip_mapping": {
@@ -342,6 +348,7 @@ def main() -> int:
         mini_ipip_computed,
         mini_ipip_mapping_path=mini_ipip_mapping_path,
         mini_ipip_mapping_sha256=mini_ipip_mapping_sha256,
+        population_sig=population_signature(df["respondent_id"].to_numpy()),
     )
     expected_norms: dict[str, dict[str, float]]
     expected_mini_ipip_norms: dict[str, dict[str, float]]

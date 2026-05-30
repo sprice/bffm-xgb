@@ -388,11 +388,11 @@ set, so the two contributions are not conflated.
 <!-- END:ml_vs_averaging_per_domain -->
 
 Reading the table: the "scoring Δr" columns are the pure ML-over-averaging gain on
-identical items. Note **Emotional Stability is a Mini-IPIP-item win** — under ML
-scoring the Mini-IPIP EST items recover slightly *better* than the
-top-4-by-*r* domain-balanced EST items, so the headline EST improvement is driven
-by the scoring method, not the item selection. The full per-row decomposition is in
-`artifacts/variants/reference/ml_vs_averaging_comparison.json`.
+identical items. For **Emotional Stability** the two 20-item sets recover almost
+equally well under ML scoring while averaging trails both — so the headline EST gain
+is driven by the **scoring method, not the item selection** (compare the small ML-*r*
+gap between the two EST rows against their much larger "scoring Δr"). The full per-row
+decomposition is in `artifacts/variants/reference/ml_vs_averaging_comparison.json`.
 
 The Mini-IPIP comparator now carries the same respondent-level bootstrap 95% CIs as
 every XGBoost method (see the item-selection table above), and the headline
@@ -413,10 +413,10 @@ exactly 20 items (4-4-4-4-4).
 Simulation results closely match the static baseline evaluation (compare the
 overall *r* here to the headline results table). Note the simulation is run on a
 random subsample of the test split (see the table caption for the count), not the
-full *N* = 90,499 used for the baseline and validation tables, so its estimates are
-less precise and should not be read as co-powered with the headline numbers.
-Correlation-ranked selection is equivalent to the optimal static strategy; the
-agreement between the two also confirms the pipeline end-to-end.
+full held-out test split used for the baseline and validation tables, so its
+estimates are less precise and should not be read as co-powered with the headline
+numbers. Correlation-ranked selection is equivalent to the optimal static strategy;
+the agreement between the two also confirms the pipeline end-to-end.
 
 ### Calibration
 

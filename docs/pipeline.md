@@ -4,7 +4,7 @@ Full reproduction instructions for the BFFM-XGB training pipeline — from raw d
 
 ## Prerequisites
 
-- [uv](https://docs.astral.sh/uv/) — manages the Python interpreter (pinned to 3.11 via `.python-version`) and all dependencies. **All Python is run through `uv` (`uv run …`), never a bare `python`.**
+- [uv](https://docs.astral.sh/uv/) — manages the Python interpreter (pinned to 3.14 via `.python-version`; `requires-python` is `>=3.11`) and all dependencies. **All Python is run through `uv` (`uv run …`), never a bare `python`.**
 - Node.js 22+ (for TypeScript inference tests via `npx vitest run`)
 - ~2 GB disk space (dataset + trained models)
 

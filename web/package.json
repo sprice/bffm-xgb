@@ -14,7 +14,7 @@
     "clsx": "2.1.1",
     "hono": "4.12.12",
     "lucide-react": "^1.8.0",
-    "onnxruntime-node": "1.24.3",
+    "onnxruntime-node": "1.24.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-router-dom": "7.13.1",

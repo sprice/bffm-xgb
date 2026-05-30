@@ -1369,6 +1369,57 @@ def test_baselines_ml_vs_avg_emits_paired_xgb_vs_mini_ipip() -> None:
     # Mini-IPIP arm now also carries CIs within the same comparison artifact.
     assert "comparisons" in out
 
+    # A4.7: the domain_balanced averaging arm must use train-fit SUBSET norms, not
+    # full-domain norms (norms=None). Guards a revert of the avg_norms wiring.
+    db_row = next(
+        r for r in out["comparisons"]
+        if r["method"] == "domain_balanced" and r["n_items"] == 20
+    )
+    db_items = baselines._select_domain_balanced(item_pool, 4)
+    subset_cols = {d: [it for it in db_items if it.startswith(d)] for d in DOMAINS}
+    subset = baselines._compute_simple_averaging_scores(
+        X_test, y_test, db_items,
+        norms=baselines._compute_subset_norms(X_test, subset_cols),
+    )["overall"]
+    full_domain = baselines._compute_simple_averaging_scores(
+        X_test, y_test, db_items, norms=None,
+    )["overall"]
+    assert db_row["avg_mae"] == pytest.approx(subset["mae"])
+    assert subset["mae"] != pytest.approx(full_domain["mae"])  # subset vs full-domain diverge
+
+
+def test_paired_xgb_vs_mini_ipip_delta_sign_follows_comparison_minus_reference() -> None:
+    """A4.1: delta = domain_balanced_ML minus mini_ipip_averaging; swapping the arms
+    must flip the sign (the comparison/reference labels alone are hardcoded strings)."""
+    baselines = _load_pipeline_module("09_baselines.py")
+    rng = np.random.default_rng(11)
+    n = 300
+    truth = {d: rng.uniform(0, 100, n) for d in DOMAINS}
+    high_r = {d: {"true": truth[d], "pred": truth[d] + rng.normal(0, 2, n)} for d in DOMAINS}
+    low_r = {d: {"true": truth[d], "pred": rng.normal(50, 5, n)} for d in DOMAINS}
+
+    res = baselines._paired_xgb_vs_mini_ipip(high_r, low_r, n_bootstrap=64, seed=42)
+    assert res["comparison"] == "domain_balanced_ml" and res["reference"] == "mini_ipip_averaging"
+    assert res["delta_pearson_r"] > 0  # comparison (high r) minus reference (low r)
+    lo, hi = res["delta_pearson_r_ci"]
+    assert lo <= res["delta_pearson_r"] <= hi
+    assert len(res["delta_mae_ci"]) == 2
+
+    swapped = baselines._paired_xgb_vs_mini_ipip(low_r, high_r, n_bootstrap=64, seed=42)
+    assert swapped["delta_pearson_r"] < 0  # sign flips when the arms are swapped
+
+
+def test_figures_attach_checksums_matches_files(tmp_path) -> None:
+    """A5.5: _attach_figure_checksums hashes the rendered files per format."""
+    figures = _load_pipeline_module("12_generate_figures.py")
+    (tmp_path / "figX.png").write_bytes(b"png-bytes")
+    (tmp_path / "figX.pdf").write_bytes(b"pdf-bytes")
+    entries = [{"filename": "figX", "formats": ["png", "pdf"], "source_artifacts": []}]
+    figures._attach_figure_checksums(entries, tmp_path)
+    assert entries[0]["sha256"]["png"] == file_sha256(tmp_path / "figX.png")
+    assert entries[0]["sha256"]["pdf"] == file_sha256(tmp_path / "figX.pdf")
+    assert len(entries[0]["sha256"]["png"]) == 64
+
 
 def test_baselines_compute_metrics_fails_closed_on_constant_inputs() -> None:
     baselines = _load_pipeline_module("09_baselines.py")
@@ -4078,6 +4129,115 @@ def test_assign_splits_rejects_small_n_with_empty_partition() -> None:
         assign_splits(np.array([1, 2, 3]))
 
 
+def test_assign_splits_proportions_are_70_15_15_and_train_is_majority() -> None:
+    """Pin the split SIZES so a slice-swap regression (e.g. train collapsing to
+    15% / test ballooning to 70%) fails loudly instead of passing the suite."""
+    import collections
+
+    from lib.splits import assign_splits
+
+    ids = np.arange(1, 10001)
+    counts = collections.Counter(assign_splits(ids, seed=42).tolist())
+    n = len(ids)
+    assert abs(counts["train"] / n - 0.70) < 0.01
+    assert abs(counts["val"] / n - 0.15) < 0.01
+    assert abs(counts["test"] / n - 0.15) < 0.01
+    # Load-bearing: train must be the majority partition (catches a train/test swap).
+    assert counts["train"] > counts["val"] and counts["train"] > counts["test"]
+
+
+def test_population_signature_is_stable_and_population_sensitive() -> None:
+    """The population signature is order-independent, integer-only, and changes
+    when the respondent set changes (the binding stage 04 relies on)."""
+    from lib.splits import population_signature
+
+    ids = np.arange(1, 101)
+    sig = population_signature(ids)
+    assert sig == population_signature(ids[::-1])  # order-independent
+    assert sig != population_signature(np.arange(1, 100))  # dropping one id changes it
+    with pytest.raises(ValueError):
+        population_signature(np.array(["a", "b"]))  # integer ids required
+
+
+def _write_norms_with_split(tmp_path, **split_overrides):
+    """Write a minimal norms artifact whose 'split' block can be tampered per-test."""
+    from lib.splits import (
+        CANONICAL_SEED,
+        CANONICAL_SPLIT_ID,
+        CANONICAL_TEST_SIZE,
+        CANONICAL_VAL_SIZE,
+    )
+
+    split = {
+        "id": CANONICAL_SPLIT_ID,
+        "scheme": "random",
+        "seed": CANONICAL_SEED,
+        "test_size": CANONICAL_TEST_SIZE,
+        "val_size": CANONICAL_VAL_SIZE,
+        "fit_on": "train",
+    }
+    split.update(split_overrides)
+    path = tmp_path / "norms.json"
+    path.write_text(json.dumps({"split": split, "norms": {}}), encoding="utf-8")
+    return path
+
+
+def test_assert_norms_match_split_rejects_each_leaky_branch(tmp_path) -> None:
+    """Lock all rejection branches of the stage-04 leakage guard so a future
+    weakening (e.g. dropping the fit_on check) turns the suite red."""
+    prepare = _load_pipeline_module("04_prepare_data.py")
+    from lib.splits import CANONICAL_SEED, CANONICAL_TEST_SIZE, CANONICAL_VAL_SIZE
+
+    kw = dict(seed=CANONICAL_SEED, test_size=CANONICAL_TEST_SIZE, val_size=CANONICAL_VAL_SIZE)
+
+    # (a) no 'split' block at all
+    no_split = tmp_path / "no_split.json"
+    no_split.write_text(json.dumps({"norms": {}}), encoding="utf-8")
+    with pytest.raises(ValueError):
+        prepare.assert_norms_match_split(no_split, **kw)
+
+    # (b) fit_on != 'train'  (c) wrong split id  (d) each param mismatch
+    with pytest.raises(ValueError):
+        prepare.assert_norms_match_split(_write_norms_with_split(tmp_path, fit_on="full"), **kw)
+    with pytest.raises(ValueError):
+        prepare.assert_norms_match_split(_write_norms_with_split(tmp_path, id="ext_est"), **kw)
+    with pytest.raises(ValueError):
+        prepare.assert_norms_match_split(_write_norms_with_split(tmp_path, seed=CANONICAL_SEED + 1), **kw)
+    with pytest.raises(ValueError):
+        prepare.assert_norms_match_split(
+            _write_norms_with_split(tmp_path, test_size=CANONICAL_TEST_SIZE + 0.05), **kw
+        )
+
+    # Happy path: a matching split block does NOT raise.
+    prepare.assert_norms_match_split(_write_norms_with_split(tmp_path), **kw)
+
+
+def test_assert_norms_match_split_rejects_population_change(tmp_path) -> None:
+    """The population-signature binding rejects a norms artifact fit on a different
+    respondent set (the defense-in-depth leakage gap fix)."""
+    prepare = _load_pipeline_module("04_prepare_data.py")
+    from lib.splits import (
+        CANONICAL_SEED,
+        CANONICAL_TEST_SIZE,
+        CANONICAL_VAL_SIZE,
+        population_signature,
+    )
+
+    kw = dict(seed=CANONICAL_SEED, test_size=CANONICAL_TEST_SIZE, val_size=CANONICAL_VAL_SIZE)
+    pop_a = np.arange(1, 1001)
+    pop_b = np.arange(1, 996)  # 5 respondents removed (an upstream re-ingest)
+    artifact = _write_norms_with_split(tmp_path, population_signature=population_signature(pop_a))
+
+    # Same population -> passes; changed population -> fails closed.
+    prepare.assert_norms_match_split(artifact, respondent_ids=pop_a, **kw)
+    with pytest.raises(ValueError, match="population"):
+        prepare.assert_norms_match_split(artifact, respondent_ids=pop_b, **kw)
+
+    # Backward-compat: an older artifact with no signature skips the population check.
+    legacy = _write_norms_with_split(tmp_path)
+    prepare.assert_norms_match_split(legacy, respondent_ids=pop_b, **kw)
+
+
 # ---------------------------------------------------------------------------
 # Stage 04 prepare — random_split / add_percentile_columns / main fail-closed.
 # ---------------------------------------------------------------------------
@@ -4875,6 +5035,193 @@ def test_train_report_records_locked_params_provenance_chain(
         tuned_payload["hyperparameters"]
     )
     assert report["data"]["hyperparameters_source_sha256"] == file_sha256(tuned_path)
+
+
+def test_train_fails_closed_when_locked_params_edited_after_tune(tmp_path, monkeypatch) -> None:
+    """A5.1: editing tuned_params.json without re-running `make tune` (so the
+    .original.json sidecar disagrees) fails the strict_data_hash lock."""
+    train = _load_pipeline_module("07_train.py")
+    monkeypatch.setattr(train, "PACKAGE_ROOT", tmp_path)
+
+    data_dir = tmp_path / "data" / "processed"
+    artifacts_dir = tmp_path / "artifacts"
+    data_dir.mkdir(parents=True)
+    artifacts_dir.mkdir(parents=True)
+
+    frame = _make_dataset()
+    frame.to_parquet(data_dir / "train.parquet", index=False)
+    frame.to_parquet(data_dir / "val.parquet", index=False)
+    _write_item_info(data_dir / "item_info.json")
+
+    prov = {
+        "script": "06_tune.py",
+        "git_hash": "feedbeef",
+        "train_sha256": file_sha256(data_dir / "train.parquet"),
+        "val_sha256": file_sha256(data_dir / "val.parquet"),
+        "item_info_sha256": file_sha256(data_dir / "item_info.json"),
+    }
+    # Loaded params (edited) vs the tune-time witness (original) disagree.
+    tuned_payload = {"hyperparameters": {"n_estimators": 321, "max_depth": 7}, "provenance": prov}
+    with open(artifacts_dir / "tuned_params.json", "w") as f:
+        json.dump(tuned_payload, f, indent=2)
+    original_payload = {"hyperparameters": {"n_estimators": 999, "max_depth": 3}, "provenance": prov}
+    with open(artifacts_dir / "tuned_params.original.json", "w") as f:
+        json.dump(original_payload, f, indent=2)
+
+    cfg_path = tmp_path / "cfg_edited.yaml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "name: unit_edited",
+                "output_dir: models/unit_edited",
+                "sparsity:",
+                "  enabled: false",
+                "hyperparameters:",
+                "  locked_params: artifacts/tuned_params.json",
+                "  lock_policy: strict_data_hash",
+                "training:",
+                "  cv_folds: 0",
+                "  random_state: 42",
+                "validation:",
+                "  min_pearson_r: 0.0",
+                "  min_coverage_90: 0.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(sys, "argv", ["07_train.py", "--config", str(cfg_path)])
+    assert train.main() == 1
+
+
+def test_train_fails_closed_when_test_parquet_missing_in_publication_mode(tmp_path, monkeypatch) -> None:
+    """A5.6: require_test_split makes a missing test.parquet a hard error."""
+    train = _load_pipeline_module("07_train.py")
+    monkeypatch.setattr(train, "PACKAGE_ROOT", tmp_path)
+    data_dir = tmp_path / "data" / "processed"
+    data_dir.mkdir(parents=True)
+    frame = _make_dataset(n_rows=24)
+    frame.iloc[:14].to_parquet(data_dir / "train.parquet", index=False)
+    frame.iloc[14:].to_parquet(data_dir / "val.parquet", index=False)
+    _write_item_info(data_dir / "item_info.json")
+
+    cfg_path = tmp_path / "cfg_pub_no_test.yaml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "name: unit_pub_no_test",
+                "output_dir: models/unit_pub_no_test",
+                "require_test_split: true",
+                "sparsity:",
+                "  enabled: false",
+                "training:",
+                "  cv_folds: 0",
+                "  random_state: 42",
+                "validation:",
+                "  min_pearson_r: 0.0",
+                "  min_coverage_90: 0.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["07_train.py", "--config", str(cfg_path)])
+    assert train.main() == 1
+
+
+def test_train_fails_closed_when_split_metadata_missing_in_publication_mode(tmp_path, monkeypatch) -> None:
+    """A5.6: require_test_split makes a missing split_metadata.json a hard error."""
+    train = _load_pipeline_module("07_train.py")
+    monkeypatch.setattr(train, "PACKAGE_ROOT", tmp_path)
+    data_dir = tmp_path / "data" / "processed"
+    data_dir.mkdir(parents=True)
+    frame = _make_dataset(n_rows=24)
+    frame.iloc[:14].to_parquet(data_dir / "train.parquet", index=False)
+    frame.iloc[14:19].to_parquet(data_dir / "val.parquet", index=False)
+    frame.iloc[19:].to_parquet(data_dir / "test.parquet", index=False)
+    _write_item_info(data_dir / "item_info.json")
+
+    cfg_path = tmp_path / "cfg_pub_no_meta.yaml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "name: unit_pub_no_meta",
+                "output_dir: models/unit_pub_no_meta",
+                "require_test_split: true",
+                "sparsity:",
+                "  enabled: false",
+                "training:",
+                "  cv_folds: 0",
+                "  random_state: 42",
+                "validation:",
+                "  min_pearson_r: 0.0",
+                "  min_coverage_90: 0.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["07_train.py", "--config", str(cfg_path)])
+    assert train.main() == 1
+
+
+def test_train_report_records_test_rows_from_split_metadata(tmp_path, monkeypatch) -> None:
+    """A5.7: stage 07 writes data.test_rows from split_metadata.json."""
+    train = _load_pipeline_module("07_train.py")
+    monkeypatch.setattr(train, "PACKAGE_ROOT", tmp_path)
+    data_dir = tmp_path / "data" / "processed"
+    data_dir.mkdir(parents=True)
+    frame = _make_dataset(n_rows=24)
+    frame.iloc[:14].to_parquet(data_dir / "train.parquet", index=False)
+    frame.iloc[14:19].to_parquet(data_dir / "val.parquet", index=False)
+    frame.iloc[19:].to_parquet(data_dir / "test.parquet", index=False)
+    _write_item_info(data_dir / "item_info.json")
+    with open(data_dir / "split_metadata.json", "w") as f:
+        json.dump(
+            {
+                "train_sha256": file_sha256(data_dir / "train.parquet"),
+                "val_sha256": file_sha256(data_dir / "val.parquet"),
+                "test_sha256": file_sha256(data_dir / "test.parquet"),
+                "test_rows": 5,
+            },
+            f,
+        )
+
+    cfg_path = tmp_path / "cfg_test_rows.yaml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "name: unit_test_rows",
+                "output_dir: models/unit_test_rows",
+                "sparsity:",
+                "  enabled: false",
+                "training:",
+                "  cv_folds: 0",
+                "  random_state: 42",
+                "validation:",
+                "  min_pearson_r: 0.0",
+                "  min_coverage_90: 0.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(train, "_train_domain_models", lambda *_a, **_k: _dummy_domain_models())
+    monkeypatch.setattr(train, "_validate_model_outputs", lambda *_a, **_k: {"ok": {"passed": True}})
+    monkeypatch.setattr(train, "_evaluate_domain_models", lambda *_a, **_k: _make_eval_metrics(r=0.92, coverage=0.9))
+    monkeypatch.setattr(
+        train,
+        "_compute_calibration_params",
+        lambda *_a, **_k: {d: {"observed_coverage": 0.9, "scale_factor": 1.0} for d in DOMAINS},
+    )
+    monkeypatch.setattr(train.joblib, "dump", lambda *_a, **_k: None)
+    monkeypatch.setattr(sys, "argv", ["07_train.py", "--config", str(cfg_path)])
+    assert train.main() == 0
+
+    report_path = tmp_path / "models" / "unit_test_rows" / "training_report.json"
+    with open(report_path) as f:
+        report = json.load(f)
+    assert report["data"]["test_rows"] == 5
+    # A5.3: tree_method/device recorded in provenance.
+    assert report["provenance"]["tree_method"] == "hist"
+    assert report["provenance"]["device"] == "cpu"
 
 
 # ---------------------------------------------------------------------------

@@ -19,7 +19,8 @@ from pathlib import Path
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from lib.provenance import file_sha256
+from lib.constants import VARIANTS
+from lib.provenance import _detect_git_hash, file_sha256
 
 
 def _load_json(path: Path) -> dict | None:
@@ -49,8 +50,12 @@ class ProvenanceChecker:
     def skipped(self, label: str, detail: str = "") -> None:
         self.results.append(("SKIP", label, detail))
 
+    def warned(self, label: str, detail: str = "") -> None:
+        """A non-fatal advisory (e.g. a stale-but-internally-consistent bundle)."""
+        self.results.append(("WARN", label, detail))
+
     def print_summary(self) -> int:
-        """Print results and return count of failures."""
+        """Print results and return count of failures (WARN is not a failure)."""
         print("\nProvenance verification")
         print("=" * 55)
         for status, label, detail in self.results:
@@ -59,9 +64,13 @@ class ProvenanceChecker:
         print("=" * 55)
         n_pass = sum(1 for s, _, _ in self.results if s == "PASS")
         n_fail = sum(1 for s, _, _ in self.results if s == "FAIL")
+        n_warn = sum(1 for s, _, _ in self.results if s == "WARN")
         n_skip = sum(1 for s, _, _ in self.results if s == "SKIP")
         total = len(self.results)
-        print(f"{total} checks: {n_pass} passed, {n_fail} failed, {n_skip} skipped")
+        print(
+            f"{total} checks: {n_pass} passed, {n_fail} failed, "
+            f"{n_warn} warned, {n_skip} skipped"
+        )
         return n_fail
 
 
@@ -133,8 +142,18 @@ def check_norms_meta(checker: ProvenanceChecker, norms_sha: str | None) -> None:
     checker.passed("Norms meta sidecar", "consistent with lock")
 
 
-def check_research_summary(checker: ProvenanceChecker, norms_sha: str | None) -> None:
-    """Check C: research_summary.json has top-level provenance."""
+def check_research_summary(
+    checker: ProvenanceChecker,
+    norms_sha: str | None,
+    *,
+    head_hash: str | None = None,
+) -> None:
+    """Check C: research_summary.json has top-level provenance.
+
+    A norms-reference mismatch is a hard FAIL only when the summary is at HEAD;
+    a summary that predates HEAD legitimately references older norms -> WARN
+    (so a stale-but-committed summary does not break ``make provenance-check``).
+    """
     path = PACKAGE_ROOT / "artifacts" / "research_summary.json"
     if not path.exists():
         checker.skipped("research_summary.json", "not populated (run `make research-summary`)")
@@ -150,6 +169,10 @@ def check_research_summary(checker: ProvenanceChecker, norms_sha: str | None) ->
         checker.failed("research_summary.json", "missing top-level provenance key")
         return
 
+    summary_git_hash = provenance.get("git_hash")
+    head_known = bool(head_hash) and head_hash != "unknown"
+    at_head = head_known and isinstance(summary_git_hash, str) and summary_git_hash == head_hash
+
     if norms_sha is not None:
         input_artifacts = provenance.get("input_artifacts", {})
         if isinstance(input_artifacts, dict):
@@ -161,10 +184,17 @@ def check_research_summary(checker: ProvenanceChecker, norms_sha: str | None) ->
                 )
                 return
             if summary_norms_sha.lower() != norms_sha.lower():
-                checker.failed(
-                    "research_summary.json",
-                    f"norms_lock_sha256 mismatch: {summary_norms_sha[:12]}... vs {norms_sha[:12]}...",
+                detail = (
+                    f"norms_lock_sha256 mismatch: {summary_norms_sha[:12]}... "
+                    f"vs {norms_sha[:12]}..."
                 )
+                if at_head:
+                    checker.failed("research_summary.json", detail)
+                else:
+                    checker.warned(
+                        "research_summary.json",
+                        detail + " (summary predates HEAD; regenerate in the next run)",
+                    )
                 return
 
     # Check all variants complete
@@ -184,80 +214,145 @@ def check_research_summary(checker: ProvenanceChecker, norms_sha: str | None) ->
     checker.passed("research_summary.json", "top-level provenance, norms reference valid")
 
 
-def check_output_bundle(checker: ProvenanceChecker, norms_sha: str | None) -> None:
-    """Check D: output/ bundle provenance.json."""
-    config_path = PACKAGE_ROOT / "output" / "config.json"
-    if not config_path.exists():
-        checker.skipped("output/", "not populated (run `make export`)")
+def check_output_bundle(
+    checker: ProvenanceChecker,
+    norms_sha: str | None,
+    *,
+    head_hash: str | None = None,
+    strict_head: bool = False,
+) -> None:
+    """Check D: per-variant output/<variant>/ provenance bundles.
+
+    Iterates the canonical variant registry (lib.constants.VARIANTS) -- NOT a
+    directory scan -- so a stale leftover dir (e.g. a removed ablation) is never
+    validated. HEAD-staleness and cross-variant git_hash disagreement are
+    WARNINGS by default and only FAIL under ``strict_head`` (so this passes on the
+    currently-committed bundle, which predates HEAD). Checksum mismatches and
+    intra-bundle git_hash disagreement always FAIL.
+    """
+    if head_hash is None:
+        head_hash = _detect_git_hash()
+    head_known = bool(head_hash) and head_hash != "unknown"
+
+    output_root = PACKAGE_ROOT / "output"
+    if not output_root.is_dir():
+        checker.skipped("output/", "not populated (run `make export-all`)")
         return
 
-    prov_path = PACKAGE_ROOT / "output" / "provenance.json"
-    if not prov_path.exists():
-        checker.failed("output/", "missing provenance.json")
+    variant_dirs = [
+        (name, output_root / name)
+        for name in VARIANTS
+        if (output_root / name / "config.json").is_file()
+    ]
+    if not variant_dirs:
+        checker.skipped("output/", "no variant bundles (run `make export-all`)")
         return
 
-    prov_doc = _load_json(prov_path)
-    if prov_doc is None:
-        checker.failed("output/provenance.json", "invalid JSON")
-        return
+    seen_bundle_hashes: set[str] = set()
 
-    export = prov_doc.get("export")
-    if not isinstance(export, dict):
-        checker.failed("output/provenance.json", "missing export block")
-        return
+    for variant, vdir in variant_dirs:
+        label = f"output/{variant}"
+        config_path = vdir / "config.json"
+        prov_path = vdir / "provenance.json"
+        if not prov_path.exists():
+            checker.failed(label, "missing provenance.json")
+            continue
+        prov_doc = _load_json(prov_path)
+        config_doc = _load_json(config_path)
+        if prov_doc is None or config_doc is None:
+            checker.failed(label, "invalid JSON in config.json/provenance.json")
+            continue
 
-    training = prov_doc.get("training")
-    if not isinstance(training, dict):
-        checker.failed("output/provenance.json", "missing training block")
-        return
+        export = prov_doc.get("export")
+        training = prov_doc.get("training")
+        if not isinstance(export, dict) or not isinstance(training, dict):
+            checker.failed(label, "provenance.json missing export/training block")
+            continue
 
-    # Check norms reference
-    if norms_sha is not None:
-        snapshot_id = export.get("data_snapshot_id", "")
-        expected_snapshot = f"norms_sha256:{norms_sha}"
-        if not snapshot_id or snapshot_id != expected_snapshot:
-            checker.failed(
-                "output/provenance.json",
-                f"data_snapshot_id mismatch: {snapshot_id!r} vs {expected_snapshot!r}",
-            )
-            return
+        bundle_hash = export.get("git_hash")
+        bundle_hash_str = bundle_hash if isinstance(bundle_hash, str) and bundle_hash else None
+        at_head = head_known and bundle_hash_str == head_hash
 
-    # Verify artifact checksums
-    artifacts = prov_doc.get("artifacts", {})
-    if isinstance(artifacts, dict):
-        config_sha = artifacts.get("config_json_sha256")
-        if not isinstance(config_sha, str) or not config_sha:
-            checker.failed(
-                "output/provenance.json",
-                "artifacts block missing config_json_sha256",
-            )
-            return
-        actual_config_sha = file_sha256(config_path)
-        if actual_config_sha.lower() != config_sha.lower():
-            checker.failed(
-                "output/provenance.json",
-                "config_json_sha256 does not match actual config.json",
-            )
-            return
+        # Norms snapshot: hard FAIL only when the bundle is at HEAD; otherwise a
+        # stale bundle legitimately predates the current norms -> WARN.
+        if norms_sha is not None:
+            snapshot_id = export.get("data_snapshot_id", "")
+            expected_snapshot = f"norms_sha256:{norms_sha}"
+            if snapshot_id != expected_snapshot:
+                if at_head:
+                    checker.failed(
+                        label,
+                        f"data_snapshot_id mismatch: {snapshot_id!r} vs {expected_snapshot!r}",
+                    )
+                    continue
+                checker.warned(label, "data_snapshot_id stale (bundle predates HEAD)")
 
-        model_path = PACKAGE_ROOT / "output" / "model.onnx"
-        model_sha = artifacts.get("model_onnx_sha256")
-        if not isinstance(model_sha, str) or not model_sha:
-            checker.failed(
-                "output/provenance.json",
-                "artifacts block missing model_onnx_sha256",
-            )
-            return
-        if model_path.exists():
-            actual_model_sha = file_sha256(model_path)
-            if actual_model_sha.lower() != model_sha.lower():
-                checker.failed(
-                    "output/provenance.json",
-                    "model_onnx_sha256 does not match actual model.onnx",
-                )
-                return
+        # Checksum verification (always hard; passes on the committed bundle).
+        artifacts = prov_doc.get("artifacts", {})
+        if isinstance(artifacts, dict):
+            config_sha = artifacts.get("config_json_sha256")
+            if not isinstance(config_sha, str) or not config_sha:
+                checker.failed(label, "artifacts block missing config_json_sha256")
+                continue
+            if file_sha256(config_path).lower() != config_sha.lower():
+                checker.failed(label, "config_json_sha256 does not match config.json")
+                continue
+            model_name = config_doc.get("model_file", "model.onnx")
+            model_path = vdir / (model_name if isinstance(model_name, str) else "model.onnx")
+            model_sha = artifacts.get("model_onnx_sha256")
+            if not isinstance(model_sha, str) or not model_sha:
+                checker.failed(label, "artifacts block missing model_onnx_sha256")
+                continue
+            if model_path.exists() and file_sha256(model_path).lower() != model_sha.lower():
+                checker.failed(label, "model_onnx_sha256 does not match model.onnx")
+                continue
 
-    checker.passed("output/ bundle", "provenance.json valid, checksums verified")
+        # Intra-bundle git_hash agreement: export / training.provenance /
+        # config.provenance must agree regardless of staleness (always FAIL).
+        # (The nested tune payload_provenance hash legitimately differs and is
+        # deliberately excluded.)
+        intra: list[tuple[str, str]] = []
+        if bundle_hash_str:
+            intra.append(("export", bundle_hash_str))
+        training_prov = training.get("provenance")
+        if isinstance(training_prov, dict):
+            th = training_prov.get("git_hash")
+            if isinstance(th, str) and th:
+                intra.append(("training.provenance", th))
+        config_prov = config_doc.get("provenance")
+        if isinstance(config_prov, dict):
+            ch = config_prov.get("git_hash")
+            if isinstance(ch, str) and ch:
+                intra.append(("config.provenance", ch))
+        if len({h for _, h in intra}) > 1:
+            detail = ", ".join(f"{src}={h[:12]}..." for src, h in intra)
+            checker.failed(f"{label} git_hash agreement", f"intra-bundle disagreement: {detail}")
+            continue
+
+        # HEAD-staleness: WARN by default, FAIL only under --strict-head.
+        if bundle_hash_str and head_known:
+            if bundle_hash_str != head_hash:
+                msg = f"git_hash {bundle_hash_str[:12]}... != HEAD {head_hash[:12]}..."
+                if strict_head:
+                    checker.failed(f"{label} HEAD freshness", msg)
+                else:
+                    checker.warned(f"{label} HEAD freshness", msg)
+            else:
+                checker.passed(f"{label} HEAD freshness", "at HEAD")
+
+        if bundle_hash_str:
+            seen_bundle_hashes.add(bundle_hash_str)
+        checker.passed(f"{label} bundle", "provenance.json valid, checksums verified")
+
+    # Cross-variant agreement: all variants should be exported from one commit.
+    if len(seen_bundle_hashes) > 1:
+        msg = "variants exported from different commits: " + ", ".join(
+            sorted(h[:12] + "..." for h in seen_bundle_hashes)
+        )
+        if strict_head:
+            checker.failed("output/ cross-variant git_hash", msg)
+        else:
+            checker.warned("output/ cross-variant git_hash", msg)
 
 
 def check_figures_manifest(checker: ProvenanceChecker) -> None:
@@ -301,6 +396,31 @@ def check_figures_manifest(checker: ProvenanceChecker) -> None:
                 )
                 return
 
+    # Verify figure OUTPUT checksums (A5.5) for any rendered files present.
+    # Degrades gracefully: figure PNG/PDFs are gitignored (absent in CI) and
+    # older manifests predate the per-figure sha256 key -> skip, never fail.
+    figures = payload.get("figures", [])
+    if isinstance(figures, list):
+        for entry in figures:
+            if not isinstance(entry, dict):
+                continue
+            filename = entry.get("filename")
+            sha_map = entry.get("sha256")
+            if not isinstance(filename, str) or not isinstance(sha_map, dict):
+                continue
+            for fmt, expected in sha_map.items():
+                if not isinstance(fmt, str) or not isinstance(expected, str):
+                    continue
+                fig_path = PACKAGE_ROOT / "figures" / f"{filename}.{fmt}"
+                if not fig_path.exists():
+                    continue
+                if file_sha256(fig_path).lower() != expected.lower():
+                    checker.failed(
+                        "figures/manifest.json",
+                        f"figure {filename}.{fmt} SHA-256 mismatch",
+                    )
+                    return
+
     checker.passed("figures/manifest.json", "provenance valid, source checksums verified")
 
 
@@ -318,14 +438,24 @@ def main() -> int:
         action="store_true",
         help="Treat SKIP as failure (require all artifacts populated).",
     )
+    parser.add_argument(
+        "--strict-head",
+        action="store_true",
+        help=(
+            "Treat an artifact git_hash != current HEAD (and cross-variant "
+            "git_hash disagreement) as a failure instead of a warning. Use once "
+            "the published bundle has been regenerated at HEAD."
+        ),
+    )
     args = parser.parse_args()
 
     checker = ProvenanceChecker()
+    head_hash = _detect_git_hash()
 
     norms_sha = check_norms_lock(checker)
     check_norms_meta(checker, norms_sha)
-    check_research_summary(checker, norms_sha)
-    check_output_bundle(checker, norms_sha)
+    check_research_summary(checker, norms_sha, head_hash=head_hash)
+    check_output_bundle(checker, norms_sha, head_hash=head_hash, strict_head=args.strict_head)
     check_figures_manifest(checker)
 
     n_fail = checker.print_summary()

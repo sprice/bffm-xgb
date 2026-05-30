@@ -4,6 +4,9 @@ output_dir: models/reference
 data_dir: data/processed/canonical_v1
 artifacts_dir: artifacts
 
+# Publication mode: fail closed if the held-out test split / split_metadata.json is missing.
+require_test_split: true
+
 sparsity:
   enabled: true
   focused: true

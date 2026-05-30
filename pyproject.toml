@@ -74,8 +74,8 @@ exclude = [
     "figures",
     "node_modules",
 ]
-# Pin the checked-against language version to the project minimum so results are
-# identical across dev, CI, and a reproducer.
+# Type-check against the supported floor (requires-python >= 3.11) so use of a
+# 3.12+ feature is caught even though the dev/CI runtime is the .python-version pin (3.14).
 pythonVersion = "3.11"
 venvPath = "."
 venv = ".venv"

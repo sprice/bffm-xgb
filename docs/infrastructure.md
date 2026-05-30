@@ -67,9 +67,20 @@ Or in two phases with a pause to review tuned hyperparameters:
 ```bash
 make infra-cpu-up
 make remote-all-1          # download through tune, pulls tuned_params.json
-# (optional) edit artifacts/tuned_params.json
+# (optional) change hyperparameters — see note below
 make remote-all-2          # train through figures, pulls results, tears down
 ```
+
+> **Editing hyperparameters before `remote-all-2`:** the published reference
+> config (`configs/reference.yaml`, `lock_policy: strict_data_hash`) now rejects an
+> in-place edit of `artifacts/tuned_params.json` once `make tune` has written the
+> `tuned_params.original.json` witness — the strict lock fails closed on a
+> hyperparameter-value mismatch so a published model can't silently diverge from
+> what was tuned. To intentionally change hyperparameters, either re-run `make tune`
+> (regenerating both the params and the `.original.json` witness) or pass them
+> explicitly via `make train 1 PARAMS=<file>` (the `--params` path is exempt from
+> the strict value lock). Ablation configs (`lock_policy: reference_model_hash`) are
+> unaffected.
 
 ### Targets
 
@@ -102,7 +113,7 @@ Runs on the GPU instance (`g5.xlarge` with Deep Learning AMI).
 
 **Steps performed on the remote instance:**
 1. `make remote-push` — upload source code + artifacts
-2. `make remote-setup` — install dependencies via `uv sync` (uv is installed system-wide by the instance's cloud-init)
+2. `make remote-setup` — install dependencies via `uv sync` (uv is installed system-wide by the instance's cloud-init). `uv sync` also downloads the project interpreter pinned in `.python-version` (3.14); the system python the cloud-init installs is only for OS tooling, not the project venv. (This cloud-init path is untested on a fresh AWS instance — verify `uv sync` succeeds before relying on a paid run.)
 3. Pipeline stages (via `run-pipeline.sh --end-stage train --gpu`):
    - `download` — fetch IPIP-BFFM data
    - `load` — load into SQLite
@@ -124,7 +135,7 @@ Runs on the CPU instance (`c7a.24xlarge` with Amazon Linux 2023).
 
 **Steps performed on the remote instance:**
 1. `make remote-push` — upload source code + models + artifacts (from Phase 1 pull)
-2. `make remote-setup` — install dependencies via `uv sync` (uv is installed system-wide by the instance's cloud-init)
+2. `make remote-setup` — install dependencies via `uv sync` (uv is installed system-wide by the instance's cloud-init). `uv sync` also downloads the project interpreter pinned in `.python-version` (3.14); the system python the cloud-init installs is only for OS tooling, not the project venv. (This cloud-init path is untested on a fresh AWS instance — verify `uv sync` succeeds before relying on a paid run.)
 3. Data pipeline (via `make` directly):
    - `make download load norms norms-check prepare correlations`
 4. Eval + export pipeline (via `make` directly):

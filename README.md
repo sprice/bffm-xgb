@@ -1,6 +1,6 @@
 # BFFM-XGB: Big Five From 20 Questions
 
-Open-source pipeline for training XGBoost quantile regression models that predict Big Five personality scores from partial questionnaire responses. Trained on [~603k respondents](https://openpsychometrics.org/_rawdata) from the [IPIP-BFFM](https://ipip.ori.org/newBigFive5broadKey.htm) dataset with sparsity augmentation, the 15 exported ONNX models (5 domains x 3 quantiles) produce percentile scores with empirical 90% prediction intervals from as few as 20 items (validated to ~90% coverage at the 20-item operating point; no post-hoc width adjustment is applied).
+Open-source pipeline for training XGBoost quantile regression models that predict Big Five personality scores from partial questionnaire responses. Trained on 422k of [~603k respondents](https://openpsychometrics.org/_rawdata) (a seed-locked 70/15/15 split) from the [IPIP-BFFM](https://ipip.ori.org/newBigFive5broadKey.htm) dataset with sparsity augmentation, the 15 exported ONNX models (5 domains x 3 quantiles) produce percentile scores with empirical 90% prediction intervals from as few as 20 items (validated to ~90% coverage at the 20-item operating point; no post-hoc width adjustment is applied).
 
 **What's here:**
 - **Models** — Pre-trained ONNX models, public domain, on [HuggingFace](https://huggingface.co/shawnprice/bffm-xgb)
@@ -10,7 +10,7 @@ Open-source pipeline for training XGBoost quantile regression models that predic
 
 ### Comparison with the Mini-IPIP
 
-The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) is the standard short personality test in psychology research (Donnellan et al., 2006). Both approaches use 20 items (4 per domain) to recover the full 50-item IPIP-BFFM scale scores. All *r* values are Pearson correlations with the full 50-item scale on a held-out test set (*N* = 90,499). "Overall *r*" is a respondent-pooled correlation across all five domains' stacked percentile vectors (numerically ≈ the mean of the per-domain *r*).
+The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) is the standard short personality test in psychology research (Donnellan et al., 2006). Both approaches use 20 items (4 per domain) to recover the full 50-item IPIP-BFFM scale scores. All *r* values are Pearson correlations with the full 50-item scale on the held-out `canonical_v1` test set (*N* = 90,498). "Overall *r*" is a respondent-pooled correlation across all five domains' stacked percentile vectors (numerically ≈ the mean of the per-domain *r*).
 
 |                              | Mini-IPIP              | BFFM-XGB-20                 |
 | ---------------------------- | ---------------------- | --------------------------- |
@@ -104,6 +104,8 @@ bffm-xgb/
 
 - Norms are derived from self-selected online respondents (OSPP); they may not represent the general population
 - Models are trained on English-language IPIP items only
+- **No demographic-subgroup or measurement-invariance analysis** has been performed; accuracy may vary by gender, age, or region
+- **No external / out-of-distribution validation:** every reported number is on a held-out split of the *same* OSPP dataset, so these are *score-recovery* metrics (recovering the full-scale score from a subset of its own items), not external-trait validity
 - Accuracy degrades with fewer items; 20 items is the recommended minimum for reliable scoring
 - Intended for educational use only
 

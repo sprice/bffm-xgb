@@ -267,6 +267,22 @@ def _verify_locked_params_hash_lock(
             allow_none=True,
         )
 
+        # Hyperparameter VALUES must also match the tune-time witness
+        # (tuned_params.original.json), so editing tuned_params.json without
+        # re-running `make tune` fails loudly instead of silently training a
+        # different model. No-op when the sidecar is absent (first reference
+        # train, or a checkout shipping only tuned_params.json).
+        expected_hp = _normalize_sha256_hex_strict(
+            params_source.get("original_hyperparameters_sha256"),
+            label="tuned_params.original.hyperparameters_sha256",
+            allow_none=True,
+        )
+        actual_hp = _normalize_sha256_hex_strict(
+            params_source.get("hyperparameters_sha256"),
+            label="hyperparameters_sha256",
+            allow_none=True,
+        )
+
         mismatches: list[str] = []
         if expected_train != actual_train:
             mismatches.append("train_sha256 mismatch")
@@ -276,6 +292,11 @@ def _verify_locked_params_hash_lock(
             mismatches.append("item_info_sha256 mismatch")
         if expected_split is not None and expected_split != actual_split:
             mismatches.append("split_signature mismatch")
+        if expected_hp is not None and actual_hp is not None and expected_hp != actual_hp:
+            mismatches.append(
+                "hyperparameters_sha256 mismatch (locked params edited after "
+                "`make tune`; the .original.json sidecar disagrees)"
+            )
 
         if mismatches:
             details = ", ".join(mismatches)
@@ -1293,6 +1314,11 @@ def main() -> int:
         )
         return 1
 
+    # Publication mode: when set (in the published configs), a missing held-out
+    # test split or split_metadata is a hard error instead of a warning, so a
+    # publication run cannot silently produce a model with no provenance lock.
+    require_test_split = bool(config.get("require_test_split", False))
+
     reference_model_dir_raw = hp_cfg.get("reference_model_dir")
     reference_model_dir: Path | None = None
     if reference_model_dir_raw is not None:
@@ -1389,6 +1415,11 @@ def main() -> int:
                     with open(original_path) as f:
                         original_payload = json.load(f)
                     original_params = original_payload.get("hyperparameters", {})
+                    # Witness of what `make tune` actually produced; the strict
+                    # lock compares this against the loaded params (A5.1).
+                    params_source["original_hyperparameters_sha256"] = _stable_json_sha256(
+                        original_params
+                    )
                     overrides = {}
                     for key in sorted(set(params) | set(original_params)):
                         if params.get(key) != original_params.get(key):
@@ -1569,6 +1600,13 @@ def main() -> int:
             val_sha256=val_sha256,
             test_sha256=test_sha256,
         )
+    elif require_test_split:
+        log.error(
+            "test.parquet not found in %s but require_test_split is set "
+            "(publication mode). Run stage 04 to produce the held-out test split.",
+            data_dir,
+        )
+        return 1
     else:
         log.warning(
             "test.parquet not found in %s; split signature will be unavailable in training report.",
@@ -1576,6 +1614,7 @@ def main() -> int:
         )
 
     split_metadata_sha256: str | None = None
+    test_rows_meta: int | None = None
     if split_metadata_path.exists():
         try:
             split_metadata_sha256 = file_sha256(split_metadata_path)
@@ -1585,6 +1624,13 @@ def main() -> int:
                 val_sha256=val_sha256,
                 test_sha256=test_sha256,
             )
+            # Authoritative per-respondent test count (A5.7) so the exporter need
+            # not backfill it from a pooled validation N. Metadata-only read --
+            # never touches test.parquet, so the leakage invariant holds.
+            with open(split_metadata_path) as f:
+                _split_md = json.load(f)
+            _test_rows = _split_md.get("test_rows")
+            test_rows_meta = _test_rows if isinstance(_test_rows, int) else None
         except (OSError, json.JSONDecodeError, ValueError, FileNotFoundError) as e:
             log.error("Invalid split metadata at %s: %s", split_metadata_path, e)
             return 1
@@ -1600,6 +1646,13 @@ def main() -> int:
             "  Split metadata verified (train/val/test hashes match %s)",
             split_metadata_path,
         )
+    elif require_test_split:
+        log.error(
+            "split_metadata.json not found in %s but require_test_split is set "
+            "(publication mode). Run stage 04 to produce split_metadata.json.",
+            data_dir,
+        )
+        return 1
     else:
         log.warning(
             "split_metadata.json not found in %s; proceeding without stage-04 hash lock.",
@@ -2017,6 +2070,11 @@ def main() -> int:
             "cv_folds": cv_folds,
             "cv_parallel_folds": cv_parallel_folds,
             "gpu": args.gpu,
+            # _create_xgb_model does not set tree_method, so XGBoost uses its
+            # default ("hist") on both CPU and the device="cuda" GPU path; record
+            # that truthfully rather than a params key the estimator never reads.
+            "tree_method": "hist",
+            "device": "cuda" if args.gpu else "cpu",
             "hyperparameters_source_mode": params_source.get("mode"),
             "hyperparameters_sha256": params_source.get("hyperparameters_sha256"),
             "hyperparameters_source_sha256": params_source.get("file_sha256"),
@@ -2053,6 +2111,7 @@ def main() -> int:
             "train_sha256": train_sha256,
             "val_sha256": val_sha256,
             "test_sha256": test_sha256,
+            "test_rows": test_rows_meta,
             "split_signature": split_signature,
             "split_metadata_sha256": split_metadata_sha256,
             "item_info_path": relative_to_root(item_info_path) if item_info_path.exists() else None,

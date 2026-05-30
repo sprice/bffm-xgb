@@ -34,6 +34,7 @@ from lib.splits import (
     CANONICAL_VAL_SIZE,
     SPLIT_SCHEME,
     assign_splits,
+    population_signature,
 )
 
 logging.basicConfig(
@@ -148,15 +149,27 @@ def add_percentile_columns(df: pd.DataFrame, norms: dict) -> pd.DataFrame:
     return df
 
 
-def assert_norms_match_split(norms_path: Path, *, seed: float, test_size: float, val_size: float) -> None:
+def assert_norms_match_split(
+    norms_path: Path,
+    *,
+    seed: float,
+    test_size: float,
+    val_size: float,
+    respondent_ids=None,
+) -> None:
     """Fail closed unless the norms artifact was fit on this exact train split.
 
     Percentile targets are leakage-free only if they come from norms fit on
     precisely the rows stage 04 labels ``train``. Stage 03 records the split it
-    fit on in a ``split`` block (id/scheme/seed/test_size/val_size, fit_on). We
+    fit on in a ``split`` block (id/scheme/seed/test_size/val_size, fit_on) plus a
+    ``population_signature`` of the respondent set the split was computed on. We
     refuse to proceed if that block is missing (e.g. a stale full-dataset norms
-    file) or if it does not match the split this run is producing, rather than
-    silently applying mismatched norms.
+    file), if its split parameters do not match this run, or — when
+    ``respondent_ids`` is given and the artifact records a signature — if the
+    population this run loaded differs from the one the norms were fit on (a
+    stale artifact after an upstream re-ingest would otherwise re-introduce
+    leakage with a green guard). Older artifacts without a signature skip only
+    that last check.
     """
     with open(norms_path) as f:
         payload = json.load(f)
@@ -190,6 +203,20 @@ def assert_norms_match_split(norms_path: Path, *, seed: float, test_size: float,
             + ". The split this run produces would not match the rows the norms were "
             "fit on. Re-run stage 03 with matching parameters or use the canonical defaults."
         )
+    # Population binding: the split (and thus the train-only norms) is a function
+    # of the respondent-id SET. If the artifact recorded that set's signature and
+    # this run loaded a different population, the labels diverge and percentiles
+    # would be leaky -- fail closed. (Absent on older artifacts -> skipped.)
+    recorded_sig = split.get("population_signature")
+    if recorded_sig is not None and respondent_ids is not None:
+        actual_sig = population_signature(respondent_ids)
+        if actual_sig != recorded_sig:
+            raise ValueError(
+                f"Norms artifact {norms_path} was fit on a different respondent "
+                f"population than this run loaded (population_signature "
+                f"{str(recorded_sig)[:12]}... != {actual_sig[:12]}...). An upstream "
+                "re-ingest changed the data; re-run stage 03 (make norms)."
+            )
 
 
 def validate_percentile_computation() -> bool:
@@ -524,7 +551,11 @@ def main() -> int:
     log.info("Step 3: Adding percentile columns (train-only norms)...")
     try:
         assert_norms_match_split(
-            norms_path, seed=seed, test_size=test_size, val_size=val_size
+            norms_path,
+            seed=seed,
+            test_size=test_size,
+            val_size=val_size,
+            respondent_ids=df["respondent_id"].to_numpy(),
         )
         norms = load_norms(norms_path)
     except (ValueError, OSError, json.JSONDecodeError) as e:

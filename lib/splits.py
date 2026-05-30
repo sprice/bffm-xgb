@@ -14,6 +14,8 @@ computing bin edges over the full dataset before splitting) is avoided.
 
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 
 # Canonical split identity (the single split that governs every headline claim).
@@ -24,6 +26,28 @@ CANONICAL_TEST_SIZE = 0.15
 CANONICAL_VAL_SIZE = 0.15
 
 SPLIT_LABELS = ("train", "val", "test")
+
+
+def population_signature(respondent_ids) -> str:
+    """Stable sha256 of the respondent-id SET that determines the split.
+
+    The split (:func:`assign_splits`) is a pure function of the set of respondent
+    ids, so this signature is the population identity that the norms were fit
+    against. Stage 03 records it and stage 04 re-checks it, so a stale norms
+    artifact (computed on a different population — e.g. after a stage-02 re-ingest
+    that changes the valid-row set) is rejected instead of silently producing
+    leaky percentile targets. Deterministic across processes/machines (sorted
+    unique ids, fixed little-endian int64 encoding) and independent of row order
+    or SQLite byte layout.
+    """
+    ids = np.asarray(respondent_ids)
+    if ids.dtype.kind not in ("i", "u"):
+        raise ValueError(
+            "respondent ids must be integer-typed for a stable population signature "
+            f"(got dtype {ids.dtype!r})"
+        )
+    unique = np.unique(ids)  # sorted, de-duplicated
+    return hashlib.sha256(unique.astype("<i8").tobytes()).hexdigest()
 
 
 def assign_splits(
