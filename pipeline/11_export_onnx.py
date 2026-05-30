@@ -25,9 +25,16 @@ from typing import Any
 import joblib
 import numpy as np
 
-from lib.constants import DOMAINS, DOMAIN_LABELS, ITEM_COLUMNS
+from lib.constants import DOMAIN_LABELS, DOMAINS, ITEM_COLUMNS
 from lib.norms import load_norms
-from lib.provenance import add_provenance_args, build_provenance, relative_to_root, sanitize_paths, file_sha256, _resolve_norms_lock_path
+from lib.provenance import (
+    _resolve_norms_lock_path,
+    add_provenance_args,
+    build_provenance,
+    file_sha256,
+    relative_to_root,
+    sanitize_paths,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -534,9 +541,8 @@ def generate_config(
             "artifact-derived backfills will be skipped."
         )
 
-    # Load validation/simulation results for metrics
+    # Load validation results for metrics
     val_path = artifacts_dir / "validation_results.json"
-    sim_path = artifacts_dir / "simulation_results.json"
 
     # Backfill n_test from validation artifacts when training report lacks it.
     if (

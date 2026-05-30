@@ -14,7 +14,6 @@ Key functions:
 """
 
 from collections import defaultdict
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -27,7 +26,7 @@ def apply_adaptive_sparsity(
     item_info: dict,
     min_items: int = 8,
     max_items: int = 40,
-    rng: Optional[np.random.Generator] = None,
+    rng: np.random.Generator | None = None,
 ) -> pd.DataFrame:
     """
     Apply sparsity that mimics adaptive item selection patterns.
@@ -98,7 +97,7 @@ def apply_adaptive_sparsity_balanced(
     min_items_per_domain: int = 4,
     min_total_items: int = 20,
     max_total_items: int = 40,
-    rng: Optional[np.random.Generator] = None,
+    rng: np.random.Generator | None = None,
 ) -> pd.DataFrame:
     """
     Apply sparsity with guaranteed domain coverage.
@@ -214,7 +213,7 @@ def apply_adaptive_sparsity_balanced(
 def apply_imbalanced_sparsity(
     X: pd.DataFrame,
     item_info: dict,
-    rng: Optional[np.random.Generator] = None,
+    rng: np.random.Generator | None = None,
 ) -> pd.DataFrame:
     """
     Apply imbalanced sparsity patterns that allow 0-item domains.
@@ -375,10 +374,10 @@ def apply_imbalanced_sparsity(
 def apply_focused_sparsity(
     X: pd.DataFrame,
     item_info: dict,
-    mini_ipip_items: Optional[dict[str, list[str]]] = None,
+    mini_ipip_items: dict[str, list[str]] | None = None,
     include_mini_ipip: bool = True,
     include_imbalanced: bool = False,
-    rng: Optional[np.random.Generator] = None,
+    rng: np.random.Generator | None = None,
 ) -> pd.DataFrame:
     """
     Apply Phase 11a focused sparsity distribution.
@@ -510,7 +509,7 @@ def apply_multipass_sparsity(
     min_total_items: int = 20,
     max_total_items: int = 40,
     focused: bool = False,
-    mini_ipip_items: Optional[dict[str, list[str]]] = None,
+    mini_ipip_items: dict[str, list[str]] | None = None,
     include_mini_ipip: bool = True,
     include_imbalanced: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -584,13 +583,13 @@ def apply_sparsity_single(
     item_info: dict,
     balanced: bool = True,
     focused: bool = False,
-    mini_ipip_items: Optional[dict[str, list[str]]] = None,
+    mini_ipip_items: dict[str, list[str]] | None = None,
     include_mini_ipip: bool = True,
     include_imbalanced: bool = False,
     min_items_per_domain: int = 4,
     min_total_items: int = 20,
     max_total_items: int = 40,
-    rng: Optional[np.random.Generator] = None,
+    rng: np.random.Generator | None = None,
 ) -> pd.DataFrame:
     """
     Dispatch wrapper: apply the appropriate sparsity method to X.

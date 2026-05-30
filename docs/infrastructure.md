@@ -102,7 +102,7 @@ Runs on the GPU instance (`g5.xlarge` with Deep Learning AMI).
 
 **Steps performed on the remote instance:**
 1. `make remote-push` — upload source code + artifacts
-2. `make remote-setup` — create venv, install `requirements.txt`
+2. `make remote-setup` — install dependencies via `uv sync` (uv is installed system-wide by the instance's cloud-init)
 3. Pipeline stages (via `run-pipeline.sh --end-stage train --gpu`):
    - `download` — fetch IPIP-BFFM data
    - `load` — load into SQLite
@@ -124,7 +124,7 @@ Runs on the CPU instance (`c7a.24xlarge` with Amazon Linux 2023).
 
 **Steps performed on the remote instance:**
 1. `make remote-push` — upload source code + models + artifacts (from Phase 1 pull)
-2. `make remote-setup` — create venv, install `requirements.txt`
+2. `make remote-setup` — install dependencies via `uv sync` (uv is installed system-wide by the instance's cloud-init)
 3. Data pipeline (via `make` directly):
    - `make download load norms norms-check prepare correlations`
 4. Eval + export pipeline (via `make` directly):

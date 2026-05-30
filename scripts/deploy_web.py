@@ -33,7 +33,7 @@ def _load_dotenv() -> None:
         return
 
     try:
-        from dotenv import load_dotenv
+        from dotenv import load_dotenv  # pyright: ignore[reportMissingImports]
 
         load_dotenv(env_path, override=False)
     except ImportError:

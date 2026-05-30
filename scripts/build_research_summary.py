@@ -19,7 +19,6 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 from lib.constants import VARIANTS
 from lib.provenance import build_provenance, file_sha256, relative_to_root, sanitize_paths
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",

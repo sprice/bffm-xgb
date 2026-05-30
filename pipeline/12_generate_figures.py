@@ -26,14 +26,14 @@ import logging
 from typing import Any
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 
-from lib.constants import DOMAINS
-from lib.provenance import build_provenance, relative_to_root, file_sha256
+from lib.provenance import build_provenance, file_sha256, relative_to_root
 
 logging.basicConfig(
     level=logging.INFO,
@@ -447,6 +447,7 @@ def figure_2_domain_starvation(df: pd.DataFrame, fig_dir: Path) -> None:
 
     vmin, vmax = 0, 10
 
+    im = None  # AxesImage from the last sub-heatmap; reused for the shared colorbar
     for idx, k in enumerate(k_vals):
         ax = axes[idx]
         sub = df[df["n_items"] == k]
@@ -517,6 +518,7 @@ def figure_2_domain_starvation(df: pd.DataFrame, fig_dir: Path) -> None:
 
     # Colorbar
     cbar_ax = fig.add_axes([0.93, 0.18, 0.015, 0.65])
+    assert im is not None, "no sub-heatmaps were rendered (empty k_vals)"
     cbar = fig.colorbar(im, cax=cbar_ax)
     cbar.set_label("Items", fontsize=9)
     cbar.ax.tick_params(labelsize=8)

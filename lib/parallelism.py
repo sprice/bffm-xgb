@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from typing import Any
 
-
 XGB_N_JOBS_ENV = "BFFM_XGB_N_JOBS"
 
 

@@ -31,13 +31,11 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
-import scipy.special
 from tqdm import tqdm
 
-from lib.constants import DOMAINS, DOMAIN_LABELS, ITEM_COLUMNS
+from lib.constants import DOMAIN_LABELS, DOMAINS, ITEM_COLUMNS
 from lib.item_info import (
     load_item_info_for_model,
-    load_item_info_strict,
 )
 from lib.norms import load_norms
 from lib.provenance import add_provenance_args, build_provenance, relative_to_root

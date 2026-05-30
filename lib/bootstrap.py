@@ -11,7 +11,8 @@ Key functions:
 - respondent_bootstrap_multi_domain: Multi-domain respondent-level bootstrap
 """
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any, TypedDict
 
 import numpy as np
 from scipy import stats
@@ -153,6 +154,17 @@ def paired_bootstrap_cis(
     return cis
 
 
+class MetricDeltaBootstrap(TypedDict):
+    """Return type of :func:`bootstrap_metric_deltas`.
+
+    ``point_deltas`` maps each metric name to a scalar (comparison - reference);
+    ``delta_cis`` maps each metric name to its ``{"lower", "upper"}`` CI bounds.
+    """
+
+    point_deltas: dict[str, float]
+    delta_cis: dict[str, dict[str, float]]
+
+
 def bootstrap_metric_deltas(
     metric_fn: Callable[..., dict[str, float]],
     reference_arrays: tuple[np.ndarray, ...],
@@ -161,7 +173,7 @@ def bootstrap_metric_deltas(
     seed: int = 42,
     strata: np.ndarray | None = None,
     ci_levels: tuple[float, float] = (2.5, 97.5),
-) -> dict[str, dict[str, float]]:
+) -> MetricDeltaBootstrap:
     """Compute bootstrap CIs for metric deltas between two prediction sets.
 
     For each bootstrap resample, computes metrics for both reference and

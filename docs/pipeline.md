@@ -4,21 +4,21 @@ Full reproduction instructions for the BFFM-XGB training pipeline — from raw d
 
 ## Prerequisites
 
-- Python 3.10+
+- [uv](https://docs.astral.sh/uv/) — manages the Python interpreter (pinned to 3.11 via `.python-version`) and all dependencies. **All Python is run through `uv` (`uv run …`), never a bare `python`.**
 - Node.js 22+ (for TypeScript inference tests via `npx vitest run`)
 - ~2 GB disk space (dataset + trained models)
 
 ## Setup and Run
 
 ```bash
-# Create virtual environment and install Python, TypeScript, and web dependencies
+# Install Python deps (uv sync), plus TypeScript and web dependencies
 make setup
 
 # Run the full pipeline (download -> load -> norms-check -> ... -> figures)
 make all
 ```
 
-`make setup` runs `setup-python`, `setup-typescript`, and `setup-web` to install all three ecosystems.
+`make setup` runs `setup-python`, `setup-typescript`, and `setup-web` to install all three ecosystems. `setup-python` runs `uv sync`, which creates `.venv` and installs the locked dependencies from `pyproject.toml` + `uv.lock` (including the `dev` group: pytest, ruff, basedpyright).
 
 `make all` runs all local stages in order (through figure generation), including hyperparameter tuning, strict norm drift checks, cross-variant evaluation (`research-eval`), ONNX export via `export-all`, and research notes generation. You can also run individual stages (see [Pipeline Stages](#pipeline-stages) below).
 
@@ -39,6 +39,46 @@ make test-web
 ```
 
 `make test` runs `test-lib`, `test-inference`, and `test-web`.
+
+## Linting & Formatting
+
+```bash
+make lint     # ruff check (pipeline/, lib/, scripts/, python/)
+make format   # ruff format (apply)
+```
+
+Linting uses [ruff](https://docs.astral.sh/ruff/) (config in `[tool.ruff]` in
+`pyproject.toml`; ruleset `E4/E7/E9/F/I/UP`). The CI `lint` job runs `ruff
+check` on every push/PR and the tree is kept at **zero** findings (no baseline).
+`E402` (import-not-at-top) is ignored for `pipeline/` and `scripts/`, where a
+`sys.path.insert(...)` precedes the `lib.*` imports by design.
+
+## Type Checking
+
+```bash
+# Static type-check the Python sources (pipeline/, lib/, scripts/, python/)
+make typecheck
+```
+
+Type checking uses [basedpyright](https://docs.basedpyright.com/) in `standard`
+mode (configured in `[tool.basedpyright]` in `pyproject.toml`, pinned in
+`pyproject.toml`'s `[dependency-groups] dev`). The CI `typecheck` job runs it on
+every push/PR.
+
+The checker is gated against a committed baseline at
+`.basedpyright/baseline.json`: it **fails only on new diagnostics**, so new code
+must be type-clean. pandas is fully typed via the `pandas-stubs` dev dependency;
+the baseline grandfathers the residual false-positives from libraries that ship
+no/incomplete type stubs (xgboost, onnxmltools, scipy, matplotlib) and should
+only ever shrink. To inspect or re-snapshot it:
+
+```bash
+uv run basedpyright --writebaseline   # re-record current diagnostics
+```
+
+Regenerate the baseline only after intentionally reducing it; never grow it to
+hide a genuine new error. (The committed baseline is generated locally; if a CI
+run surfaces an environment-specific stub diagnostic, refresh it there.)
 
 ## Pipeline Stages
 

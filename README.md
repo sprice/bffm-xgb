@@ -45,9 +45,11 @@ Give it answers (1–5 scale, reverse-scored), get percentiles with 90% confiden
 ## Reproduce
 
 ```bash
-make setup    # Python, TypeScript, and web dependencies
-make all      # Full pipeline: download through figures
-make test     # All tests: lib, inference, and web
+make setup     # Python (uv sync), TypeScript, and web dependencies
+make all       # Full pipeline: download through figures
+make test      # All tests: lib, inference, and web
+make lint      # Lint (ruff)
+make typecheck # Static type check (basedpyright, standard mode)
 ```
 
 See [docs/pipeline.md](docs/pipeline.md) for pipeline stages, training variants, hyperparameter tuning, and research evaluation.
@@ -78,8 +80,9 @@ bffm-xgb/
 ├── LICENSE.md          MIT License
 ├── Makefile            Orchestrates the full pipeline
 ├── NOTICES.md          Third-party attributions (CC0, IPIP, OSPP)
-├── pyproject.toml      pytest configuration (pythonpath, testpaths)
-├── requirements.txt    Python dependencies
+├── pyproject.toml      Project metadata, dependencies, and tool config (ruff, basedpyright, pytest)
+├── uv.lock             Locked, hashed dependency versions (uv)
+├── .python-version     Pinned Python (uv)
 └── README.md           This file
 ```
 

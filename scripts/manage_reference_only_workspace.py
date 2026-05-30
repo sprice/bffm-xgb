@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import shutil
-import sys
 from pathlib import Path
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent

@@ -2,8 +2,81 @@
 name = "bffm-xgb-pipeline"
 version = "1.0.0"
 description = "IPIP-BFFM XGBoost sparse quantile training pipeline"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
+dependencies = [
+    "xgboost==3.1.3",
+    "numpy==2.4.2",
+    "scipy==1.17.0",
+    "scikit-learn==1.8.0",
+    "pandas==3.0.0",
+    "onnxruntime==1.24.1",
+    "onnxmltools==1.14.0",
+    "onnx==1.20.0",
+    "matplotlib==3.10.8",
+    "optuna==4.3.0",
+    "joblib==1.5.1",
+    "tqdm==4.67.1",
+    "pyarrow==23.0.0",
+    "pyyaml==6.0.2",
+    "huggingface_hub==1.4.1",
+]
+
+[dependency-groups]
+# Dev / CI tooling (installed by `uv sync`; excluded with `uv sync --no-dev`).
+dev = [
+    "pytest==9.0.2",
+    "ruff==0.15.15",
+    "basedpyright==1.39.6",
+    "pandas-stubs==3.0.0.260204",
+]
+
+[tool.uv]
+# The repo root is an application (pipeline scripts), not an installable
+# package, so uv should not try to build/install it — only sync its deps.
+package = false
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["data", "models", "output", "figures", ".venv"]
+
+[tool.ruff.lint]
+# Pragmatic, high-signal set: pyflakes (F), import/syntax errors (E4/E7/E9),
+# import sorting (I), and pyupgrade (UP). No line-length (E5) nag — formatting
+# is the formatter's job. Broader sets (B/SIM/C4) can be added later.
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# `sys.path.insert(0, PACKAGE_ROOT)` before the `lib.*` imports is an
+# intentional, repo-wide pattern so numbered scripts can import lib/ without
+# installation. E402 (import-not-at-top) is therefore expected in these dirs.
+"pipeline/*" = ["E402"]
+"scripts/*" = ["E402"]
+# Test defers the `inference` import until after a skip guard (intentional).
+"python/test_inference.py" = ["E402"]
+
+[tool.basedpyright]
+# Static type-checking gate. Run `make typecheck` (or `uv run basedpyright`).
+# CI fails on any NEW diagnostic relative to the committed baseline
+# (.basedpyright/baseline.json); the baseline grandfathers pre-existing
+# pandas/numpy/matplotlib stub noise and should only ever shrink.
+include = ["pipeline", "lib", "scripts", "python"]
+exclude = [
+    "**/__pycache__",
+    ".venv",
+    "data",
+    "models",
+    "output",
+    "figures",
+    "node_modules",
+]
+# Pin the checked-against language version to the project minimum so results are
+# identical across dev, CI, and a reproducer.
+pythonVersion = "3.11"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"

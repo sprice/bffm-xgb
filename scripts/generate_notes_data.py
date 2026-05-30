@@ -639,7 +639,8 @@ def gen_validation_quintiles() -> str:
                 center_piw.append(piw)
 
     if tail_mae and center_mae:
-        avg = lambda xs: sum(xs) / len(xs)
+        def avg(xs):
+            return sum(xs) / len(xs)
         rows.append(
             [
                 "**Avg Tails (Q1/Q5, all domains)**",

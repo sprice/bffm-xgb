@@ -7,11 +7,11 @@ canonical_v1 split). Percentile targets are computed from train-only norms
 """
 
 import argparse
-import sys
-import json
 import hashlib
+import json
 import logging
 import sqlite3
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -22,7 +22,7 @@ from scipy import stats
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from lib.constants import DOMAINS, DOMAIN_LABELS, ITEMS_PER_DOMAIN
+from lib.constants import DOMAINS, ITEMS_PER_DOMAIN
 from lib.item_info import file_sha256
 from lib.norms import load_norms
 from lib.provenance import add_provenance_args, build_provenance, relative_to_root
@@ -373,7 +373,7 @@ def write_metadata(
             f"train={train_sha256}\n"
             f"val={val_sha256}\n"
             f"test={test_sha256}\n"
-        ).encode("utf-8")
+        ).encode()
     ).hexdigest()
 
     meta_path = output_dir / "split_metadata.json"

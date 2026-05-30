@@ -16,16 +16,16 @@ Usage:
     python pipeline/07_train.py --config configs/ablation_none.yaml
 """
 
-import sys
-import gc
-import json
-import hashlib
-import logging
-import time
 import argparse
+import gc
+import hashlib
+import json
+import logging
+import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
@@ -33,32 +33,33 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 import joblib
 import numpy as np
 import pandas as pd
+import xgboost as xgb
 from scipy import stats
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.model_selection import KFold, train_test_split
-import xgboost as xgb
 
 from lib.constants import (
-    DOMAINS,
-    DOMAIN_LABELS,
-    ITEM_COLUMNS,
-    ITEMS_PER_DOMAIN,
-    QUANTILES,
-    QUANTILE_NAMES,
-    DEFAULT_PARAMS,
     DEFAULT_EARLY_STOPPING_ROUNDS,
-    DEFAULT_STAGE07_CV_FOLDS,
     DEFAULT_LOCAL_CV_PARALLEL_FOLDS,
+    DEFAULT_PARAMS,
+    DEFAULT_STAGE07_CV_FOLDS,
+    DOMAIN_LABELS,
+    DOMAINS,
+    ITEM_COLUMNS,
+    QUANTILE_NAMES,
+    QUANTILES,
 )
-from lib.scoring import raw_score_to_percentile
-from lib.provenance import build_provenance, add_provenance_args, relative_to_root
-from lib.item_info import load_item_info_strict, file_sha256, load_training_report
+from lib.item_info import file_sha256, load_item_info_strict, load_training_report
 from lib.mini_ipip import load_mini_ipip_mapping
 from lib.parallelism import coerce_positive_int, resolve_default_xgb_n_jobs
+from lib.provenance import add_provenance_args, build_provenance, relative_to_root
 from lib.provenance_checks import (
     build_split_signature as _build_split_signature,
+)
+from lib.provenance_checks import (
     verify_split_metadata_hash_lock,
 )
+from lib.scoring import raw_score_to_percentile
 from lib.sparsity import apply_sparsity_single
 
 logging.basicConfig(
@@ -361,8 +362,8 @@ def _apply_sparsity_single(
     X: pd.DataFrame,
     item_info: dict,
     config: dict,
-    mini_ipip_items: Optional[dict[str, list[str]]] = None,
-    rng: Optional[np.random.Generator] = None,
+    mini_ipip_items: dict[str, list[str]] | None = None,
+    rng: np.random.Generator | None = None,
 ) -> pd.DataFrame:
     """Dispatch wrapper: apply the appropriate sparsity method to X based on config."""
     sparsity_cfg = config.get("sparsity", {})
@@ -387,7 +388,7 @@ def _apply_multipass_sparsity(
     config: dict,
     n_passes: int = 3,
     base_seed: int = 42,
-    mini_ipip_items: Optional[dict[str, list[str]]] = None,
+    mini_ipip_items: dict[str, list[str]] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Apply sparsity augmentation with multiple passes.
 
@@ -424,7 +425,7 @@ def _create_xgb_model(
     quantile: float,
     params: dict,
     n_jobs: int = 1,
-    early_stopping_rounds: Optional[int] = None,
+    early_stopping_rounds: int | None = None,
     gpu: bool = False,
 ) -> xgb.XGBRegressor:
     """Create XGBoost quantile regression model."""
@@ -457,8 +458,8 @@ def _train_single_domain(
     y_train: pd.DataFrame,
     params: dict,
     n_jobs: int = 1,
-    X_eval: Optional[pd.DataFrame] = None,
-    y_eval: Optional[pd.DataFrame] = None,
+    X_eval: pd.DataFrame | None = None,
+    y_eval: pd.DataFrame | None = None,
     gpu: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     """Train q05/q50/q95 models for a single domain. Thread-safe."""
@@ -480,6 +481,7 @@ def _train_single_domain(
         )
 
         if use_early_stopping:
+            assert y_eval is not None  # guaranteed by use_early_stopping definition
             y_domain_eval = y_eval[score_col]
             model.fit(
                 X_train, y_domain,
@@ -504,8 +506,8 @@ def _train_domain_models(
     y_train: pd.DataFrame,
     params: dict,
     n_jobs: int = 1,
-    X_eval: Optional[pd.DataFrame] = None,
-    y_eval: Optional[pd.DataFrame] = None,
+    X_eval: pd.DataFrame | None = None,
+    y_eval: pd.DataFrame | None = None,
     parallel_domains: int = 1,
     gpu: bool = False,
 ) -> dict[str, dict[str, Any]]:
@@ -591,7 +593,7 @@ def _evaluate_domain_models(
     domain_models: dict[str, dict[str, Any]],
     X_test: pd.DataFrame,
     y_test: pd.DataFrame,
-    calibration_params: Optional[dict[str, dict[str, float]]] = None,
+    calibration_params: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, dict[str, float]]:
     """Evaluate models on test set (percentile space)."""
     metrics: dict[str, dict[str, float]] = {}
@@ -780,7 +782,7 @@ def _run_cv_fold(
     config: dict,
     params: dict,
     n_jobs: int,
-    mini_ipip_items: Optional[dict[str, list[str]]],
+    mini_ipip_items: dict[str, list[str]] | None,
     parallel_domains: int,
     random_state: int,
     augment_sparsity: bool,
@@ -798,8 +800,8 @@ def _run_cv_fold(
     y_pct_test_fold = y_pct.iloc[test_idx].copy()
 
     # Split early-stopping eval set BEFORE augmentation.
-    X_eval_es: Optional[pd.DataFrame] = None
-    y_eval_es: Optional[pd.DataFrame] = None
+    X_eval_es: pd.DataFrame | None = None
+    y_eval_es: pd.DataFrame | None = None
     X_fit_pre = X_train_fold
     y_fit_pre = y_train_fold
 
@@ -865,7 +867,7 @@ def _run_cross_validation_robustness(
     params: dict,
     n_folds: int = DEFAULT_STAGE07_CV_FOLDS,
     n_jobs: int = 1,
-    mini_ipip_items: Optional[dict[str, list[str]]] = None,
+    mini_ipip_items: dict[str, list[str]] | None = None,
     parallel_domains: int = 1,
     parallel_folds: int = 1,
     gpu: bool = False,
@@ -1089,7 +1091,7 @@ def _validate_model_outputs(
     return results
 
 
-def _threshold_for_domain(value: Any, domain: str) -> Optional[float]:
+def _threshold_for_domain(value: Any, domain: str) -> float | None:
     """Resolve scalar-or-dict threshold configs for a domain."""
     if value is None:
         return None
@@ -1558,8 +1560,8 @@ def main() -> int:
 
     train_sha256 = file_sha256(train_path)
     val_sha256 = file_sha256(val_path)
-    test_sha256: Optional[str] = None
-    split_signature: Optional[str] = None
+    test_sha256: str | None = None
+    split_signature: str | None = None
     if test_path.exists():
         test_sha256 = file_sha256(test_path)
         split_signature = _build_split_signature(
@@ -1573,7 +1575,7 @@ def main() -> int:
             data_dir,
         )
 
-    split_metadata_sha256: Optional[str] = None
+    split_metadata_sha256: str | None = None
     if split_metadata_path.exists():
         try:
             split_metadata_sha256 = file_sha256(split_metadata_path)
@@ -1619,7 +1621,7 @@ def main() -> int:
     # Load item info for sparsity augmentation and sparse validation gates
     item_info: dict = {}
     item_info_path = data_dir / "item_info.json"
-    item_info_sha256: Optional[str] = None
+    item_info_sha256: str | None = None
     sparse_gate_cfg = validation_cfg.get("sparse_20", {})
     sparse_gate_enabled = bool(sparse_gate_cfg.get("enabled", False))
     requires_item_info = bool(sparsity_cfg.get("enabled", False) or sparse_gate_enabled)
@@ -1656,7 +1658,7 @@ def main() -> int:
         return 1
 
     # Load Mini-IPIP mapping
-    mini_ipip_items: Optional[dict[str, list[str]]] = None
+    mini_ipip_items: dict[str, list[str]] | None = None
     include_mini_ipip = bool(sparsity_cfg.get("include_mini_ipip", True))
     if sparsity_cfg.get("enabled", False) and include_mini_ipip:
         try:
@@ -1704,8 +1706,8 @@ def main() -> int:
         log.info("  Applying sparsity augmentation...")
 
         # Split early-stopping eval set BEFORE augmentation
-        X_eval_es: Optional[pd.DataFrame] = None
-        y_eval_es: Optional[pd.DataFrame] = None
+        X_eval_es: pd.DataFrame | None = None
+        y_eval_es: pd.DataFrame | None = None
         X_fit_pre = X_train
         y_fit_pre = y_train
 
@@ -1835,7 +1837,7 @@ def main() -> int:
     min_coverage_90 = validation_cfg.get("min_coverage_90")
     gate_failed = False
 
-    def _valid_float(value: Any) -> Optional[float]:
+    def _valid_float(value: Any) -> float | None:
         if not isinstance(value, (int, float, np.integer, np.floating)):
             return None
         f = float(value)

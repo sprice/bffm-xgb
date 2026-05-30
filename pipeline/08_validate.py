@@ -14,13 +14,13 @@ Usage:
     python pipeline/08_validate.py --data-dir data/processed/canonical_v1 --model-dir models/reference --plots --bootstrap-n 2000
 """
 
-import sys
+import argparse
 import json
 import logging
+import sys
 import time
-import argparse
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
@@ -30,21 +30,18 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from lib.constants import (
-    DOMAINS,
-    DOMAIN_LABELS,
-    ITEM_COLUMNS,
-    ITEMS_PER_DOMAIN,
-    QUANTILES,
-    QUANTILE_NAMES,
-)
 from lib.bootstrap import respondent_bootstrap_multi_domain
-from lib.scoring import raw_score_to_percentile
-from lib.provenance import build_provenance, add_provenance_args, relative_to_root
+from lib.constants import (
+    DOMAIN_LABELS,
+    DOMAINS,
+    ITEM_COLUMNS,
+)
 from lib.item_info import load_item_info_for_model
+from lib.provenance import add_provenance_args, build_provenance, relative_to_root
 from lib.provenance_checks import (
     verify_model_data_split_provenance as _verify_model_data_split_provenance,
 )
+from lib.scoring import raw_score_to_percentile
 from lib.sparsity import apply_adaptive_sparsity_balanced as apply_sparse_balanced
 
 logging.basicConfig(
@@ -199,7 +196,7 @@ def _apply_adaptive_sparsity_balanced(
     min_items_per_domain: int = 4,
     min_total_items: int = 20,
     max_total_items: int = 20,
-    rng: Optional[np.random.Generator] = None,
+    rng: np.random.Generator | None = None,
 ) -> pd.DataFrame:
     """Apply domain-balanced sparsity (delegates to lib.sparsity canonical impl)."""
     return apply_sparse_balanced(
@@ -249,7 +246,7 @@ def _predict_all_domains(
     domain_models: dict[str, dict[str, Any]],
     X: pd.DataFrame,
     y: pd.DataFrame,
-    calibration_params: Optional[dict[str, dict[str, float]]] = None,
+    calibration_params: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, dict[str, np.ndarray]]:
     """Run predictions for all domains and return per-domain arrays."""
     per_domain: dict[str, dict[str, np.ndarray]] = {}

@@ -32,13 +32,13 @@ Usage:
     python pipeline/09_baselines.py --data-dir data/processed/canonical_v1 --model-dir models/reference --bootstrap-n 2000
 """
 
-import sys
+import argparse
 import json
 import logging
+import sys
 import time
-import argparse
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
@@ -49,24 +49,24 @@ import pandas as pd
 from scipy import stats
 from tqdm import tqdm
 
+from lib.bootstrap import respondent_bootstrap_multi_domain, vectorized_pearsonr_bootstrap
 from lib.constants import (
-    DOMAINS,
     DOMAIN_LABELS,
+    DOMAINS,
     ITEM_COLUMNS,
     ITEMS_PER_DOMAIN,
 )
-from lib.bootstrap import respondent_bootstrap_multi_domain, vectorized_pearsonr_bootstrap
-from lib.mini_ipip import flatten_mini_ipip_items, load_mini_ipip_mapping
-from lib.norms import load_mini_ipip_norms
-from lib.scoring import raw_score_to_percentile
-from lib.provenance import build_provenance, add_provenance_args, relative_to_root
 from lib.item_info import (
     file_sha256,
     load_item_info_for_model,
 )
+from lib.mini_ipip import flatten_mini_ipip_items, load_mini_ipip_mapping
+from lib.norms import load_mini_ipip_norms
+from lib.provenance import add_provenance_args, build_provenance, relative_to_root
 from lib.provenance_checks import (
     verify_model_data_split_provenance as _verify_model_data_split_provenance,
 )
+from lib.scoring import raw_score_to_percentile
 
 logging.basicConfig(
     level=logging.INFO,
@@ -171,7 +171,7 @@ def _choose_calibration_for_budget(
     n_items: int,
     sparse_calibration: dict[str, dict[str, float]],
     full_calibration: dict[str, dict[str, float]],
-) -> tuple[Optional[dict[str, dict[str, float]]], str]:
+) -> tuple[dict[str, dict[str, float]] | None, str]:
     """Select calibration regime for a given item budget."""
     if n_items >= 50 and full_calibration:
         return full_calibration, "full_50"
@@ -341,7 +341,7 @@ def _predict_all_domains(
     X_sparse: np.ndarray,
     all_columns: list[str],
     y_test: pd.DataFrame,
-    calibration_params: Optional[dict[str, dict[str, float]]] = None,
+    calibration_params: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, dict[str, np.ndarray]]:
     """Run predictions for all domains and return per-domain arrays.
 
@@ -561,7 +561,7 @@ def _evaluate_method(
     all_columns: list[str],
     y_test: pd.DataFrame,
     selected_items: list[str],
-    calibration_params: Optional[dict[str, dict[str, float]]],
+    calibration_params: dict[str, dict[str, float]] | None,
     n_bootstrap: int = 0,
     seed: int = 42,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
@@ -632,7 +632,7 @@ def _evaluate_random_aggregated(
     available_items: list[str],
     n_items: int,
     n_random_trials: int,
-    calibration_params: Optional[dict[str, dict[str, float]]],
+    calibration_params: dict[str, dict[str, float]] | None,
     n_bootstrap: int = 0,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     """Evaluate random selection averaged over multiple trials."""
@@ -738,7 +738,7 @@ def _compute_simple_averaging_scores(
     X_test: pd.DataFrame,
     y_test: pd.DataFrame,
     selected_items: list[str],
-    norms: Optional[dict[str, dict[str, float]]] = None,
+    norms: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, Any]:
     """Score using simple domain averaging (traditional psychometrics)."""
     missing_pct_cols = [f"{d}_percentile" for d in DOMAINS if f"{d}_percentile" not in y_test.columns]
@@ -852,7 +852,7 @@ def _run_comparisons_at_k(
     n_items: int,
     mini_ipip_mapping: dict[str, list[str]],
     mini_ipip_norms: dict[str, dict[str, float]],
-    calibration_params: Optional[dict[str, dict[str, float]]],
+    calibration_params: dict[str, dict[str, float]] | None,
     calibration_regime: str,
     n_bootstrap: int,
     n_random_trials: int,
@@ -1232,7 +1232,7 @@ def _print_summary(
                 continue
             m = results[method]
             r_str = f"r={m['pearson_r']:.3f}"
-            if f"pearson_r_ci" in m:
+            if "pearson_r_ci" in m:
                 ci = m["pearson_r_ci"]
                 r_str += f" [{ci[0]:.3f},{ci[1]:.3f}]"
             coverage_raw = m.get("coverage_90")

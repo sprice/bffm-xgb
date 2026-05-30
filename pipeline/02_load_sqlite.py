@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Load IPIP-FFM CSV into a local SQLite database with IPC filtering, reverse scoring, and domain scores."""
 
-import sys
-import json
 import hashlib
+import json
 import logging
 import sqlite3
+import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 # Add package root to path for lib imports
@@ -16,8 +15,8 @@ PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
 from lib.constants import (
-    DOMAINS,
     DOMAIN_CSV_TO_INTERNAL,
+    DOMAINS,
     ITEMS_PER_DOMAIN,
     REVERSE_KEYED,
 )

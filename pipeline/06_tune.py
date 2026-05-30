@@ -18,38 +18,38 @@ Usage:
     python pipeline/06_tune.py --trials 50 --output artifacts/tuned_params.json
 """
 
-import sys
+import argparse
 import gc
 import json
 import logging
 import shutil
+import sys
 import time
-import argparse
 import warnings
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
 import numpy as np
 import pandas as pd
+import xgboost as xgb
 from scipy import stats
 from scipy.stats import ConstantInputWarning
-import xgboost as xgb
 
 from lib.constants import (
+    DEFAULT_EARLY_STOPPING_ROUNDS,
+    DEFAULT_PARAMS,
     DOMAINS,
     ITEM_COLUMNS,
-    DEFAULT_PARAMS,
-    DEFAULT_EARLY_STOPPING_ROUNDS,
 )
-from lib.scoring import raw_score_to_percentile
-from lib.provenance import build_provenance, add_provenance_args
 from lib.item_info import file_sha256, load_item_info_strict
 from lib.mini_ipip import load_mini_ipip_mapping
 from lib.parallelism import coerce_positive_int, resolve_default_xgb_n_jobs
+from lib.provenance import add_provenance_args, build_provenance
 from lib.provenance_checks import build_split_signature as _build_split_signature
+from lib.scoring import raw_score_to_percentile
 from lib.sparsity import apply_adaptive_sparsity_balanced, apply_sparsity_single
 
 logging.basicConfig(
@@ -158,7 +158,7 @@ def _apply_sparsity_for_tuning(
     item_info: dict,
     config: dict,
     rng: np.random.Generator,
-    mini_ipip_items: Optional[dict[str, list[str]]] = None,
+    mini_ipip_items: dict[str, list[str]] | None = None,
 ) -> pd.DataFrame:
     """Apply training-consistent sparsity to data for tuning."""
     sparsity_cfg = config.get("sparsity", {})
@@ -188,7 +188,7 @@ def _create_xgb_model(
     quantile: float,
     params: dict,
     n_jobs: int = 1,
-    early_stopping_rounds: Optional[int] = None,
+    early_stopping_rounds: int | None = None,
     gpu: bool = False,
 ) -> xgb.XGBRegressor:
     """Create an XGBoost quantile regression model."""
@@ -228,7 +228,7 @@ def _run_optuna_tuning(
     n_trials: int,
     item_info: dict,
     config: dict,
-    mini_ipip_items: Optional[dict[str, list[str]]] = None,
+    mini_ipip_items: dict[str, list[str]] | None = None,
     parallel_trials: int = 1,
     gpu: bool = False,
 ) -> dict:
@@ -642,7 +642,7 @@ def main() -> int:
     # Load item info for sparse-20 objective and sparsity masking
     item_info: dict = {}
     item_info_sha256: str | None = None
-    mini_ipip_items: Optional[dict[str, list[str]]] = None
+    mini_ipip_items: dict[str, list[str]] | None = None
     try:
         item_info, item_info_sha256 = _load_item_info(
             data_dir,

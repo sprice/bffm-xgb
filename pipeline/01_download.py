@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Download the IPIP-FFM dataset ZIP from openpsychometrics.org."""
 
-import sys
-import os
 import hashlib
 import logging
+import os
+import sys
 import zipfile
 from pathlib import Path
 from urllib.request import urlretrieve

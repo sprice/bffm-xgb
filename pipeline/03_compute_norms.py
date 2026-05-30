@@ -17,7 +17,7 @@ import pandas as pd
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from lib.constants import DOMAINS, DOMAIN_LABELS, ITEM_COLUMNS
+from lib.constants import DOMAIN_LABELS, DOMAINS, ITEM_COLUMNS
 from lib.item_info import file_sha256
 from lib.mini_ipip import load_mini_ipip_mapping
 from lib.provenance import add_provenance_args, build_provenance, relative_to_root
@@ -88,13 +88,15 @@ def _compute_norms(df: pd.DataFrame) -> dict[str, dict[str, float | int]]:
     stats: dict[str, dict[str, float | int]] = {}
     for domain in DOMAINS:
         col = f"{domain}_score"
-        values = pd.to_numeric(df[col], errors="coerce").dropna().astype(float)
-        if values.empty:
+        numeric = pd.to_numeric(df[col], errors="coerce")
+        values = np.asarray(numeric, dtype=float)
+        values = values[~np.isnan(values)]
+        if values.size == 0:
             raise ValueError(f"{col} has no valid rows")
 
         mean = float(values.mean())
         sd = float(values.std(ddof=1))
-        n = int(values.shape[0])
+        n = int(values.size)
 
         if not np.isfinite(mean) or not np.isfinite(sd) or sd <= 0:
             raise ValueError(
@@ -118,13 +120,15 @@ def _compute_mini_ipip_norms(
                 f"Mini-IPIP mapping for {domain} includes missing columns: {missing_items}"
             )
 
-        values = pd.to_numeric(df[items].mean(axis=1), errors="coerce").dropna().astype(float)
-        if values.empty:
+        numeric = pd.to_numeric(df[items].mean(axis=1), errors="coerce")
+        values = np.asarray(numeric, dtype=float)
+        values = values[~np.isnan(values)]
+        if values.size == 0:
             raise ValueError(f"Mini-IPIP {domain} has no valid rows")
 
         mean = float(values.mean())
         sd = float(values.std(ddof=1))
-        n = int(values.shape[0])
+        n = int(values.size)
         if not np.isfinite(mean) or not np.isfinite(sd) or sd <= 0:
             raise ValueError(
                 f"Invalid Mini-IPIP norm stats for {domain}: mean={mean}, sd={sd}, n={n}"

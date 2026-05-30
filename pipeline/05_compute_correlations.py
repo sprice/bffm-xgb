@@ -2,9 +2,9 @@
 """Compute item-domain correlations, cross-domain info, and select universal first item."""
 
 import argparse
-import sys
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +17,7 @@ from tqdm import tqdm
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from lib.constants import DOMAINS, DOMAIN_LABELS, ITEMS_PER_DOMAIN, REVERSE_KEYED
+from lib.constants import DOMAIN_LABELS, DOMAINS, ITEMS_PER_DOMAIN, REVERSE_KEYED
 from lib.item_info import file_sha256
 from lib.provenance import add_provenance_args, build_provenance, relative_to_root
 

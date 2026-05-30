@@ -157,6 +157,9 @@ set -euo pipefail
 # Install Python 3.11, pip, tmux, htop (install everything before changing python3 symlink)
 dnf install -y python3.11 python3.11-pip python3.11-devel tmux htop gcc rsync
 
+# Install uv system-wide (project setup runs `uv sync`; see Makefile setup-python).
+curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
+
 # Create python3.11 alias without breaking system python3 (dnf depends on it)
 ln -sf /usr/bin/python3.11 /usr/local/bin/python3
 
@@ -201,6 +204,9 @@ set -euo pipefail
 
 # Install Python 3.11, pip, tmux, htop (install everything before changing python3 symlink)
 dnf install -y python3.11 python3.11-pip python3.11-devel tmux htop gcc rsync
+
+# Install uv system-wide (project setup runs `uv sync`; see Makefile setup-python).
+curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
 
 # Create python3.11 alias without breaking system python3 (dnf depends on it)
 ln -sf /usr/bin/python3.11 /usr/local/bin/python3

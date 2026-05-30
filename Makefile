@@ -1,7 +1,7 @@
-PYTHON := python3
 VENV := .venv
-PIP := $(VENV)/bin/pip
-PY := $(VENV)/bin/python
+# All Python execution goes through uv (never a bare `python`); `uv run` uses
+# the project's .venv, synced from pyproject.toml + uv.lock by `uv sync`.
+PY := uv run python
 
 PARAMS ?=
 _PARAMS_FLAG := $(if $(PARAMS),--params $(PARAMS),)
@@ -46,7 +46,7 @@ VALID_TRAIN_RUNS := 1 2 3
 RESEARCH_EVAL_TARGETS := research-eval-reference research-eval-ablation-none research-eval-ablation-focused
 _CALLER_PARALLEL_MAKEFLAGS = $(filter -j% -j --jobserver-auth=% --jobserver-fds=%,$(MAKEFLAGS))
 
-.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full prepare correlations tune train train-1 train-2 train-3 validate baselines simulate export export-all export-repo-readme export-reference export-ablation-none export-ablation-focused figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-summary research-summary-strict notes upload-hf upload-hf-reference test test-lib test-inference test-web archive clean restore web-setup web-dev web-build deploy-web
+.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full prepare correlations tune train train-1 train-2 train-3 validate baselines simulate export export-all export-repo-readme export-reference export-ablation-none export-ablation-focused figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-summary research-summary-strict notes upload-hf upload-hf-reference lint format typecheck test test-lib test-inference test-web archive clean restore web-setup web-dev web-build deploy-web
 
 # Ordered phases. Each stage is a sub-make so the order holds even under `make -j`
 # (recipe lines run sequentially), while each stage keeps its own internal
@@ -69,8 +69,7 @@ all:
 setup: setup-python setup-typescript setup-web
 
 setup-python:
-	$(PYTHON) -m venv $(VENV)
-	$(PIP) install -r requirements.txt
+	uv sync
 
 setup-typescript:
 	cd typescript && npm ci
@@ -206,13 +205,22 @@ upload-hf: $(_UPLOAD_HF_DEPS)
 upload-hf-reference: $(_UPLOAD_HF_DEPS)
 	$(PY) pipeline/13_upload_hf.py --variant reference $(_RESET_FLAG)
 
+lint:
+	uv run ruff check pipeline lib scripts python
+
+format:
+	uv run ruff format pipeline lib scripts python
+
+typecheck:
+	uv run basedpyright
+
 test: test-lib test-inference test-web
 
 test-lib:
 	$(PY) -m pytest tests/ -v --tb=short
 
 test-inference:
-	cd python && ../$(PY) -m pytest -v
+	$(PY) -m pytest python/ -v
 	cd typescript && npx vitest run
 
 test-web:
