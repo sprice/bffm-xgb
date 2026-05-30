@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -1451,7 +1452,7 @@ def test_simulate_defaults_to_sem_stopping(tmp_path, monkeypatch) -> None:
         domain: {"q05": object(), "q50": object(), "q95": object()}
         for domain in DOMAINS
     }
-    monkeypatch.setattr(simulate, "load_models", lambda *_args, **_kwargs: dummy_models)
+    monkeypatch.setattr(simulate, "load_domain_models", lambda *_args, **_kwargs: dummy_models)
     monkeypatch.setattr(
         simulate,
         "load_norms",
@@ -1721,7 +1722,7 @@ def test_simulate_model_dir_relative_to_package_root(tmp_path, monkeypatch) -> N
         captured["models_dir"] = path
         return dummy_models
 
-    monkeypatch.setattr(simulate, "load_models", _fake_load_models)
+    monkeypatch.setattr(simulate, "load_domain_models", _fake_load_models)
     monkeypatch.setattr(simulate, "load_norms", lambda *_args, **_kwargs: {d: {"mean": 3.0, "sd": 0.8} for d in DOMAINS})
     monkeypatch.setattr(
         simulate,
@@ -2977,6 +2978,24 @@ def test_makefile_remote_gpu_push_excludes_backup_dir() -> None:
     assert "--exclude='.backup/'" in out
 
 
+def _make_fake_onnxruntime(session_cls):
+    """Build a fake `onnxruntime` module for the parity tests.
+
+    Stage 11 now creates single-threaded sessions via SessionOptions /
+    ExecutionMode (see `_deterministic_session`), so the stub must expose those
+    alongside InferenceSession.
+    """
+    return type(
+        "_Ort",
+        (),
+        {
+            "InferenceSession": session_cls,
+            "SessionOptions": type("_Opts", (), {}),
+            "ExecutionMode": type("_EM", (), {"ORT_SEQUENTIAL": 0}),
+        },
+    )()
+
+
 def test_export_validate_parity_allows_tiny_relative_drift(monkeypatch) -> None:
     export = _load_pipeline_module("11_export_onnx.py")
 
@@ -2989,7 +3008,7 @@ def test_export_validate_parity_allows_tiny_relative_drift(monkeypatch) -> None:
             return b"fake-onnx"
 
     class _FakeSession:
-        def __init__(self, _bytes):
+        def __init__(self, _bytes, sess_options=None, providers=None):
             pass
 
         def get_inputs(self):
@@ -3001,7 +3020,7 @@ def test_export_validate_parity_allows_tiny_relative_drift(monkeypatch) -> None:
             pred[71] = np.float32(4.413167953491211)
             return [pred]
 
-    monkeypatch.setitem(sys.modules, "onnxruntime", type("_Ort", (), {"InferenceSession": _FakeSession})())
+    monkeypatch.setitem(sys.modules, "onnxruntime", _make_fake_onnxruntime(_FakeSession))
 
     export.validate_parity({"agr_q50": _FakeJoblibModel()}, {"agr_q50": _FakeOnnxModel()})
 
@@ -3018,7 +3037,7 @@ def test_export_validate_parity_still_fails_on_material_drift(monkeypatch) -> No
             return b"fake-onnx"
 
     class _FakeSession:
-        def __init__(self, _bytes):
+        def __init__(self, _bytes, sess_options=None, providers=None):
             pass
 
         def get_inputs(self):
@@ -3030,7 +3049,7 @@ def test_export_validate_parity_still_fails_on_material_drift(monkeypatch) -> No
             pred[71] = np.float32(4.0005)
             return [pred]
 
-    monkeypatch.setitem(sys.modules, "onnxruntime", type("_Ort", (), {"InferenceSession": _FakeSession})())
+    monkeypatch.setitem(sys.modules, "onnxruntime", _make_fake_onnxruntime(_FakeSession))
 
     with pytest.raises(SystemExit) as exc_info:
         export.validate_parity({"agr_q50": _FakeJoblibModel()}, {"agr_q50": _FakeOnnxModel()})
@@ -3427,7 +3446,7 @@ def test_simulate_sem_sweep_writes_provenance(tmp_path, monkeypatch) -> None:
         domain: {"q05": object(), "q50": object(), "q95": object()}
         for domain in DOMAINS
     }
-    monkeypatch.setattr(simulate, "load_models", lambda *_args, **_kwargs: dummy_models)
+    monkeypatch.setattr(simulate, "load_domain_models", lambda *_args, **_kwargs: dummy_models)
     monkeypatch.setattr(simulate, "load_norms", lambda *_args, **_kwargs: {d: {"mean": 3.0, "sd": 0.8} for d in DOMAINS})
     monkeypatch.setattr(
         simulate,
@@ -4238,6 +4257,37 @@ def test_assert_norms_match_split_rejects_population_change(tmp_path) -> None:
     prepare.assert_norms_match_split(legacy, respondent_ids=pop_b, **kw)
 
 
+def test_stage04_sample_relies_on_population_guard_not_a_hard_refusal(tmp_path) -> None:
+    """`make smoke` passes --sample to stage 04 (the old unconditional refusal was
+    removed). Leakage-safety now rests entirely on the population_signature guard:
+    a sampled split against FULL-population norms must still be rejected, while a
+    sample-matched smoke norms file is accepted. This locks the smoke relaxation."""
+    prepare = _load_pipeline_module("04_prepare_data.py")
+    from lib.splits import (
+        CANONICAL_SEED,
+        CANONICAL_TEST_SIZE,
+        CANONICAL_VAL_SIZE,
+        population_signature,
+    )
+
+    kw = dict(seed=CANONICAL_SEED, test_size=CANONICAL_TEST_SIZE, val_size=CANONICAL_VAL_SIZE)
+    full_pop = np.arange(1, 10001)  # stage 03 without --sample
+    sample_pop = np.arange(1, 801)  # stage 04 --sample 800 (first N respondents)
+
+    # Full-population norms vs a sampled split -> rejected (would be leaky/incoherent).
+    full_norms = _write_norms_with_split(
+        tmp_path, population_signature=population_signature(full_pop)
+    )
+    with pytest.raises(ValueError, match="population"):
+        prepare.assert_norms_match_split(full_norms, respondent_ids=sample_pop, **kw)
+
+    # Sample-matched smoke norms (stage 03 --sample 800) vs the same sampled split -> accepted.
+    smoke_norms = _write_norms_with_split(
+        tmp_path, population_signature=population_signature(sample_pop)
+    )
+    prepare.assert_norms_match_split(smoke_norms, respondent_ids=sample_pop, **kw)
+
+
 # ---------------------------------------------------------------------------
 # Stage 04 prepare — random_split / add_percentile_columns / main fail-closed.
 # ---------------------------------------------------------------------------
@@ -4653,6 +4703,62 @@ def test_notes_data_splits_renders_current_split_schema(
     assert "Split: canonical_v1 — plain random partition (70/15/15, seed=42)." in table
     assert "700" in table
     assert "150" in table
+
+
+# ── A6.9 generated-document drift guards ─────────────────────────────────────
+
+
+def test_notes_section_generators_match_template_markers() -> None:
+    """Every NOTES section generator must have matching BEGIN/END markers in the
+    committed template, and every marker pair must have a generator. A mismatch
+    means `make notes` silently SKIPs that section, so stale numbers survive a
+    regeneration — exactly the drift this guards against."""
+    notes = _load_paper_module("generate_notes_data.py")
+    template = notes.NOTES_TEMPLATE_PATH.read_text()
+
+    generator_names = set(notes.SECTION_GENERATORS)
+    # Only standalone marker LINES are real section markers (this matches what
+    # update_notes substitutes); an inline `<!-- BEGIN:section_name -->` in the
+    # header comment documenting the format is not a section.
+    begin_markers = set(re.findall(r"(?m)^<!-- BEGIN:([a-z0-9_]+) -->$", template))
+    end_markers = set(re.findall(r"(?m)^<!-- END:([a-z0-9_]+) -->$", template))
+
+    # Every generator has a complete marker pair in the template.
+    missing = sorted(n for n in generator_names if n not in begin_markers or n not in end_markers)
+    assert not missing, f"SECTION_GENERATORS without BEGIN/END markers in the template: {missing}"
+
+    # Every BEGIN marker has a matching END and a registered generator (no orphans).
+    assert begin_markers == end_markers, (
+        f"Unbalanced markers: BEGIN-only={begin_markers - end_markers}, "
+        f"END-only={end_markers - begin_markers}"
+    )
+    orphan_markers = sorted(begin_markers - generator_names)
+    assert not orphan_markers, f"Template markers with no SECTION_GENERATORS entry: {orphan_markers}"
+
+
+@pytest.mark.skipif(
+    os.environ.get("BFFM_STRICT_DRIFT") != "1",
+    reason=(
+        "Strict generated-document drift is checked in Part D after the re-run "
+        "regenerates the committed docs; the committed notes/NOTES.md is "
+        "disclosed-stale (pre-canonical_v1) until then. Set BFFM_STRICT_DRIFT=1 to run."
+    ),
+)
+def test_notes_md_has_no_drift_from_generators() -> None:
+    """Part-D gate: regenerating NOTES.md from the committed template + artifacts
+    must reproduce the committed notes/NOTES.md byte-for-byte (no stale sections)."""
+    notes = _load_paper_module("generate_notes_data.py")
+    template = notes.NOTES_TEMPLATE_PATH.read_text()
+    regenerated = template
+    for name, gen_fn in notes.SECTION_GENERATORS.items():
+        pattern = rf"(<!-- BEGIN:{name} -->\n).*?(\n<!-- END:{name} -->)"
+        if re.search(pattern, regenerated, flags=re.DOTALL):
+            regenerated = re.sub(
+                pattern, rf"\g<1>{gen_fn()}\g<2>", regenerated, flags=re.DOTALL
+            )
+    assert regenerated == notes.NOTES_PATH.read_text(), (
+        "notes/NOTES.md drifted from its generators — run `make notes`."
+    )
 
 
 def test_train_main_fails_closed_when_locked_params_lack_provenance(

@@ -60,7 +60,9 @@ def _default_meta_path(output_path: Path) -> Path:
     return output_path.parent / f"{output_path.name}.meta.json"
 
 
-def _load_domain_scores_from_sqlite(db_path: Path) -> pd.DataFrame:
+def _load_domain_scores_from_sqlite(
+    db_path: Path, sample: int | None = None
+) -> pd.DataFrame:
     if not db_path.exists():
         raise FileNotFoundError(
             f"SQLite database not found: {db_path}. Run stage 02 (make load) first."
@@ -72,6 +74,10 @@ def _load_domain_scores_from_sqlite(db_path: Path) -> pd.DataFrame:
         f"SELECT respondent_id, {', '.join(query_cols)} "
         f"FROM {NORM_TABLE} ORDER BY respondent_id"
     )
+    # --sample takes the first N respondents (same ORDER BY + LIMIT as stage 04's
+    # load_from_sqlite) so a smoke run's norms population matches stage 04's split.
+    if sample is not None:
+        query += f" LIMIT {sample}"
     with sqlite3.connect(str(db_path)) as conn:
         df = pd.read_sql_query(query, conn)
 
@@ -287,6 +293,17 @@ def main() -> int:
         default=1e-9,
         help="Max allowed absolute drift for --check (default: 1e-9)",
     )
+    parser.add_argument(
+        "--sample",
+        type=int,
+        default=None,
+        help=(
+            "Fit norms on only the first N respondents (ORDER BY respondent_id) "
+            "for a tiny end-to-end smoke run. Mirrors stage 04 --sample so the "
+            "two operate on the same population; norms stay train-only on that "
+            "sampled set. NOT for production (use the full population)."
+        ),
+    )
     add_provenance_args(parser)
     args = parser.parse_args()
 
@@ -314,7 +331,7 @@ def main() -> int:
     log.info("Check mode:   %s (tolerance=%g)", bool(args.check), args.tolerance)
 
     try:
-        df = _load_domain_scores_from_sqlite(db_path)
+        df = _load_domain_scores_from_sqlite(db_path, sample=args.sample)
         labels = assign_splits(
             df["respondent_id"].to_numpy(),
             seed=CANONICAL_SEED,

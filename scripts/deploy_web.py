@@ -12,7 +12,6 @@ try:
         HfApi,
         create_repo,
     )
-    from huggingface_hub.errors import HfHubHTTPError
 except ImportError:
     print("Install huggingface_hub: pip install huggingface_hub", file=sys.stderr)
     sys.exit(1)
@@ -63,6 +62,27 @@ def main():
         print("ERROR: HF_REPO_ID not set (needed so the container can download the model)", file=sys.stderr)
         sys.exit(1)
 
+    # The deployed predictor refuses to download an unpinned/unverified model
+    # (web/src/server/predictor.ts), so the deploy MUST propagate all three
+    # integrity pins. Fail fast here rather than shipping a Space that bricks on
+    # startup.
+    missing_pins = [
+        key
+        for key in ("HF_REVISION", "HF_SHA256_CONFIG", "HF_SHA256_MODEL")
+        if not os.environ.get(key)
+    ]
+    if missing_pins:
+        print(
+            "ERROR: HF model integrity pins missing: "
+            + ", ".join(missing_pins)
+            + ".\n  The web app fails closed without them. Set them in .env "
+            "(see .env.example): HF_REVISION must be an immutable commit sha, "
+            "and the two HF_SHA256_* are the sha256 of the published "
+            "config.json / model.onnx.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     api = HfApi(token=token)
 
     print(f"Creating/updating Space: {space_id}")
@@ -78,20 +98,10 @@ def main():
     print(f"  Setting HF_REPO_ID secret to: {repo_id}")
     api.add_space_secret(repo_id=space_id, key="HF_REPO_ID", value=repo_id)
 
+    # All three pins are required (validated above), so always set them.
     for key in ("HF_REVISION", "HF_SHA256_CONFIG", "HF_SHA256_MODEL"):
-        value = os.environ.get(key)
-        if value:
-            print(f"  Setting {key} secret")
-            api.add_space_secret(repo_id=space_id, key=key, value=value)
-        else:
-            try:
-                api.delete_space_secret(repo_id=space_id, key=key)
-                print(f"  Cleared {key} secret (not set locally)")
-            except HfHubHTTPError as exc:
-                if exc.response.status_code != 404:
-                    print(f"  Warning: failed to clear {key} secret: {exc}")
-            except Exception as exc:
-                print(f"  Warning: failed to clear {key} secret: {exc}")
+        print(f"  Setting {key} secret")
+        api.add_space_secret(repo_id=space_id, key=key, value=os.environ[key])
 
     # Verify required build artifacts exist
     dist_dir = WEB_DIR / "dist"

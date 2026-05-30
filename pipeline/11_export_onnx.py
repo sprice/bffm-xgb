@@ -20,12 +20,22 @@ import argparse
 import json
 import logging
 import shutil
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import joblib
 import numpy as np
 
-from lib.constants import DOMAIN_LABELS, DOMAINS, ITEM_COLUMNS
+if TYPE_CHECKING:
+    import onnx
+
+from lib.constants import (
+    DOMAIN_LABELS,
+    DOMAINS,
+    ITEM_COLUMNS,
+    MODEL_STEM,
+    QUANTILE_NAME_LIST,
+    QUANTILES,
+)
 from lib.norms import load_norms
 from lib.provenance import (
     _resolve_norms_lock_path,
@@ -47,14 +57,34 @@ log = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-QUANTILE_NAMES = ["q05", "q50", "q95"]
-QUANTILE_VALUES = [0.05, 0.5, 0.95]
 N_FEATURES = 50
 FEATURE_NAMES = list(ITEM_COLUMNS)
 PARITY_TOL = 1e-4
 # Small relative tolerance for XGBoost -> ONNX numeric drift on larger scores.
 PARITY_RTOL = 5e-5
 N_TEST_SAMPLES = 100
+
+
+def _deterministic_session(model_bytes: bytes):
+    """Create a single-threaded, sequential ONNX session.
+
+    The deployed runtimes (python/inference.py, typescript/inference.ts,
+    web/src/server/predictor.ts) all load single-threaded sessions so
+    predictions are a host-deterministic function of the input. The export-time
+    parity checks use the same configuration so they validate the same
+    numerical behavior the runtimes ship.
+    """
+    import onnxruntime as ort
+
+    opts = ort.SessionOptions()
+    opts.intra_op_num_threads = 1
+    opts.inter_op_num_threads = 1
+    opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    return ort.InferenceSession(
+        model_bytes, sess_options=opts, providers=["CPUExecutionProvider"]
+    )
+
+
 ARTIFACT_PROVENANCE_KEYS = (
     "git_hash",
     "data_snapshot_id",
@@ -75,9 +105,18 @@ def load_joblib_models(models_dir: Path) -> dict[str, object]:
     """Load all 15 joblib models, keyed like 'ext_q05'."""
     models = {}
     for domain in DOMAINS:
-        for q in QUANTILE_NAMES:
+        for q in QUANTILE_NAME_LIST:
             key = f"{domain}_{q}"
-            path = models_dir / f"adaptive_{key}.joblib"
+            path = models_dir / f"{MODEL_STEM}_{key}.joblib"
+            if not path.exists():
+                legacy = models_dir / f"adaptive_{key}.joblib"
+                if legacy.exists():
+                    log.warning(
+                        "Loading legacy-named model %s; re-export to migrate to %s_*.joblib",
+                        legacy.name,
+                        MODEL_STEM,
+                    )
+                    path = legacy
             if not path.exists():
                 log.error("Missing model file: %s", path)
                 sys.exit(1)
@@ -159,7 +198,7 @@ def _patch_onnxmltools_xgb3() -> None:
     log.info("Patched onnx.helper.make_attribute for bool-to-int coercion")
 
 
-def convert_to_onnx(models: dict) -> dict[str, object]:
+def convert_to_onnx(models: dict) -> dict[str, "onnx.ModelProto"]:
     """Convert each XGBoost model to ONNX."""
     try:
         import onnx
@@ -190,7 +229,7 @@ def convert_to_onnx(models: dict) -> dict[str, object]:
 # ---------------------------------------------------------------------------
 
 
-def merge_onnx_models(onnx_models: dict) -> object:
+def merge_onnx_models(onnx_models: dict[str, "onnx.ModelProto"]) -> "onnx.ModelProto":
     """Merge 15 individual ONNX models into a single graph with shared input.
 
     Constructs a single ONNX graph where:
@@ -201,7 +240,7 @@ def merge_onnx_models(onnx_models: dict) -> object:
     import onnx
     from onnx import TensorProto, helper
 
-    output_order = [f"{d}_{q}" for d in DOMAINS for q in QUANTILE_NAMES]
+    output_order = [f"{d}_{q}" for d in DOMAINS for q in QUANTILE_NAME_LIST]
 
     all_nodes: list = []
     all_initializers: list = []
@@ -300,14 +339,10 @@ def merge_onnx_models(onnx_models: dict) -> object:
 # ---------------------------------------------------------------------------
 
 
-def validate_parity(joblib_models: dict, onnx_models: dict) -> None:
+def validate_parity(
+    joblib_models: dict, onnx_models: dict[str, "onnx.ModelProto"]
+) -> None:
     """Run predictions through both backends and assert numerical parity."""
-    try:
-        import onnxruntime as ort
-    except ImportError:
-        log.error("onnxruntime not installed. Run: pip install onnxruntime")
-        sys.exit(1)
-
     rng = np.random.default_rng(42)
 
     # Generate test data: mix of full responses and sparse (with NaN)
@@ -330,7 +365,7 @@ def validate_parity(joblib_models: dict, onnx_models: dict) -> None:
 
         # ONNX prediction
         onnx_bytes = onnx_models[key].SerializeToString()
-        sess = ort.InferenceSession(onnx_bytes)
+        sess = _deterministic_session(onnx_bytes)
         input_name = sess.get_inputs()[0].name
         ort_pred = sess.run(None, {input_name: X_test})[0].flatten()
 
@@ -363,17 +398,11 @@ def validate_parity(joblib_models: dict, onnx_models: dict) -> None:
 
 
 def validate_merged_parity(
-    merged_model: object,
-    individual_models: dict,
+    merged_model: "onnx.ModelProto",
+    individual_models: dict[str, "onnx.ModelProto"],
 ) -> None:
     """Verify merged-model outputs are bit-for-bit identical to individual models."""
-    try:
-        import onnxruntime as ort
-    except ImportError:
-        log.error("onnxruntime not installed. Run: pip install onnxruntime")
-        sys.exit(1)
-
-    output_names = [f"{d}_{q}" for d in DOMAINS for q in QUANTILE_NAMES]
+    output_names = [f"{d}_{q}" for d in DOMAINS for q in QUANTILE_NAME_LIST]
 
     rng = np.random.default_rng(42)
     X_full = rng.uniform(1.0, 5.0, size=(N_TEST_SAMPLES // 2, N_FEATURES)).astype(
@@ -386,13 +415,13 @@ def validate_merged_parity(
     X_sparse[mask] = np.nan
     X_test = np.vstack([X_full, X_sparse])
 
-    merged_sess = ort.InferenceSession(merged_model.SerializeToString())
+    merged_sess = _deterministic_session(merged_model.SerializeToString())
     merged_raw = merged_sess.run(output_names, {"input": X_test})
     merged_dict = dict(zip(output_names, merged_raw))
 
     max_diff_overall = 0.0
     for key in output_names:
-        ind_sess = ort.InferenceSession(
+        ind_sess = _deterministic_session(
             individual_models[key].SerializeToString()
         )
         input_name = ind_sess.get_inputs()[0].name
@@ -572,7 +601,7 @@ def generate_config(
                 e,
             )
 
-    output_names = [f"{d}_{q}" for d in DOMAINS for q in QUANTILE_NAMES]
+    output_names = [f"{d}_{q}" for d in DOMAINS for q in QUANTILE_NAME_LIST]
 
     norms = {d: {"mean": norms_map[d]["mean"], "sd": norms_map[d]["sd"]} for d in DOMAINS}
 
@@ -585,7 +614,7 @@ def generate_config(
         "version": "1.0.0",
         "domains": list(DOMAINS),
         "domain_labels": dict(DOMAIN_LABELS),
-        "quantiles": QUANTILE_VALUES,
+        "quantiles": list(QUANTILES),
         "model_file": "model.onnx",
         "outputs": output_names,
         "scores_output": "scores",

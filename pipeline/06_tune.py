@@ -38,6 +38,7 @@ import xgboost as xgb
 from scipy import stats
 from scipy.stats import ConstantInputWarning
 
+from lib.config import load_config_with_base
 from lib.constants import (
     DEFAULT_EARLY_STOPPING_ROUNDS,
     DEFAULT_PARAMS,
@@ -521,13 +522,8 @@ def main() -> int:
         if not config_path.exists():
             log.error("Config file not found: %s", config_path)
             return 1
-        try:
-            import yaml
-        except ImportError:
-            log.error("PyYAML not installed. Install with: pip install pyyaml")
-            return 1
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
+        # Merges configs/_base.yaml (shared defaults) underneath the variant.
+        config = load_config_with_base(config_path)
         log.info("Loaded config: %s", config.get("name", config_path.name))
     else:
         log.info("No config specified; using default sparsity settings (disabled)")

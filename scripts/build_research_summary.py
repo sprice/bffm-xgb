@@ -11,11 +11,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
+from lib.config import load_config_with_base
 from lib.constants import VARIANTS
 from lib.provenance import build_provenance, file_sha256, relative_to_root, sanitize_paths
 
@@ -42,14 +41,6 @@ def _load_json(path: Path) -> dict[str, Any]:
         payload = json.load(f)
     if not isinstance(payload, dict):
         raise ValueError(f"Expected JSON object at {path}")
-    return payload
-
-
-def _load_yaml(path: Path) -> dict[str, Any]:
-    with open(path) as f:
-        payload = yaml.safe_load(f)
-    if not isinstance(payload, dict):
-        raise ValueError(f"Expected YAML object at {path}")
     return payload
 
 
@@ -91,7 +82,7 @@ def _variant_paths(
     model_dir = _resolve(meta["model_dir"])
     artifact_dir = artifacts_variants_dir / variant
 
-    config_payload = _load_yaml(config_path)
+    config_payload = load_config_with_base(config_path)
     data_dir_raw = config_payload.get("data_dir")
     if not isinstance(data_dir_raw, str) or not data_dir_raw.strip():
         data_dir_raw = f"data/processed/{meta['default_data_regime']}"
@@ -186,7 +177,7 @@ def _collect_variant_summary(
     if len(test_sha_values) > 1:
         errors.append("provenance:test_sha256_mismatch")
 
-    config_payload = _load_yaml(paths["config"])
+    config_payload = load_config_with_base(paths["config"])
     data_regime = paths["data_dir"].name
 
     training = loaded.get("training_report", {})

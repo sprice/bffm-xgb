@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "concurrently -n vite,api -c cyan,green \"vite\" \"tsx watch src/server/index.ts\"",
     "build": "vite build && tsc -p tsconfig.server.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.server.test.json --noEmit",
     "start": "node dist/server/index.js",
     "test": "vitest run"
   },

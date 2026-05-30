@@ -1,0 +1,202 @@
+{
+  "assessment": "ipip-bffm-50",
+  "calibration": {
+    "full_50": {
+      "agr": {
+        "observed_coverage": 0.9,
+        "scale_factor": 1.0
+      },
+      "csn": {
+        "observed_coverage": 0.9,
+        "scale_factor": 1.0
+      },
+      "est": {
+        "observed_coverage": 0.9,
+        "scale_factor": 1.0
+      },
+      "ext": {
+        "observed_coverage": 0.9,
+        "scale_factor": 1.0
+      },
+      "opn": {
+        "observed_coverage": 0.9,
+        "scale_factor": 1.0
+      }
+    },
+    "sparse_20_balanced": {
+      "agr": {
+        "observed_coverage": 0.9,
+        "scale_factor": 1.3
+      },
+      "csn": {
+        "observed_coverage": 0.9,
+        "scale_factor": 1.3
+      },
+      "est": {
+        "observed_coverage": 0.9,
+        "scale_factor": 1.3
+      },
+      "ext": {
+        "observed_coverage": 0.9,
+        "scale_factor": 1.3
+      },
+      "opn": {
+        "observed_coverage": 0.9,
+        "scale_factor": 1.3
+      }
+    }
+  },
+  "domain_labels": {
+    "agr": "Agreeableness",
+    "csn": "Conscientiousness",
+    "est": "EmotionalStability",
+    "ext": "Extraversion",
+    "opn": "Intellect"
+  },
+  "domains": [
+    "ext",
+    "agr",
+    "csn",
+    "est",
+    "opn"
+  ],
+  "framework": "onnx",
+  "input": {
+    "dtype": "float32",
+    "feature_names": [
+      "ext1",
+      "ext2",
+      "ext3",
+      "ext4",
+      "ext5",
+      "ext6",
+      "ext7",
+      "ext8",
+      "ext9",
+      "ext10",
+      "agr1",
+      "agr2",
+      "agr3",
+      "agr4",
+      "agr5",
+      "agr6",
+      "agr7",
+      "agr8",
+      "agr9",
+      "agr10",
+      "csn1",
+      "csn2",
+      "csn3",
+      "csn4",
+      "csn5",
+      "csn6",
+      "csn7",
+      "csn8",
+      "csn9",
+      "csn10",
+      "est1",
+      "est2",
+      "est3",
+      "est4",
+      "est5",
+      "est6",
+      "est7",
+      "est8",
+      "est9",
+      "est10",
+      "opn1",
+      "opn2",
+      "opn3",
+      "opn4",
+      "opn5",
+      "opn6",
+      "opn7",
+      "opn8",
+      "opn9",
+      "opn10"
+    ],
+    "missing_value": "NaN",
+    "shape": [
+      null,
+      50
+    ],
+    "value_range": [
+      1,
+      5
+    ]
+  },
+  "model_display_name": "IPIP-BFFM Sparse Quantile Model",
+  "model_file": "model.onnx",
+  "model_name": "bffm-xgb",
+  "model_type": "xgboost-quantile-regression",
+  "norms": {
+    "agr": {
+      "mean": 3.0229249000549316,
+      "sd": 0.7092429399490356
+    },
+    "csn": {
+      "mean": 2.9966771602630615,
+      "sd": 0.6753817200660706
+    },
+    "est": {
+      "mean": 2.9560067653656006,
+      "sd": 0.6596779227256775
+    },
+    "ext": {
+      "mean": 3.0271997451782227,
+      "sd": 0.6431065797805786
+    },
+    "opn": {
+      "mean": 2.9951136112213135,
+      "sd": 0.636728823184967
+    }
+  },
+  "output": {
+    "dtype": "float32",
+    "scale": "raw_score",
+    "scale_basis": "per_item_mean_1_to_5",
+    "shape": [
+      null,
+      1
+    ],
+    "value_range": [
+      1,
+      5
+    ],
+    "value_range_is_nominal": true
+  },
+  "outputs": [
+    "ext_q05",
+    "ext_q50",
+    "ext_q95",
+    "agr_q05",
+    "agr_q50",
+    "agr_q95",
+    "csn_q05",
+    "csn_q50",
+    "csn_q95",
+    "est_q05",
+    "est_q50",
+    "est_q95",
+    "opn_q05",
+    "opn_q50",
+    "opn_q95"
+  ],
+  "provenance": {
+    "data_snapshot_id": "fixture",
+    "git_hash": "fixture",
+    "model_dir": "fixture",
+    "preprocessing_version": "fixture",
+    "rng_seed": 42,
+    "source": "ipip-bffm-sparse-quantile-v1-reference",
+    "training_script": "07_train.py"
+  },
+  "quantiles": [
+    0.05,
+    0.5,
+    0.95
+  ],
+  "scores_output": "scores",
+  "variant": "golden",
+  "version": "1.0.0"
+}

@@ -41,9 +41,21 @@ class IPIPBFFMPredictor:
         }
         self.norms: dict = self.config["norms"]
 
-        # Load single merged ONNX session
+        # Load single merged ONNX session. Single-threaded + sequential so
+        # predictions are a deterministic function of the input: multi-threaded
+        # ONNX Runtime sums partial results in a host-dependent order, which can
+        # perturb raw scores enough to flip a percentile that rounds to one
+        # decimal place. Inference is batch-1, so single-threaded has no real cost.
         model_path = self.model_dir / self.config["model_file"]
-        self._session = ort.InferenceSession(str(model_path))
+        sess_options = ort.SessionOptions()
+        sess_options.intra_op_num_threads = 1
+        sess_options.inter_op_num_threads = 1
+        sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        self._session = ort.InferenceSession(
+            str(model_path),
+            sess_options=sess_options,
+            providers=["CPUExecutionProvider"],
+        )
         self._output_names: list[str] = self.config["outputs"]
 
     def predict(self, responses: dict[str, float]) -> dict:

@@ -29,6 +29,7 @@ node_modules/
 web/model/
 web/dist/
 learn/dist/
+typescript/dist/
 
 # Pipeline outputs (regenerable via make all)
 artifacts/ipip_bffm_norms.meta.json
@@ -40,6 +41,11 @@ artifacts/variants/
 output/*/
 !output/README.md
 !output/.gitkeep
+
+# Smoke run (tiny sampled de-risk run; isolated throwaway tree). The glob also
+# covers the .meta.json / .original.json sidecars stage 03/06 write.
+artifacts/smoke_*.json
+figures/smoke/
 
 # Figures (regenerable)
 figures/*.png
@@ -59,6 +65,7 @@ logs/
 # Claude settings
 .claude/settings.local.json
 .claude/workflows
+.claude/scheduled_tasks.lock
 .codex
 tasks
 .agents

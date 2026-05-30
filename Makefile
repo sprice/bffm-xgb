@@ -37,6 +37,14 @@ EVAL_DIR = $(ARTIFACTS_VARIANTS_DIR)/$(MODEL_NAME)
 RESEARCH_SUMMARY_PATH ?= $(ARTIFACTS_DIR)/research_summary.json
 LOGS_DIR ?= logs
 
+# --- Smoke run (tiny sampled end-to-end; isolated tree, never clobbers real artifacts) ---
+SMOKE_SAMPLE ?= 8000
+SMOKE_DATA_DIR := $(DATA_ROOT)/smoke_v1
+SMOKE_NORMS := $(ARTIFACTS_DIR)/smoke_norms.json
+SMOKE_MODEL_DIR := models/smoke
+SMOKE_EVAL_DIR := $(ARTIFACTS_VARIANTS_DIR)/smoke
+SMOKE_OUTPUT_DIR := output/smoke
+
 TRAIN_DATA_DIR ?= $(DATA_DIR)
 
 TRAIN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
@@ -46,7 +54,7 @@ VALID_TRAIN_RUNS := 1 2 3
 RESEARCH_EVAL_TARGETS := research-eval-reference research-eval-ablation-none research-eval-ablation-focused
 _CALLER_PARALLEL_MAKEFLAGS = $(filter -j% -j --jobserver-auth=% --jobserver-fds=%,$(MAKEFLAGS))
 
-.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full prepare correlations tune train train-1 train-2 train-3 validate baselines simulate export export-all export-repo-readme export-reference export-ablation-none export-ablation-focused figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-summary research-summary-strict notes upload-hf upload-hf-reference lint format typecheck test test-lib test-inference test-web archive clean restore web-setup web-dev web-build deploy-web
+.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full prepare correlations tune train train-1 train-2 train-3 validate baselines simulate export export-all export-repo-readme export-reference export-ablation-none export-ablation-focused figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-summary research-summary-strict notes upload-hf upload-hf-reference lint format typecheck test test-lib test-inference test-web fixtures smoke smoke-clean archive clean restore web-setup web-dev web-build deploy-web
 
 # Ordered phases. Each stage is a sub-make so the order holds even under `make -j`
 # (recipe lines run sequentially), while each stage keeps its own internal
@@ -225,6 +233,35 @@ test-inference:
 
 test-web:
 	cd web && npx vitest run
+
+# Regenerate the committed test-fixture bundle (tests/fixtures/golden/): a tiny
+# deterministic ONNX model + config + golden vectors used by the tri-runtime
+# parity tests. Run after an intentional xgboost/onnx/onnxmltools bump.
+fixtures:
+	$(PY) scripts/build_test_fixture.py
+
+# Tiny sampled end-to-end run that exercises stages 03-12 + all the A4 analysis
+# code (reliability, raw_crossing_rate, paired/subset bootstraps, SEM sim, export,
+# figures) locally in minutes, to de-risk the real run. Everything is namespaced
+# under *smoke* / smoke_v1 so it NEVER touches the canonical artifacts. Tune runs
+# (tiny trials) to exercise stage 06; train uses tiny --params (cli_params_override,
+# so the strict-data-hash lock is bypassed). Requires the sqlite DB (`make load`).
+smoke:
+	$(PY) pipeline/03_compute_norms.py --sample $(SMOKE_SAMPLE) --output $(SMOKE_NORMS)
+	$(PY) pipeline/04_prepare_data.py --sample $(SMOKE_SAMPLE) --norms $(SMOKE_NORMS) --output-dir $(SMOKE_DATA_DIR)
+	$(PY) pipeline/05_compute_correlations.py --data-dir $(SMOKE_DATA_DIR)
+	$(PY) pipeline/06_tune.py --config configs/smoke.yaml --data-dir $(SMOKE_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) --trials 3 --output $(ARTIFACTS_DIR)/smoke_tuned_params.json
+	$(PY) pipeline/07_train.py --config configs/smoke.yaml --params configs/smoke_params.json --data-dir $(SMOKE_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR)
+	@mkdir -p $(SMOKE_EVAL_DIR)
+	$(PY) pipeline/08_validate.py --model-dir $(SMOKE_MODEL_DIR) --data-dir $(SMOKE_DATA_DIR) --artifacts-dir $(SMOKE_EVAL_DIR) --bootstrap-n 50
+	$(PY) pipeline/09_baselines.py --model-dir $(SMOKE_MODEL_DIR) --data-dir $(SMOKE_DATA_DIR) --artifacts-dir $(SMOKE_EVAL_DIR) --bootstrap-n 50 --random-trials 2
+	$(PY) pipeline/10_simulate.py --model-dir $(SMOKE_MODEL_DIR) --data-dir $(SMOKE_DATA_DIR) --artifacts-dir $(SMOKE_EVAL_DIR) --n-sample 500
+	$(PY) pipeline/11_export_onnx.py --model-dir $(SMOKE_MODEL_DIR) --data-dir $(SMOKE_DATA_DIR) --artifacts-dir $(SMOKE_EVAL_DIR) --output-dir $(SMOKE_OUTPUT_DIR)
+	$(PY) pipeline/12_generate_figures.py --artifacts-dir $(SMOKE_EVAL_DIR) --output-dir figures/smoke
+	@echo "make smoke OK — stages 03-12 + A4 analysis ran on a $(SMOKE_SAMPLE)-respondent sample"
+
+smoke-clean:
+	rm -rf $(SMOKE_DATA_DIR) $(SMOKE_MODEL_DIR) $(SMOKE_EVAL_DIR) $(SMOKE_OUTPUT_DIR) figures/smoke $(SMOKE_NORMS) $(ARTIFACTS_DIR)/smoke_tuned_params.json
 
 archive:
 	git archive --format=zip HEAD -o data/bffm-xgb-src.zip -- . ':!output/*.onnx'

@@ -43,7 +43,6 @@ from typing import Any
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-import joblib
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -65,6 +64,7 @@ from lib.item_info import (
     load_item_info_for_model,
 )
 from lib.mini_ipip import flatten_mini_ipip_items, load_mini_ipip_mapping
+from lib.models import load_domain_models, missing_models
 from lib.norms import load_mini_ipip_norms
 from lib.provenance import add_provenance_args, build_provenance, relative_to_root
 from lib.provenance_checks import (
@@ -87,28 +87,6 @@ DEFAULT_ARTIFACTS_DIR = Path("artifacts")
 # ============================================================================
 # Data and model loading
 # ============================================================================
-
-def _load_models(models_dir: Path) -> dict[str, dict[str, Any]]:
-    """Load trained domain models from .joblib files."""
-    domain_models: dict[str, dict[str, Any]] = {}
-    for domain in DOMAINS:
-        domain_models[domain] = {}
-        for q_name in ["q05", "q50", "q95"]:
-            model_path = models_dir / f"adaptive_{domain}_{q_name}.joblib"
-            if model_path.exists():
-                domain_models[domain][q_name] = joblib.load(model_path)
-    return domain_models
-
-
-def _check_models_complete(domain_models: dict[str, dict[str, Any]]) -> list[str]:
-    """Return list of missing model keys."""
-    missing: list[str] = []
-    for domain in DOMAINS:
-        for q_name in ["q05", "q50", "q95"]:
-            if q_name not in domain_models.get(domain, {}):
-                missing.append(f"{domain}_{q_name}")
-    return missing
-
 
 def _load_calibration_params(
     models_dir: Path,
@@ -1629,8 +1607,8 @@ def main() -> int:
 
     # Load models
     log.info("Step 1: Loading models and data...")
-    domain_models = _load_models(model_dir)
-    missing = _check_models_complete(domain_models)
+    domain_models = load_domain_models(model_dir)
+    missing = missing_models(domain_models)
     if missing:
         log.error("Missing models: %s", ", ".join(missing))
         return 1

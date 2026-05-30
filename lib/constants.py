@@ -21,6 +21,16 @@ ITEM_COLUMNS = [f"{d}{i}" for d in DOMAINS for i in range(1, ITEMS_PER_DOMAIN + 
 # Quantile configuration
 QUANTILES = [0.05, 0.5, 0.95]
 QUANTILE_NAMES = {0.05: "q05", 0.5: "q50", 0.95: "q95"}
+# Ordered quantile-name list (single source of truth for the ["q05","q50","q95"]
+# loops that the pipeline stages and the shared model loader iterate over).
+QUANTILE_NAME_LIST = [QUANTILE_NAMES[q] for q in QUANTILES]
+
+# On-disk trained-model filename stem: f"{MODEL_STEM}_{domain}_{q}.joblib".
+# The model is a sparse quantile regressor, not an adaptive selector (adaptive
+# selection is the documented negative result), so the neutral stem is "quantile".
+# LEGACY_MODEL_STEM is the pre-canonical_v1 name kept only as a read fallback.
+MODEL_STEM = "quantile"
+LEGACY_MODEL_STEM = "adaptive"
 
 # Default hyperparameters
 DEFAULT_PARAMS = {

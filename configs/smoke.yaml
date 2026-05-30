@@ -1,0 +1,43 @@
+# Smoke config for `make smoke` — a tiny end-to-end run on sampled data to
+# de-risk the real run by exercising every stage + the A4 analysis code locally
+# in minutes. NOT a publication config (validation thresholds are 0.0 and the
+# model is tiny). configs/_base.yaml merges underneath; this overrides data_dir
+# (to the isolated smoke tree) and relaxes the gates. Training passes tiny
+# hyperparameters via `--params configs/smoke_params.json` (cli_params_override),
+# which bypasses the strict-data-hash lock, so the inherited base locked_params
+# is unused here.
+name: smoke
+description: "Smoke test: tiny sampled end-to-end run (NOT a publication model)"
+output_dir: models/smoke
+data_dir: data/processed/smoke_v1
+
+sparsity:
+  enabled: true
+  focused: true
+  include_mini_ipip: true
+  include_imbalanced: true
+  n_augmentation_passes: 1
+
+hyperparameters:
+  lock_policy: strict_data_hash
+
+# cv_folds: 2 (the real run uses the default 3) so smoke exercises the
+# cross-validation-robustness path too — a tiny but real CV, not skipped.
+training:
+  cv_folds: 2
+
+# Thresholds relaxed to 0.0 so the stage-07 validation gate never fails on the
+# deliberately tiny smoke model. Do NOT reuse this config for a real run.
+validation:
+  min_pearson_r: 0.0
+  min_coverage_90: 0.0
+  per_domain:
+    min_pearson_r: 0.0
+    min_coverage_90: 0.0
+  sparse_20:
+    enabled: true
+    min_pearson_r: 0.0
+    min_coverage_90: 0.0
+    per_domain:
+      min_pearson_r: 0.0
+      min_coverage_90: 0.0

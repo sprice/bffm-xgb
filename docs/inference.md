@@ -87,6 +87,25 @@ Exported inference dispatches between two coverage-validated regimes by answered
 
 Predictions remain available for arbitrary partial-response patterns, but the intervals are raw quantile spreads (no post-hoc width adjustment), and their coverage is validated only at the primary 20-item domain-balanced operating point — not at every possible sub-50 response pattern.
 
+## Determinism
+
+All three runtimes (Python, TypeScript, web) load the ONNX model in a
+**single-threaded, sequential** session (`intra_op_num_threads = inter_op_num_threads = 1`,
+sequential execution mode, CPU execution provider). Multi-threaded ONNX Runtime
+sums partial results in a host-dependent order, which can perturb raw scores
+enough to flip a percentile that rounds to one decimal place on machines with
+different core counts. Pinning the session to one thread makes the reported
+percentile a deterministic function of the input on any host, at no real cost
+(inference is a single row at a time).
+
+The percentile transform uses the **exact** standard-normal CDF in every
+runtime: Python via `scipy.stats.norm.cdf`, TypeScript and web via an
+`erf`-based implementation (`erf.ts`, a port of the fdlibm error function that
+matches `scipy.special.erf` to within ~1 ULP). This replaced an earlier
+Abramowitz–Stegun polynomial approximation so the deployed percentiles use the
+same CDF that produced the reported metrics. Cross-runtime numerical parity is
+locked by a committed golden-vector test.
+
 ## Raw ONNX Usage
 
 For direct ONNX session usage without the inference wrappers, see [`output/reference/README.md`](../output/reference/README.md) for model card details including input/output tensor specifications.

@@ -11,7 +11,7 @@ import argparse
 import json
 import logging
 
-from lib.constants import DOMAINS
+from lib.constants import DOMAINS, QUANTILE_NAME_LIST
 from lib.provenance import file_sha256
 
 logging.basicConfig(
@@ -20,8 +20,6 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger(__name__)
-
-QUANTILE_NAMES = ("q05", "q50", "q95")
 
 
 def _validate_output_bundle(output_dir: Path) -> list[Path]:
@@ -107,7 +105,7 @@ def _validate_output_bundle(output_dir: Path) -> list[Path]:
 
     outputs = config.get("outputs")
     expected_outputs = [
-        f"{domain}_{q}" for domain in DOMAINS for q in QUANTILE_NAMES
+        f"{domain}_{q}" for domain in DOMAINS for q in QUANTILE_NAME_LIST
     ]
     if not isinstance(outputs, list) or outputs != expected_outputs:
         raise ValueError(

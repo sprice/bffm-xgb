@@ -24,8 +24,28 @@ jobs:
       - name: Run pipeline tests
         run: uv run python -m pytest tests/ -v --tb=short
 
+      # REQUIRE_ARTIFACTS=1 turns the committed-fixture-backed inference tests
+      # into hard failures if the fixture is ever missing (no silent skip).
       - name: Run inference tests
         run: uv run python -m pytest python/ -v
+        env:
+          REQUIRE_ARTIFACTS: "1"
+
+  # Exercise the advertised requires-python floor (3.11). Dev + the job above run
+  # the pinned 3.14 interpreter, so without this the >=3.11 claim is never tested.
+  test-python-floor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Run the suite under Python 3.11 (the supported floor)
+        run: uv run --python 3.11 python -m pytest tests/ python/ --tb=short
+        env:
+          REQUIRE_ARTIFACTS: "1"
 
   lint:
     runs-on: ubuntu-latest
@@ -73,8 +93,13 @@ jobs:
       - name: Install dependencies
         run: cd typescript && npm ci
 
+      - name: Build (tsc)
+        run: cd typescript && npm run build
+
       - name: Run tests
         run: cd typescript && npx vitest run
+        env:
+          REQUIRE_ARTIFACTS: "1"
 
   test-web:
     runs-on: ubuntu-latest
@@ -90,5 +115,18 @@ jobs:
       - name: Install dependencies
         run: cd web && npm ci
 
+      - name: Type-check (client + server)
+        run: cd web && npm run typecheck
+
+      - name: Build (vite + tsc server)
+        run: cd web && npm run build
+
+      # MODEL_DIR points predictor.test.ts at the committed fixture (web/model's
+      # gitignored symlink target is absent in CI). REQUIRE_ARTIFACTS=1 hard-fails
+      # the fixture-backed suites if it is missing. repo-facts.test.ts keeps its
+      # own data/processed guard and stays skipped here (resolves in Part C).
       - name: Run tests
         run: cd web && npx vitest run
+        env:
+          MODEL_DIR: ${{ github.workspace }}/tests/fixtures/golden
+          REQUIRE_ARTIFACTS: "1"

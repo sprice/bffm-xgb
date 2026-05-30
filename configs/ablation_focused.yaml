@@ -1,11 +1,9 @@
+# Shared keys (data_dir, artifacts_dir, require_test_split, training,
+# hyperparameters.locked_params) live in configs/_base.yaml and are merged
+# underneath this file by lib.config.load_config_with_base.
 name: ablation_focused
 description: "Ablation: focused sparsity only (no imbalanced patterns)"
 output_dir: models/ablation_focused
-data_dir: data/processed/canonical_v1
-artifacts_dir: artifacts
-
-# Publication mode: fail closed if the held-out test split / split_metadata.json is missing.
-require_test_split: true
 
 sparsity:
   enabled: true
@@ -15,13 +13,8 @@ sparsity:
   n_augmentation_passes: 3
 
 hyperparameters:
-  locked_params: artifacts/tuned_params.json
   lock_policy: reference_model_hash
   reference_model_dir: models/reference
-
-training:
-  random_state: 42
-  n_jobs: 16
 
 validation:
   min_pearson_r: 0.88

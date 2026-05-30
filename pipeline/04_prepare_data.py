@@ -520,18 +520,20 @@ def main() -> int:
         log.error("Run 03_compute_norms.py (make norms) first.")
         return 1
 
-    # --sample loads only the first N respondent ids, so assign_splits partitions
-    # a different id set than stage 03 (which always uses the full population).
-    # The resulting 'train' rows are NOT the rows the norms were fit on, silently
-    # breaking leakage-freeness. Refuse rather than produce an incoherent dataset.
+    # --sample loads only the first N respondents (ORDER BY respondent_id). This
+    # is leakage-safe ONLY when paired with stage-03 norms fit on the SAME sample
+    # (`make norms --sample N`): the assert_norms_match_split population_signature
+    # check below recomputes the loaded respondent set's signature and fails closed
+    # if it differs from the population the norms were fit on. So a sampled split
+    # against full-population norms is still correctly rejected; a sample-matched
+    # smoke norms file is accepted. (Used by `make smoke`; never in production.)
     if sample is not None:
-        log.error(
-            "--sample changes the respondent id set, so the split no longer matches the "
-            "stage-03 norms (which are fit on the full-population train split). The "
-            "resulting percentile targets would be leaky/incoherent. Re-run stage 03 on the "
-            "same sample, or run without --sample."
+        log.warning(
+            "--sample=%d: tiny smoke split. Norms MUST be fit on the same sample "
+            "(make norms --sample %d); the population_signature guard enforces this.",
+            sample,
+            sample,
         )
-        return 1
 
     output_dir.mkdir(parents=True, exist_ok=True)
 

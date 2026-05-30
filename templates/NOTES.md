@@ -398,7 +398,8 @@ The Mini-IPIP comparator now carries the same respondent-level bootstrap 95% CIs
 every XGBoost method (see the item-selection table above), and the headline
 domain-balanced-ML vs Mini-IPIP-averaging gap is reported with a *paired*
 (same-respondent) bootstrap CI in the `xgb_vs_mini_ipip_paired` block of that
-artifact — so the .927-vs-.906 contrast can be judged for significance.
+artifact — so the overall-r contrast (see the table above) can be judged for
+significance.
 
 ### Simulation Results (20-Item Operating Point)
 

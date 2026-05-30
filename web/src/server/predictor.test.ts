@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -7,11 +7,28 @@ import { reverseScore } from "./reverse-score";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Model lives in web/model (symlink or copy) or fallback to output/reference
+// Model lives in web/model (symlink or copy) or fallback to output/reference.
+// In CI, MODEL_DIR is set to the committed tests/fixtures/golden bundle.
 const MODEL_DIR =
   process.env.MODEL_DIR ||
   resolve(__dirname, "..", "..", "model");
 const HAS_MODEL = existsSync(resolve(MODEL_DIR, "config.json"));
+
+// REQUIRE_ARTIFACTS=1 (set in CI) turns a missing model into a hard failure, so
+// these real-inference tests can never silently vanish into a green skip.
+if (process.env.REQUIRE_ARTIFACTS === "1" && !HAS_MODEL) {
+  throw new Error(
+    `REQUIRE_ARTIFACTS=1 but no model.config.json found at MODEL_DIR=${MODEL_DIR}`
+  );
+}
+
+// The committed golden fixture is trained on synthetic data, so directional
+// "high input -> high percentile" assertions (which encode the REAL model's
+// learned personality structure) are meaningful only against the real model.
+const IS_FIXTURE =
+  HAS_MODEL &&
+  JSON.parse(readFileSync(resolve(MODEL_DIR, "config.json"), "utf-8"))
+    ?.provenance?.git_hash === "fixture";
 
 const DOMAINS = ["ext", "agr", "csn", "est", "opn"] as const;
 const QUANTILES = ["q05", "q50", "q95"] as const;
@@ -77,7 +94,9 @@ describe.skipIf(!HAS_MODEL)("Web scoring pipeline", () => {
     }
   });
 
-  it("extreme high responses produce high percentiles for non-reverse-dominant domains", async () => {
+  // Directional behavior reflects the REAL model's learned structure; skip
+  // against the synthetic golden fixture (which has no meaningful direction).
+  it.skipIf(IS_FIXTURE)("extreme high responses produce high percentiles for non-reverse-dominant domains", async () => {
     // All 5s after reverse scoring: forward items stay 5, reverse items become 1
     // For domains with mostly forward items (opn), median should be high
     const scored = reverseScore(ALL_HIGH);
@@ -88,7 +107,7 @@ describe.skipIf(!HAS_MODEL)("Web scoring pipeline", () => {
     expect(result.opn.percentile.q50).toBeGreaterThan(50);
   });
 
-  it("extreme low responses produce low percentiles for non-reverse-dominant domains", async () => {
+  it.skipIf(IS_FIXTURE)("extreme low responses produce low percentiles for non-reverse-dominant domains", async () => {
     const scored = reverseScore(ALL_LOW);
     const result = await predictor.predict(scored);
     // All 1s: forward items stay 1, reverse items become 5

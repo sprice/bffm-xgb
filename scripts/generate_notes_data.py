@@ -20,11 +20,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
+from lib.config import load_config_with_base
 from lib.constants import DEFAULT_STAGE07_CV_FOLDS
 
 ARTIFACTS_DIR = PACKAGE_ROOT / "artifacts"
@@ -68,11 +67,6 @@ VARIANT_LABELS = {
 def load_json(path: Path) -> dict:
     with open(path) as f:
         return json.load(f)
-
-
-def load_yaml(path: Path) -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f)
 
 
 def load_research_summary() -> dict:
@@ -789,7 +783,7 @@ def gen_data_splits() -> str:
 
 def gen_training_config() -> str:
     """Training sparsity and augmentation settings from reference config."""
-    ref = load_yaml(CONFIGS_DIR / "reference.yaml")
+    ref = load_config_with_base(CONFIGS_DIR / "reference.yaml")
     sp = ref["sparsity"]
     tr = ref["training"]
     cv_folds = tr.get("cv_folds", DEFAULT_STAGE07_CV_FOLDS)

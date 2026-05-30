@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -75,6 +75,11 @@ export default defineConfig({
   appType: "spa",
   build: {
     outDir: "dist/client",
+  },
+  // Only run TypeScript source tests; never the compiled copies under dist/
+  // (which `npm run build` emits into dist/server/ alongside the runtime JS).
+  test: {
+    include: ["src/**/*.test.ts"],
   },
   server: {
     port: 5173,

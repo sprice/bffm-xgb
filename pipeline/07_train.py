@@ -38,6 +38,7 @@ from scipy import stats
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.model_selection import KFold, train_test_split
 
+from lib.config import load_config_with_base
 from lib.constants import (
     DEFAULT_EARLY_STOPPING_ROUNDS,
     DEFAULT_LOCAL_CV_PARALLEL_FOLDS,
@@ -46,6 +47,8 @@ from lib.constants import (
     DOMAIN_LABELS,
     DOMAINS,
     ITEM_COLUMNS,
+    LEGACY_MODEL_STEM,
+    MODEL_STEM,
     QUANTILE_NAMES,
     QUANTILES,
 )
@@ -1268,14 +1271,8 @@ def main() -> int:
         log.error("Config file not found: %s", config_path)
         return 1
 
-    try:
-        import yaml
-    except ImportError:
-        log.error("PyYAML not installed. Install with: pip install pyyaml")
-        return 1
-
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
+    # Merges configs/_base.yaml (shared defaults) underneath the variant.
+    config = load_config_with_base(config_path)
 
     config_name = config.get("name", config_path.stem)
     output_dir = PACKAGE_ROOT / config.get("output_dir", f"models/{config_name}")
@@ -2031,9 +2028,18 @@ def main() -> int:
     log.info("Step 7: Saving models to %s...", output_dir)
     for domain, models in domain_models.items():
         for q_name, model in models.items():
-            model_path = output_dir / f"adaptive_{domain}_{q_name}.joblib"
+            model_path = output_dir / f"{MODEL_STEM}_{domain}_{q_name}.joblib"
             joblib.dump(model, model_path)
             log.info("  Saved %s", model_path.name)
+            # Remove any orphaned legacy-stem file so a re-train over an old
+            # bundle doesn't leave both stems present. Loaders prefer the new
+            # stem, so a stale legacy file would otherwise linger permanently
+            # shadowed (and a mixed-stem dir from an interrupted run could pass
+            # the completeness check via the fallback).
+            legacy_path = output_dir / f"{LEGACY_MODEL_STEM}_{domain}_{q_name}.joblib"
+            if legacy_path.exists():
+                legacy_path.unlink()
+                log.info("  Removed orphaned legacy %s", legacy_path.name)
 
     # Save calibration params (explicit sparse/full regimes + legacy alias)
     full_calibration_path = output_dir / "calibration_params_full_50.json"

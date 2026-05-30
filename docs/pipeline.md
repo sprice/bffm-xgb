@@ -40,6 +40,37 @@ make test-web
 
 `make test` runs `test-lib`, `test-inference`, and `test-web`.
 
+## Smoke test (de-risk the full run)
+
+```bash
+# Tiny sampled end-to-end run: stages 03-12 + all analysis code, in minutes
+make smoke
+
+# Remove the isolated smoke outputs
+make smoke-clean
+```
+
+`make smoke` runs the *entire* pipeline (norms → prepare → correlations → tune →
+train → validate → baselines → simulate → export → figures) on a small sample
+(`SMOKE_SAMPLE`, default 8000 respondents) with a tiny model, exercising every
+stage and all the analysis paths (reliability, raw quantile-crossing, paired /
+subset bootstraps, the SEM simulation, cross-validation robustness, ONNX export)
+in a few minutes on CPU. It is the cheap way to catch a stage crash or a
+shape/logic bug *before* committing to a full multi-hour/day run.
+
+Everything is namespaced under `smoke_v1` / `models/smoke` / `output/smoke` /
+`artifacts/variants/smoke` / `artifacts/smoke_*.json` / `figures/smoke`, so it
+never touches the canonical artifacts. It needs the SQLite DB (`make load`)
+present. The smoke config (`configs/smoke.yaml` + `configs/smoke_params.json`)
+relaxes the validation gates to 0.0 and uses tiny hyperparameters — it is **not**
+a publication config. Sampling is leakage-safe: `make norms --sample N` fits
+norms on the same first-N respondents stage 04 splits, and the stage-04
+`population_signature` guard fails closed if the norms population differs.
+
+`make fixtures` is a separate, deterministic generator for the committed
+tri-runtime test fixture (`tests/fixtures/golden/`); re-run it only after an
+intentional `xgboost`/`onnx`/`onnxmltools` version bump.
+
 ## Linting & Formatting
 
 ```bash
