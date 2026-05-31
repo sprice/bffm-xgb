@@ -426,6 +426,81 @@ def test_train_sparse_gate_defaults_to_disabled_without_config_block(
         report = json.load(f)
     assert report["validation_metrics_sparse_20"] == {}
     assert report["validation_metrics_sparse_20_runs"] == []
+    # Default path: gate passes and is enforced -> honest record on the happy path.
+    assert report["quality_gates"] == {"passed": True, "enforced": True}
+
+
+def test_train_no_gate_saves_despite_failing_quality_gate(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """By default a failing quality gate aborts before saving anything; with
+    --no-gate the run still saves and honestly records the (failed, unenforced)
+    gate outcome in training_report.json — so a multi-day run is not discarded on a
+    near-miss, but a saved-despite-failure bundle is distinguishable from a clean one."""
+    train = _load_pipeline_module("07_train.py")
+    monkeypatch.setattr(train, "PACKAGE_ROOT", tmp_path)
+
+    data_dir = tmp_path / "data" / "processed"
+    data_dir.mkdir(parents=True)
+    frame = _make_dataset()
+    frame.to_parquet(data_dir / "train.parquet", index=False)
+    frame.to_parquet(data_dir / "val.parquet", index=False)
+
+    cfg_path = tmp_path / "cfg_gate.yaml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "name: unit_gate",
+                "output_dir: models/unit_gate",
+                "sparsity:",
+                "  enabled: false",
+                "training:",
+                "  cv_folds: 0",
+                "  random_state: 42",
+                "validation:",
+                "  min_pearson_r: 0.99",  # achieved overall r=0.92 -> gate fails
+                "  min_coverage_90: 0.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        train,
+        "_load_item_info",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not load item_info")),
+    )
+    monkeypatch.setattr(train, "_load_mini_ipip_mapping", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(train, "_train_domain_models", lambda *_args, **_kwargs: _dummy_domain_models())
+    monkeypatch.setattr(train, "_validate_model_outputs", lambda *_args, **_kwargs: {"ok": {"passed": True}})
+    monkeypatch.setattr(
+        train,
+        "_evaluate_domain_models",
+        lambda *_args, **_kwargs: _make_eval_metrics(r=0.92, coverage=0.9),
+    )
+    monkeypatch.setattr(
+        train,
+        "_compute_calibration_params",
+        lambda *_args, **_kwargs: {
+            domain: {"observed_coverage": 0.9, "scale_factor": 1.0} for domain in DOMAINS
+        },
+    )
+    monkeypatch.setattr(train.joblib, "dump", lambda *_args, **_kwargs: None)
+
+    report_path = tmp_path / "models" / "unit_gate" / "training_report.json"
+
+    # Default: a failing gate aborts before saving — no report written.
+    monkeypatch.setattr(sys, "argv", ["07_train.py", "--config", str(cfg_path)])
+    assert train.main() == 1
+    assert not report_path.exists(), "Failing gate must not write a training report by default"
+
+    # --no-gate: the run saves and records the failed/unenforced gate outcome.
+    monkeypatch.setattr(sys, "argv", ["07_train.py", "--config", str(cfg_path), "--no-gate"])
+    assert train.main() == 0
+    with open(report_path) as f:
+        report = json.load(f)
+    assert report["quality_gates"] == {"passed": False, "enforced": False}
 
 
 def test_train_prepare_features_targets_requires_full_big5_schema() -> None:
@@ -2675,7 +2750,7 @@ def test_run_pipeline_writes_checkpoint_markers_for_major_stages(tmp_path) -> No
     assert not (checkpoint_dir / "tune.done").exists()
 
 
-def test_run_pipeline_reference_only_uses_reference_targets_and_skips_notes(tmp_path) -> None:
+def test_run_pipeline_reference_only_uses_reference_targets_and_runs_notes(tmp_path) -> None:
     repo_root = Path(__file__).resolve().parent.parent
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir(parents=True)
@@ -2713,8 +2788,141 @@ def test_run_pipeline_reference_only_uses_reference_targets_and_skips_notes(tmp_
     assert not any(line == "prepare-default" for line in calls)
     assert not any(line == "correlations-default" for line in calls)
     assert not any(line.startswith("research-eval ") for line in calls)
-    assert not any(line == "notes" or line.startswith("notes ") for line in calls)
-    assert "notes SKIPPED (reference-only mode requires all three variants)" in result.stdout
+    # Reference-only now RUNS notes scoped to the reference variant (was: skipped).
+    assert any(line.startswith("notes REFERENCE_ONLY=1") for line in calls)
+
+
+def test_build_research_summary_reference_only_filters_to_reference(tmp_path, monkeypatch) -> None:
+    """--reference-only iterates only the reference variant: the summary's variants and
+    provenance narrow to reference, and --strict still fails closed if reference is incomplete."""
+    brs = _load_paper_module("build_research_summary.py")
+
+    # Keep the real PACKAGE_ROOT so the variant configs resolve; an empty tmp
+    # variants dir (+ tmp output) makes every variant incomplete without touching
+    # or overwriting the committed artifacts/research_summary.json.
+    variants_dir = tmp_path / "artifacts" / "variants"
+    variants_dir.mkdir(parents=True)  # empty -> every variant is incomplete
+    out_full = tmp_path / "rs_full.json"
+    out_ref = tmp_path / "rs_ref.json"
+
+    # Full (default): the summary contains all three variant keys.
+    monkeypatch.setattr(sys, "argv", [
+        "build_research_summary.py", "--output", str(out_full),
+        "--artifacts-variants-dir", str(variants_dir),
+    ])
+    assert brs.main() == 0
+    full = json.loads(out_full.read_text())
+    assert set(full["variants"]) == set(brs.VARIANTS)
+    assert full["provenance"]["reference_only"] is False
+
+    # Reference-only: the summary contains ONLY reference; provenance records the mode.
+    monkeypatch.setattr(sys, "argv", [
+        "build_research_summary.py", "--reference-only", "--output", str(out_ref),
+        "--artifacts-variants-dir", str(variants_dir),
+    ])
+    assert brs.main() == 0
+    ref = json.loads(out_ref.read_text())
+    assert set(ref["variants"]) == {"reference"}
+    assert ref["provenance"]["variants_included"] == ["reference"]
+    assert ref["provenance"]["reference_only"] is True
+
+    # Fail-closed preserved: an INCOMPLETE reference still trips --strict under --reference-only.
+    monkeypatch.setattr(sys, "argv", [
+        "build_research_summary.py", "--reference-only", "--strict", "--output", str(out_ref),
+        "--artifacts-variants-dir", str(variants_dir),
+    ])
+    assert brs.main() == 2
+
+
+def test_generate_notes_reference_only_scopes_variant_iteration(tmp_path, monkeypatch) -> None:
+    """In reference-only mode the cross-variant iteration is scoped to ['reference'] so it does
+    NOT KeyError on absent ablation bundles, and the honesty disclosure is emitted."""
+    notes = _load_paper_module("generate_notes_data.py")
+    summary_path = tmp_path / "research_summary.json"
+    summary_path.write_text(
+        json.dumps({
+            "variants": {"reference": {"notes_inputs": {}}},  # ONLY reference present
+            "reference_notes_inputs": {},
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(notes, "RESEARCH_SUMMARY_PATH", summary_path)
+
+    # Default all-variants order hits the absent ablation keys -> KeyError; no disclosure.
+    monkeypatch.setattr(notes, "_ACTIVE_VARIANT_ORDER", list(notes.VARIANT_ORDER))
+    assert notes._reference_only_disclosure() == ""
+    with pytest.raises(KeyError):
+        notes._iter_variant_notes_inputs()
+
+    # Reference-only order iterates only reference -> single record, no KeyError; disclosure present.
+    monkeypatch.setattr(notes, "_ACTIVE_VARIANT_ORDER", [notes.REFERENCE_VARIANT])
+    records = notes._iter_variant_notes_inputs()
+    assert [r[0] for r in records] == ["reference"]
+    assert "were not run in this reference-only build" in notes._reference_only_disclosure()
+
+
+def test_update_notes_reference_only_writes_and_restores_active_order(tmp_path, monkeypatch) -> None:
+    """update_notes(reference_only=True) writes NOTES.md (no abort), threads the reference-only
+    signal into the generators, and ALWAYS restores _ACTIVE_VARIANT_ORDER afterward (finally)."""
+    notes = _load_paper_module("generate_notes_data.py")
+    template = tmp_path / "NOTES.template.md"
+    template.write_text("<!-- BEGIN:probe -->\nPLACEHOLDER\n<!-- END:probe -->\n", encoding="utf-8")
+    out = tmp_path / "NOTES.md"
+    monkeypatch.setattr(notes, "NOTES_TEMPLATE_PATH", template)
+    monkeypatch.setattr(notes, "NOTES_PATH", out)
+    monkeypatch.setattr(notes, "PACKAGE_ROOT", tmp_path)
+    monkeypatch.setattr(
+        notes,
+        "SECTION_GENERATORS",
+        {"probe": lambda: notes._reference_only_disclosure() + "PROBE_BODY"},
+    )
+
+    notes.update_notes(reference_only=True)
+    written = out.read_text()
+    assert "PROBE_BODY" in written
+    assert "were not run in this reference-only build" in written  # disclosure threaded through
+    assert notes._ACTIVE_VARIANT_ORDER == notes.VARIANT_ORDER  # restored in finally
+
+    notes.update_notes(reference_only=False)
+    assert "were not run in this reference-only build" not in out.read_text()
+
+
+def test_generate_notes_reference_only_renders_real_ablation_details(tmp_path, monkeypatch) -> None:
+    """End-to-end guard: the 6 cross-variant DETAIL generators (which the empty-notes_inputs
+    scoping test cannot exercise) render on the REAL reference bundle in reference-only mode —
+    disclosure first, Reference block present, no KeyError. Skips when the gitignored reference
+    bundle is absent (e.g. in CI)."""
+    repo_root = Path(__file__).resolve().parent.parent
+    if not (repo_root / "artifacts" / "variants" / "reference" / "validation_results.json").exists():
+        pytest.skip("reference bundle (artifacts/variants/reference) not present")
+
+    # Build a reference-only research_summary from the real bundle into tmp.
+    brs = _load_paper_module("build_research_summary.py")
+    summary_path = tmp_path / "research_summary.json"
+    monkeypatch.setattr(
+        sys, "argv",
+        ["build_research_summary.py", "--reference-only", "--output", str(summary_path)],
+    )
+    assert brs.main() == 0
+    assert summary_path.exists()
+
+    # Render the 6 detail generators in reference-only mode against it.
+    notes = _load_paper_module("generate_notes_data.py")
+    monkeypatch.setattr(notes, "RESEARCH_SUMMARY_PATH", summary_path)
+    monkeypatch.setattr(notes, "_ACTIVE_VARIANT_ORDER", [notes.REFERENCE_VARIANT])
+    detail_gens = [
+        notes.gen_ablation_validation_details,
+        notes.gen_ablation_baselines_details,
+        notes.gen_ablation_per_domain_k20_details,
+        notes.gen_ablation_domain_starvation_details,
+        notes.gen_ablation_ml_vs_averaging_details,
+        notes.gen_ablation_simulation_details,
+    ]
+    for gen in detail_gens:
+        out = gen()  # must not KeyError on the absent ablation variants
+        assert out.lstrip().startswith(">"), f"{gen.__name__} missing leading disclosure"
+        assert "were not run in this reference-only build" in out
+        assert "Reference" in out
 
 
 def test_run_pipeline_reference_only_accepts_export_stage_aliases(tmp_path) -> None:

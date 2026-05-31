@@ -165,9 +165,10 @@ responses improves recovery with no item changes: a drop-in upgrade.
 ### Training and Pipeline Lessons
 
 Sparse-input training is required. Without sparsity augmentation, performance
-at the same operating point drops sharply; the cross-variant overview table
-shows the no-sparsity ablation falling well below the reference on both
-sparse-20 validation and the *K* = 20 baseline.
+at the same operating point drops sharply: the no-sparsity ablation falls well
+below the reference on both sparse-20 validation and the *K* = 20 baseline.
+(The cross-variant tables below report this comparison only when the ablation
+suite is run; a reference-only build shows the reference variant alone.)
 
 Two historical pipeline fixes were also important:
 

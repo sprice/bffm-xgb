@@ -142,6 +142,64 @@ def _write_research_summary(tmp_path: Path, *, git_hash: str, norms_sha: str) ->
     (artifacts_dir / "research_summary.json").write_text(json.dumps(summary), encoding="utf-8")
 
 
+def test_check_research_summary_reference_only_ignores_incomplete_ablations(tmp_path) -> None:
+    """--reference-only scopes the completeness gate to the reference variant, so an
+    incomplete/absent ablation does not fail a single-variant run; without the flag it FAILs."""
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    summary = {
+        "provenance": {"git_hash": "abc", "input_artifacts": {"norms_lock_sha256": "x"}},
+        "variants": {
+            "reference": {"status": {"complete": True}},
+            "ablation_none": {"status": {"complete": False}},
+        },
+    }
+    (artifacts_dir / "research_summary.json").write_text(json.dumps(summary), encoding="utf-8")
+
+    # Without the flag, the incomplete ablation FAILs the completeness gate.
+    # (norms_sha=None skips the norms-mismatch branch so we reach the variants gate.)
+    full = ProvenanceChecker()
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_research_summary(full, norms_sha=None, head_hash="abc", reference_only=False)
+    assert any(r[0] == "FAIL" for r in full.results)
+
+    # With --reference-only, only the (complete) reference variant is required -> PASS.
+    ref_only = ProvenanceChecker()
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_research_summary(ref_only, norms_sha=None, head_hash="abc", reference_only=True)
+    assert all(r[0] != "FAIL" for r in ref_only.results)
+    assert any(r[0] == "PASS" for r in ref_only.results)
+
+
+def test_check_research_summary_reference_only_summary_checked_without_flag_fails(tmp_path) -> None:
+    """A summary built --reference-only (provenance.reference_only=True, single variant) must FAIL
+    a default provenance-check (absent ablations are not verifiable), and pass only with --reference-only."""
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    summary = {
+        "provenance": {
+            "git_hash": "abc",
+            "reference_only": True,
+            "input_artifacts": {"norms_lock_sha256": "x"},
+        },
+        "variants": {"reference": {"status": {"complete": True}}},
+    }
+    (artifacts_dir / "research_summary.json").write_text(json.dumps(summary), encoding="utf-8")
+
+    # Default check on a reference-only summary -> FAIL (must use --reference-only).
+    default = ProvenanceChecker()
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_research_summary(default, norms_sha=None, head_hash="abc", reference_only=False)
+    assert any(r[0] == "FAIL" for r in default.results)
+
+    # With --reference-only it is accepted.
+    ref_only = ProvenanceChecker()
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_research_summary(ref_only, norms_sha=None, head_hash="abc", reference_only=True)
+    assert all(r[0] != "FAIL" for r in ref_only.results)
+    assert any(r[0] == "PASS" for r in ref_only.results)
+
+
 def test_check_research_summary_norms_mismatch_at_head_fails(tmp_path) -> None:
     """A5.2: a norms mismatch on a summary AT HEAD is a hard FAIL."""
     _write_research_summary(tmp_path, git_hash="headhash", norms_sha="wronghash")

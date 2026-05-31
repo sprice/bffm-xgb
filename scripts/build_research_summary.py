@@ -15,7 +15,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
 from lib.config import load_config_with_base
-from lib.constants import VARIANTS
+from lib.constants import VARIANTS, reference_only_variants
 from lib.provenance import build_provenance, file_sha256, relative_to_root, sanitize_paths
 
 logging.basicConfig(
@@ -282,6 +282,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Exit non-zero if any variant is incomplete, has parse errors, or has provenance mismatch.",
     )
+    parser.add_argument(
+        "--reference-only",
+        action="store_true",
+        help=(
+            "Build a single-variant (reference-only) summary: iterate only the "
+            "reference variant so --strict does not demand the absent ablation "
+            "bundles. The reference bundle is still validated (fail-closed preserved)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -296,7 +305,11 @@ def main() -> int:
     loaded_by_variant: dict[str, dict[str, Any]] = {}
     incomplete: list[str] = []
 
-    for variant, meta in VARIANTS.items():
+    # In reference-only mode iterate only the reference variant, so a single-variant
+    # tree is not held to (and --strict does not abort on) the absent ablations.
+    variants_registry = reference_only_variants() if args.reference_only else VARIANTS
+
+    for variant, meta in variants_registry.items():
         summary, loaded = _collect_variant_summary(
             variant=variant,
             meta=meta,
@@ -351,6 +364,7 @@ def main() -> int:
             "input_artifacts": input_artifacts,
             "n_variants": len(variants_summary),
             "variants_included": sorted(variants_summary.keys()),
+            "reference_only": bool(args.reference_only),
         },
     )
 

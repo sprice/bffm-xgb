@@ -19,6 +19,15 @@ RESEARCH_EVAL_PARALLEL ?= 4
 _RESEARCH_EVAL_PARALLEL_FLAG := $(if $(RESEARCH_EVAL_PARALLEL),-j$(RESEARCH_EVAL_PARALLEL),)
 GPU ?=
 _GPU_FLAG := $(if $(GPU),--gpu,)
+# NO_GATE=1 -> stage 07 records the quality-gate outcome but saves the bundle even
+# on a threshold miss (don't discard multi-day compute on a near-miss; inspect after).
+NO_GATE ?=
+_NO_GATE_FLAG := $(if $(filter 1,$(NO_GATE)),--no-gate,)
+# REFERENCE_ONLY=1 -> scope research-summary / notes / provenance-check to the
+# reference variant only, so a single-variant (reference-only) run can regenerate
+# research_summary.json + a single-variant NOTES.md and pass provenance-check.
+REFERENCE_ONLY ?=
+_REFERENCE_ONLY_FLAG := $(if $(filter 1,$(REFERENCE_ONLY)),--reference-only,)
 # train-1 runs alone before train-2/3, so give it all cores (N_JOBS × TRAIN_PARALLEL)
 _TRAIN1_NJOBS = $(if $(and $(TRAIN_PARALLEL),$(N_JOBS)),$(shell echo $$(( $(N_JOBS) * $(TRAIN_PARALLEL) ))),$(N_JOBS))
 MODEL_DIR ?= models/reference
@@ -99,11 +108,11 @@ norms-check:
 
 provenance-check:
 	$(MAKE) norms-check
-	$(PY) scripts/check_provenance.py --strict
+	$(PY) scripts/check_provenance.py --strict $(_REFERENCE_ONLY_FLAG)
 
 provenance-check-full:
 	$(MAKE) norms-check
-	$(PY) scripts/check_provenance.py --strict --full
+	$(PY) scripts/check_provenance.py --strict --full $(_REFERENCE_ONLY_FLAG)
 
 prepare:
 	$(PY) pipeline/04_prepare_data.py --output-dir $(DATA_DIR)
@@ -131,17 +140,17 @@ endif
 train-1:
 	@mkdir -p $(LOGS_DIR)
 	@$(PY) scripts/run_labeled.py --label "train reference" --log-file "$(LOGS_DIR)/train-reference.log" -- \
-		$(PY) pipeline/07_train.py --config configs/reference.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG)
+		$(PY) pipeline/07_train.py --config configs/reference.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG) $(_NO_GATE_FLAG)
 
 train-2:
 	@mkdir -p $(LOGS_DIR)
 	@$(PY) scripts/run_labeled.py --label "train ablation_none" --log-file "$(LOGS_DIR)/train-ablation-none.log" -- \
-		$(PY) pipeline/07_train.py --config configs/ablation_none.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG)
+		$(PY) pipeline/07_train.py --config configs/ablation_none.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG) $(_NO_GATE_FLAG)
 
 train-3:
 	@mkdir -p $(LOGS_DIR)
 	@$(PY) scripts/run_labeled.py --label "train ablation_focused" --log-file "$(LOGS_DIR)/train-ablation-focused.log" -- \
-		$(PY) pipeline/07_train.py --config configs/ablation_focused.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG)
+		$(PY) pipeline/07_train.py --config configs/ablation_focused.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG) $(_NO_GATE_FLAG)
 
 validate:
 	@mkdir -p $(EVAL_DIR)
@@ -198,14 +207,14 @@ research-eval-ablation-focused:
 		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/ablation_focused DATA_DIR=$(DATA_DIR)
 
 research-summary:
-	$(PY) scripts/build_research_summary.py --output $(RESEARCH_SUMMARY_PATH) --artifacts-variants-dir $(ARTIFACTS_VARIANTS_DIR)
+	$(PY) scripts/build_research_summary.py --output $(RESEARCH_SUMMARY_PATH) --artifacts-variants-dir $(ARTIFACTS_VARIANTS_DIR) $(_REFERENCE_ONLY_FLAG)
 
 research-summary-strict:
-	$(PY) scripts/build_research_summary.py --strict --output $(RESEARCH_SUMMARY_PATH) --artifacts-variants-dir $(ARTIFACTS_VARIANTS_DIR)
+	$(PY) scripts/build_research_summary.py --strict --output $(RESEARCH_SUMMARY_PATH) --artifacts-variants-dir $(ARTIFACTS_VARIANTS_DIR) $(_REFERENCE_ONLY_FLAG)
 
 notes:
-	$(MAKE) research-summary-strict
-	$(PY) scripts/generate_notes_data.py
+	$(MAKE) research-summary-strict REFERENCE_ONLY=$(REFERENCE_ONLY)
+	$(PY) scripts/generate_notes_data.py $(_REFERENCE_ONLY_FLAG)
 
 upload-hf: $(_UPLOAD_HF_DEPS)
 	$(PY) pipeline/13_upload_hf.py $(_RESET_FLAG)
@@ -260,8 +269,11 @@ smoke:
 	$(PY) pipeline/12_generate_figures.py --artifacts-dir $(SMOKE_EVAL_DIR) --output-dir figures/smoke
 	@echo "make smoke OK — stages 03-12 + A4 analysis ran on a $(SMOKE_SAMPLE)-respondent sample"
 
+# $(ARTIFACTS_DIR)/smoke_*.json mirrors the .gitignore pattern so every smoke
+# sidecar (smoke_norms.json + .meta.json, smoke_tuned_params.json + .original.json)
+# is removed, not just the two primary files.
 smoke-clean:
-	rm -rf $(SMOKE_DATA_DIR) $(SMOKE_MODEL_DIR) $(SMOKE_EVAL_DIR) $(SMOKE_OUTPUT_DIR) figures/smoke $(SMOKE_NORMS) $(ARTIFACTS_DIR)/smoke_tuned_params.json
+	rm -rf $(SMOKE_DATA_DIR) $(SMOKE_MODEL_DIR) $(SMOKE_EVAL_DIR) $(SMOKE_OUTPUT_DIR) figures/smoke $(ARTIFACTS_DIR)/smoke_*.json
 
 archive:
 	git archive --format=zip HEAD -o data/bffm-xgb-src.zip -- . ':!output/*.onnx'

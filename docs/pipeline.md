@@ -173,9 +173,12 @@ make train DATA_DIR=data/processed/canonical_v1
 | `CV_PARALLEL_FOLDS`         | `1`                                                                                                         | Number of stage-07 CV folds to run concurrently on CPU (`1` on GPU)                     |
 | `TRAIN_DATA_DIR`            | `DATA_DIR`                                                                                                  | Training data for runs 1--3                                                             |
 | `TRAIN_PARALLEL`            | *(inherit outer make)*                                                                                      | Fan-out for ablation runs 2--3                                                          |
+| `NO_GATE`                   | *(none)*                                                                                                    | `NO_GATE=1` records the quality-gate outcome but saves the bundle even on a threshold miss |
 
 Thread count precedence: `N_JOBS` > `training.n_jobs` in config > `$BFFM_XGB_N_JOBS` > `os.cpu_count()`.
 The committed configs pin `training.n_jobs: 16` so defaults are machine-independent.
+
+**Quality gate (`NO_GATE`).** Stage 07 evaluates the trained models against the config's `validation` thresholds *after* training and, by default, aborts (`return 1`, saving nothing) if any threshold is missed. For the first run on a new split — where a near-miss should not discard multi-day compute — pass `NO_GATE=1` (e.g. `make train NO_GATE=1`, or `NO_GATE=1 bash scripts/run-pipeline.sh --reference-only`). The gate still runs and its outcome is recorded honestly in `training_report.json` as `quality_gates: {passed, enforced}`, but the bundle is saved regardless. **A bundle with `enforced: false` (or `passed: false`) must have its `validation_metrics` reviewed manually before it is published** — `NO_GATE` only suppresses the abort, not the check. Only `NO_GATE=1` enables it; any other value (including `0`) leaves the gate enforcing.
 
 ## Model/Data Selection
 
@@ -230,6 +233,8 @@ make figures                # generates publication figures from artifacts
 ```
 
 The `notes` target runs `research-summary-strict` first, which fails closed unless all three variants have complete, provenance-consistent evaluation bundles under `artifacts/variants/`. The aggregated `artifacts/research_summary.json` serves as the single canonical manifest for all auto-generated data sections in `notes/NOTES.md`.
+
+For a **reference-only** pipeline run (which produces only the `reference` variant), pass `REFERENCE_ONLY=1` to scope these targets to that single variant: `make research-summary-strict REFERENCE_ONLY=1`, `make notes REFERENCE_ONLY=1`, and `make provenance-check REFERENCE_ONLY=1`. The summary and completeness gate then require only the reference bundle (still fail-closed on *it*), and the generated `NOTES.md` renders the reference run with a disclosure that the ablation variants were not run. `scripts/run-pipeline.sh --reference-only` passes this flag automatically. The committed full-run `NOTES.md` is always produced without the flag (all three variants).
 
 | Target                    | Inputs                                                                              | Outputs                                                                                                             |
 | ------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |

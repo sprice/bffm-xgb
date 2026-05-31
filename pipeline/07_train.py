@@ -1260,6 +1260,19 @@ def main() -> int:
         default=False,
         help="Use GPU acceleration (device='cuda')",
     )
+    parser.add_argument(
+        "--no-gate",
+        action="store_true",
+        default=False,
+        help=(
+            "Run the quality-gate checks and record their outcome in "
+            "training_report.json, but do NOT abort on failure: save the "
+            "models/calibration/report even if a threshold is missed. Use for the "
+            "first run on a new split so a near-miss does not discard the full "
+            "training compute; inspect validation_metrics and decide manually "
+            "before publishing."
+        ),
+    )
     add_provenance_args(parser)
     args = parser.parse_args()
 
@@ -2003,8 +2016,15 @@ def main() -> int:
                     gate_failed = True
 
     if gate_failed:
-        log.error("Quality gates not met — aborting before saving models.")
-        return 1
+        if args.no_gate:
+            log.warning(
+                "Quality gates NOT met, but --no-gate is set: saving "
+                "models/calibration/report anyway. Inspect validation_metrics in "
+                "training_report.json and decide manually before publishing."
+            )
+        else:
+            log.error("Quality gates not met — aborting before saving models.")
+            return 1
 
     # Compute calibration parameters
     log.info("Step 6: Computing calibration parameters...")
@@ -2140,6 +2160,16 @@ def main() -> int:
         "validation_metrics": val_metrics,
         "validation_metrics_sparse_20": sparse_val_metrics,
         "validation_metrics_sparse_20_runs": sparse_val_runs,
+        # Records the quality-gate outcome alongside the metrics it was computed
+        # from. "passed" reflects whether every configured threshold was met;
+        # "enforced" is False whenever --no-gate was passed (gate computed but not
+        # enforced). Combine the two to distinguish a clean run (True/True), a clean
+        # run invoked with --no-gate (True/False), and a saved-despite-failure
+        # bundle (False/False).
+        "quality_gates": {
+            "passed": not gate_failed,
+            "enforced": not args.no_gate,
+        },
         "calibration_params": (
             calibration_params_sparse_20_balanced
             if calibration_params_sparse_20_balanced

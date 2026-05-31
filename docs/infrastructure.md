@@ -50,8 +50,11 @@ so expensive outputs are synced locally before final teardown.
 `make remote-reference` follows the same remote CPU path but only builds the
 reference data/model path after load/norms: `prepare`,
 `correlations`, `train 1`, `research-eval-reference`,
-`export-reference`, `export-repo-readme`, and `figures`. It skips `notes`
-because notes generation still requires all three variants.
+`export-reference`, `export-repo-readme`, `notes`, and `figures`. It now runs
+`notes` scoped to the reference variant (`make notes REFERENCE_ONLY=1`),
+producing a single-variant `NOTES.md` + `research_summary.json` that disclose
+the ablation variants were not run (generated on the remote; regenerate locally
+with `make notes REFERENCE_ONLY=1` against the pulled reference bundle if needed).
 
 `make remote-push` excludes `data/` by design. Use `make remote-push-data`
 when you intentionally want to seed the remote box with your local `data/`

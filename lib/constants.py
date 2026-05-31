@@ -89,3 +89,19 @@ VARIANTS = {
         "default_data_regime": "canonical_v1",
     },
 }
+
+# The single variant produced by a reference-only pipeline run (the rest are
+# ablations). The --reference-only paths in build_research_summary /
+# generate_notes_data / check_provenance use this as the one source of truth for
+# "which variant survives reference-only" instead of hardcoding the literal.
+REFERENCE_VARIANT = "reference"
+
+
+def reference_only_variants() -> dict[str, dict[str, str]]:
+    """VARIANTS filtered to just the reference variant.
+
+    Lets a single-variant run scope its cross-variant logic without being held to
+    the all-variants completeness contract. Returns the same value type as VARIANTS
+    (a slice), so callers that iterate it stay type-identical to the full loop.
+    """
+    return {REFERENCE_VARIANT: VARIANTS[REFERENCE_VARIANT]}

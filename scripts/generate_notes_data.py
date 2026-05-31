@@ -24,7 +24,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
 from lib.config import load_config_with_base
-from lib.constants import DEFAULT_STAGE07_CV_FOLDS
+from lib.constants import DEFAULT_STAGE07_CV_FOLDS, REFERENCE_VARIANT
 
 ARTIFACTS_DIR = PACKAGE_ROOT / "artifacts"
 CONFIGS_DIR = PACKAGE_ROOT / "configs"
@@ -57,6 +57,23 @@ VARIANT_LABELS = {
     "ablation_none": "Ablation: No Sparsity",
     "ablation_focused": "Ablation: Focused Only",
 }
+
+# The variants the cross-variant ("ablation_*") sections iterate. Defaults to the
+# full set; update_notes() narrows it to just the reference variant for a
+# reference-only build, then restores it (in a finally) so direct generator calls
+# — e.g. the BFFM_STRICT_DRIFT byte-drift test — always see the full order.
+_ACTIVE_VARIANT_ORDER: list[str] = list(VARIANT_ORDER)
+
+
+def _reference_only_disclosure() -> str:
+    """One-line NOTES disclosure prepended to the cross-variant detail sections when
+    only the reference variant was run (so the "All Runs" headings are not misleading)."""
+    if _ACTIVE_VARIANT_ORDER == [REFERENCE_VARIANT]:
+        return (
+            "> Ablation variants (no-sparsity, focused-only) were not run in this "
+            "reference-only build; only the reference run is shown below.\n"
+        )
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -917,7 +934,7 @@ def gen_ablation_overview() -> str:
         ]
     ]
 
-    for variant in VARIANT_ORDER:
+    for variant in _ACTIVE_VARIANT_ORDER:
         variant_payload = variants.get(variant, {})
         if not isinstance(variant_payload, dict):
             rows.append([VARIANT_LABELS.get(variant, variant)] + ["---"] * 7)
@@ -966,7 +983,7 @@ def gen_ablation_overview() -> str:
             ]
         )
 
-    return pad_table(rows)
+    return _reference_only_disclosure() + pad_table(rows)
 
 
 def gen_ablation_provenance() -> str:
@@ -985,7 +1002,7 @@ def gen_ablation_provenance() -> str:
         ]
     ]
 
-    for variant in VARIANT_ORDER:
+    for variant in _ACTIVE_VARIANT_ORDER:
         payload = variants.get(variant, {})
         if not isinstance(payload, dict):
             rows.append([VARIANT_LABELS.get(variant, variant)] + ["---"] * 5)
@@ -1011,12 +1028,12 @@ def gen_ablation_provenance() -> str:
             ]
         )
 
-    return pad_table(rows)
+    return _reference_only_disclosure() + pad_table(rows)
 
 
 def _iter_variant_notes_inputs() -> list[tuple[str, str, dict]]:
     records: list[tuple[str, str, dict]] = []
-    for variant in VARIANT_ORDER:
+    for variant in _ACTIVE_VARIANT_ORDER:
         label = VARIANT_LABELS.get(variant, variant)
         notes_inputs = load_variant_notes_inputs(variant)
         records.append((variant, label, notes_inputs))
@@ -1056,7 +1073,7 @@ def _gen_sparse20_validation_from_notes_inputs(notes_inputs: dict) -> str:
 
 
 def gen_ablation_validation_details() -> str:
-    parts: list[str] = []
+    parts: list[str] = [d] if (d := _reference_only_disclosure()) else []
     for _, label, notes_inputs in _iter_variant_notes_inputs():
         parts.append(f"#### {label}\n")
         parts.append("**Full-50 validation:**\n")
@@ -1067,7 +1084,7 @@ def gen_ablation_validation_details() -> str:
 
 
 def gen_ablation_baselines_details() -> str:
-    parts: list[str] = []
+    parts: list[str] = [d] if (d := _reference_only_disclosure()) else []
     for _, label, notes_inputs in _iter_variant_notes_inputs():
         parts.append(f"#### {label}\n")
         parts.append(_gen_baselines_from_notes_inputs(notes_inputs))
@@ -1075,7 +1092,7 @@ def gen_ablation_baselines_details() -> str:
 
 
 def gen_ablation_per_domain_k20_details() -> str:
-    parts: list[str] = []
+    parts: list[str] = [d] if (d := _reference_only_disclosure()) else []
     for _, label, notes_inputs in _iter_variant_notes_inputs():
         parts.append(f"#### {label}\n")
         parts.append(_gen_per_domain_k20_from_notes_inputs(notes_inputs))
@@ -1083,7 +1100,7 @@ def gen_ablation_per_domain_k20_details() -> str:
 
 
 def gen_ablation_domain_starvation_details() -> str:
-    parts: list[str] = []
+    parts: list[str] = [d] if (d := _reference_only_disclosure()) else []
     for _, label, notes_inputs in _iter_variant_notes_inputs():
         parts.append(f"#### {label}\n")
         parts.append(_gen_domain_starvation_from_notes_inputs(notes_inputs))
@@ -1091,7 +1108,7 @@ def gen_ablation_domain_starvation_details() -> str:
 
 
 def gen_ablation_ml_vs_averaging_details() -> str:
-    parts: list[str] = []
+    parts: list[str] = [d] if (d := _reference_only_disclosure()) else []
     for _, label, notes_inputs in _iter_variant_notes_inputs():
         parts.append(f"#### {label}\n")
         parts.append(_gen_ml_vs_averaging_from_notes_inputs(notes_inputs))
@@ -1099,7 +1116,7 @@ def gen_ablation_ml_vs_averaging_details() -> str:
 
 
 def gen_ablation_simulation_details() -> str:
-    parts: list[str] = []
+    parts: list[str] = [d] if (d := _reference_only_disclosure()) else []
     for _, label, notes_inputs in _iter_variant_notes_inputs():
         parts.append(f"#### {label}\n")
         parts.append(_gen_simulation_from_notes_inputs(notes_inputs))
@@ -1182,42 +1199,51 @@ SECTION_GENERATORS = {
 }
 
 
-def update_notes(dry_run: bool = False) -> None:
+def update_notes(dry_run: bool = False, reference_only: bool = False) -> None:
     if not NOTES_TEMPLATE_PATH.exists():
         print(f"ERROR: Template not found: {NOTES_TEMPLATE_PATH}")
         sys.exit(1)
-    text = NOTES_TEMPLATE_PATH.read_text()
-    updated = 0
-    failed = 0
 
-    for name, gen_fn in SECTION_GENERATORS.items():
-        pattern = rf"(<!-- BEGIN:{name} -->\n).*?(\n<!-- END:{name} -->)"
-        if not re.search(pattern, text, flags=re.DOTALL):
-            print(f"  SKIP  {name} (no markers found in NOTES.md)")
-            continue
-        try:
-            content = gen_fn()
-            replacement = rf"\g<1>{content}\g<2>"
-            text = re.sub(pattern, replacement, text, flags=re.DOTALL)
-            updated += 1
-            if dry_run:
-                print(f"\n--- {name} ---")
-                print(content)
-            else:
-                print(f"  OK    {name}")
-        except Exception as e:
-            print(f"  FAIL  {name}: {e}")
-            failed += 1
+    # Scope the cross-variant ("ablation_*") sections to just the reference variant
+    # for a reference-only build, then ALWAYS restore the default (finally) so a
+    # later direct generator call (e.g. the byte-drift test) sees the full order.
+    global _ACTIVE_VARIANT_ORDER
+    _ACTIVE_VARIANT_ORDER = [REFERENCE_VARIANT] if reference_only else list(VARIANT_ORDER)
+    try:
+        text = NOTES_TEMPLATE_PATH.read_text()
+        updated = 0
+        failed = 0
 
-    if failed:
-        print(f"\nWARNING: {failed} sections failed to generate — file not written")
-        sys.exit(1)
+        for name, gen_fn in SECTION_GENERATORS.items():
+            pattern = rf"(<!-- BEGIN:{name} -->\n).*?(\n<!-- END:{name} -->)"
+            if not re.search(pattern, text, flags=re.DOTALL):
+                print(f"  SKIP  {name} (no markers found in NOTES.md)")
+                continue
+            try:
+                content = gen_fn()
+                replacement = rf"\g<1>{content}\g<2>"
+                text = re.sub(pattern, replacement, text, flags=re.DOTALL)
+                updated += 1
+                if dry_run:
+                    print(f"\n--- {name} ---")
+                    print(content)
+                else:
+                    print(f"  OK    {name}")
+            except Exception as e:
+                print(f"  FAIL  {name}: {e}")
+                failed += 1
 
-    if not dry_run:
-        NOTES_PATH.write_text(text)
-        print(f"\nUpdated {updated} sections in {NOTES_PATH.relative_to(PACKAGE_ROOT)}")
-    else:
-        print(f"\nDry run: {updated} sections would be updated")
+        if failed:
+            print(f"\nWARNING: {failed} sections failed to generate — file not written")
+            sys.exit(1)
+
+        if not dry_run:
+            NOTES_PATH.write_text(text)
+            print(f"\nUpdated {updated} sections in {NOTES_PATH.relative_to(PACKAGE_ROOT)}")
+        else:
+            print(f"\nDry run: {updated} sections would be updated")
+    finally:
+        _ACTIVE_VARIANT_ORDER = list(VARIANT_ORDER)
 
 
 def main() -> None:
@@ -1225,8 +1251,17 @@ def main() -> None:
     parser.add_argument(
         "--dry-run", action="store_true", help="Print sections without writing"
     )
+    parser.add_argument(
+        "--reference-only",
+        action="store_true",
+        help=(
+            "Render a single-variant NOTES.md: scope the cross-variant sections to "
+            "the reference variant only (with a disclosure that ablations were not "
+            "run), instead of failing on absent ablation bundles."
+        ),
+    )
     args = parser.parse_args()
-    update_notes(dry_run=args.dry_run)
+    update_notes(dry_run=args.dry_run, reference_only=args.reference_only)
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ from pathlib import Path
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from lib.constants import VARIANTS
+from lib.constants import REFERENCE_VARIANT, VARIANTS
 from lib.provenance import _detect_git_hash, file_sha256
 
 
@@ -147,12 +147,17 @@ def check_research_summary(
     norms_sha: str | None,
     *,
     head_hash: str | None = None,
+    reference_only: bool = False,
 ) -> None:
     """Check C: research_summary.json has top-level provenance.
 
     A norms-reference mismatch is a hard FAIL only when the summary is at HEAD;
     a summary that predates HEAD legitimately references older norms -> WARN
     (so a stale-but-committed summary does not break ``make provenance-check``).
+
+    When ``reference_only`` is set, the all-variants completeness gate is scoped to
+    the reference variant only (a single-variant pipeline run produces no ablation
+    bundles), so a leftover incomplete ablation key cannot fail the check.
     """
     path = PACKAGE_ROOT / "artifacts" / "research_summary.json"
     if not path.exists():
@@ -167,6 +172,18 @@ def check_research_summary(
     provenance = payload.get("provenance")
     if not isinstance(provenance, dict):
         checker.failed("research_summary.json", "missing top-level provenance key")
+        return
+
+    # A summary built --reference-only contains only the reference variant, so the
+    # all-variants completeness gate below cannot detect the absent ablations. Fail
+    # loudly if such a summary is checked WITHOUT --reference-only (older summaries
+    # predate this provenance key -> bool(None) is False -> no effect on them).
+    if bool(provenance.get("reference_only")) and not reference_only:
+        checker.failed(
+            "research_summary.json",
+            "summary was built --reference-only (single variant); re-run the check "
+            "with --reference-only, or rebuild the full-variant summary",
+        )
         return
 
     summary_git_hash = provenance.get("git_hash")
@@ -202,7 +219,8 @@ def check_research_summary(
     if isinstance(variants, dict):
         incomplete = [
             v for v, data in variants.items()
-            if isinstance(data, dict) and not data.get("status", {}).get("complete", False)
+            if (not reference_only or v == REFERENCE_VARIANT)
+            and isinstance(data, dict) and not data.get("status", {}).get("complete", False)
         ]
         if incomplete:
             checker.failed(
@@ -447,6 +465,14 @@ def main() -> int:
             "the published bundle has been regenerated at HEAD."
         ),
     )
+    parser.add_argument(
+        "--reference-only",
+        action="store_true",
+        help=(
+            "Scope the research_summary completeness gate to the reference variant "
+            "only (for a single-variant pipeline run that produced no ablation bundles)."
+        ),
+    )
     args = parser.parse_args()
 
     checker = ProvenanceChecker()
@@ -454,7 +480,7 @@ def main() -> int:
 
     norms_sha = check_norms_lock(checker)
     check_norms_meta(checker, norms_sha)
-    check_research_summary(checker, norms_sha, head_hash=head_hash)
+    check_research_summary(checker, norms_sha, head_hash=head_hash, reference_only=args.reference_only)
     check_output_bundle(checker, norms_sha, head_hash=head_hash, strict_head=args.strict_head)
     check_figures_manifest(checker)
 

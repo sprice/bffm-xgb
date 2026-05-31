@@ -10,6 +10,7 @@ TRAIN_PARALLEL="${TRAIN_PARALLEL:-}"
 RESEARCH_EVAL_PARALLEL="${RESEARCH_EVAL_PARALLEL:-}"
 GPU="${GPU:-}"
 REFERENCE_ONLY="${REFERENCE_ONLY:-}"
+NO_GATE="${NO_GATE:-}"
 
 # ---------------------------------------------------------------------------
 # Stage range flags
@@ -206,6 +207,7 @@ train_cmd=(make train)
 [[ -n "$CV_PARALLEL_FOLDS" ]] && train_cmd+=("CV_PARALLEL_FOLDS=$CV_PARALLEL_FOLDS")
 [[ -n "$TRAIN_PARALLEL" ]] && train_cmd+=("TRAIN_PARALLEL=$TRAIN_PARALLEL")
 [[ -n "$_GPU_FLAG" ]] && train_cmd+=("$_GPU_FLAG")
+[[ "$NO_GATE" == 1 ]] && train_cmd+=("NO_GATE=1")
 run_step "train" "${train_cmd[@]}"
 
 if [[ -n "$REFERENCE_ONLY" ]]; then
@@ -218,7 +220,7 @@ run_step "research-eval" "${research_eval_cmd[@]}"
 
 if [[ -n "$REFERENCE_ONLY" ]]; then
     run_step "export" make export-reference export-repo-readme
-    skip_step "notes" "reference-only mode requires all three variants"
+    run_step "notes" make notes REFERENCE_ONLY=1
 else
     run_step "export" make export-all
     run_step "notes" make notes
