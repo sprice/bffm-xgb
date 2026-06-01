@@ -28,6 +28,10 @@ _NO_GATE_FLAG := $(if $(filter 1,$(NO_GATE)),--no-gate,)
 # research_summary.json + a single-variant NOTES.md and pass provenance-check.
 REFERENCE_ONLY ?=
 _REFERENCE_ONLY_FLAG := $(if $(filter 1,$(REFERENCE_ONLY)),--reference-only,)
+# STRICT_HEAD=1 -> verify-release enforces git-freshness (bundle commit must be HEAD,
+# or an ancestor of HEAD with no pipeline/lib/configs drift) instead of warning.
+STRICT_HEAD ?=
+_STRICT_HEAD_FLAG := $(if $(filter 1,$(STRICT_HEAD)),--strict-head,)
 # train-1 runs alone before train-2/3, so give it all cores (N_JOBS × TRAIN_PARALLEL)
 _TRAIN1_NJOBS = $(if $(and $(TRAIN_PARALLEL),$(N_JOBS)),$(shell echo $$(( $(N_JOBS) * $(TRAIN_PARALLEL) ))),$(N_JOBS))
 MODEL_DIR ?= models/reference
@@ -63,7 +67,7 @@ VALID_TRAIN_RUNS := 1 2 3
 RESEARCH_EVAL_TARGETS := research-eval-reference research-eval-ablation-none research-eval-ablation-focused
 _CALLER_PARALLEL_MAKEFLAGS = $(filter -j% -j --jobserver-auth=% --jobserver-fds=%,$(MAKEFLAGS))
 
-.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full prepare correlations tune train train-1 train-2 train-3 validate baselines simulate export export-all export-repo-readme export-reference export-ablation-none export-ablation-focused figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-summary research-summary-strict notes upload-hf upload-hf-reference lint format typecheck test test-lib test-inference test-web fixtures smoke smoke-clean archive clean restore web-setup web-dev web-build deploy-web
+.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full verify-release pull-reference prepare correlations tune train train-1 train-2 train-3 validate baselines simulate export export-all export-repo-readme export-reference export-ablation-none export-ablation-focused figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-summary research-summary-strict notes upload-hf upload-hf-reference lint format typecheck test test-lib test-inference test-web fixtures smoke smoke-clean archive clean restore web-setup web-dev web-build deploy-web
 
 # Ordered phases. Each stage is a sub-make so the order holds even under `make -j`
 # (recipe lines run sequentially), while each stage keeps its own internal
@@ -113,6 +117,17 @@ provenance-check:
 provenance-check-full:
 	$(MAKE) norms-check
 	$(PY) scripts/check_provenance.py --strict --full $(_REFERENCE_ONLY_FLAG)
+
+# Clone-side release verification: runs ONLY the provenance checker (NO norms-check,
+# so no SQLite DB / no retrain needed on a fresh clone). Auto-detects reference-only
+# from the published summary. STRICT_HEAD=1 enforces git-freshness.
+verify-release:
+	$(PY) scripts/check_provenance.py --strict $(_STRICT_HEAD_FLAG) $(_REFERENCE_ONLY_FLAG)
+
+# Fetch the published model.onnx from HF into output/reference/ (sha256-verified,
+# fail-closed) so a fresh clone can verify the model bytes too.
+pull-reference:
+	$(PY) scripts/pull_reference.py
 
 prepare:
 	$(PY) pipeline/04_prepare_data.py --output-dir $(DATA_DIR)

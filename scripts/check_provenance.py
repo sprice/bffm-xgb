@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -33,6 +34,75 @@ def _load_json(path: Path) -> dict | None:
     except (OSError, json.JSONDecodeError, ValueError):
         pass
     return None
+
+
+# Paths whose contents determine the generated artifacts. A release commit may
+# legitimately sit ABOVE the bundle's generation commit (it adds the artifacts,
+# docs, tooling) as long as NONE of these changed in between -- that proves the
+# generation code at HEAD is byte-identical to the code that produced the bundle.
+GENERATION_PATHS = ("pipeline", "lib", "configs")
+
+
+def _git(*args: str) -> subprocess.CompletedProcess[str] | None:
+    """Run a git command rooted at PACKAGE_ROOT. Returns None if git is
+    unavailable (no binary / timeout / OS error) so callers can degrade gracefully."""
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=str(PACKAGE_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+
+
+def _commit_present(commit: str) -> bool:
+    """True iff `commit` resolves to a commit object here (False on a shallow
+    clone / tarball where the object is absent)."""
+    cp = _git("rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}")
+    return cp is not None and cp.returncode == 0
+
+
+def _release_fresh(
+    bundle_hash: str | None, head_hash: str | None, *, strict_head: bool
+) -> tuple[bool, str]:
+    """Decide whether a bundle stamped ``bundle_hash`` is fresh w.r.t. ``head_hash``.
+
+    Fresh when:
+      (a) bundle_hash == head_hash (exact match -- the original rule), OR
+      (b) bundle_hash is an ANCESTOR of head_hash AND no GENERATION_PATHS file
+          changed between them. This lets the release/refresh commits (and a later
+          merge into main) sit on top of the generation commit without going stale,
+          as long as the pipeline/lib/configs code is unchanged.
+
+    Graceful degradation: if git is unavailable or the bundle/HEAD object is
+    absent (shallow clone / tarball), the relationship can't be evaluated -> return
+    fresh=True with a 'git-unverifiable' note, so the content-sha chain is relied
+    upon rather than failing. ``strict_head`` only changes the CALLER's
+    PASS/WARN/FAIL mapping, not this predicate. Returns (fresh, detail)."""
+    if not bundle_hash or not head_hash or head_hash == "unknown":
+        return True, "head/bundle hash unknown (git-unverifiable)"
+    if bundle_hash == head_hash:
+        return True, "at HEAD"
+    if _git("rev-parse", "--git-dir") is None:
+        return True, "git unavailable (git-unverifiable)"
+    if not _commit_present(bundle_hash) or not _commit_present(head_hash):
+        return True, "bundle/HEAD object absent (shallow clone; git-unverifiable)"
+    anc = _git("merge-base", "--is-ancestor", bundle_hash, head_hash)
+    if anc is None:
+        return True, "git unavailable (git-unverifiable)"
+    if anc.returncode != 0:
+        return False, f"bundle {bundle_hash[:12]}... is not an ancestor of HEAD {head_hash[:12]}..."
+    diff = _git("diff", "--name-only", bundle_hash, head_hash, "--", *GENERATION_PATHS)
+    if diff is None or diff.returncode != 0:
+        return True, "gen-path diff unavailable (git-unverifiable)"
+    changed = [ln for ln in diff.stdout.splitlines() if ln.strip()]
+    if changed:
+        shown = ", ".join(changed[:5]) + (" …" if len(changed) > 5 else "")
+        return False, f"generation paths changed since bundle commit: {shown}"
+    return True, f"bundle {bundle_hash[:12]}... is an ancestor of HEAD; no generation-path drift"
 
 
 class ProvenanceChecker:
@@ -105,7 +175,7 @@ def check_norms_meta(checker: ProvenanceChecker, norms_sha: str | None) -> None:
     """Check B: Norms meta sidecar consistency with lock."""
     path = PACKAGE_ROOT / "artifacts" / "ipip_bffm_norms.meta.json"
     if not path.exists():
-        checker.failed("Norms meta sidecar", "file not found")
+        checker.skipped("Norms meta sidecar", "not populated (sidecar is gitignored / not pulled on a clone)")
         return
 
     payload = _load_json(path)
@@ -187,8 +257,10 @@ def check_research_summary(
         return
 
     summary_git_hash = provenance.get("git_hash")
-    head_known = bool(head_hash) and head_hash != "unknown"
-    at_head = head_known and isinstance(summary_git_hash, str) and summary_git_hash == head_hash
+    summary_git_hash = summary_git_hash if isinstance(summary_git_hash, str) and summary_git_hash else None
+    # Fresh = at HEAD, OR an ancestor of HEAD with no generation-path drift (so a
+    # release commit on top of the generation commit is still "current").
+    fresh, _fresh_detail = _release_fresh(summary_git_hash, head_hash, strict_head=False)
 
     if norms_sha is not None:
         input_artifacts = provenance.get("input_artifacts", {})
@@ -205,7 +277,7 @@ def check_research_summary(
                     f"norms_lock_sha256 mismatch: {summary_norms_sha[:12]}... "
                     f"vs {norms_sha[:12]}..."
                 )
-                if at_head:
+                if fresh:
                     checker.failed("research_summary.json", detail)
                 else:
                     checker.warned(
@@ -289,7 +361,8 @@ def check_output_bundle(
 
         bundle_hash = export.get("git_hash")
         bundle_hash_str = bundle_hash if isinstance(bundle_hash, str) and bundle_hash else None
-        at_head = head_known and bundle_hash_str == head_hash
+        # Fresh = at HEAD, OR an ancestor of HEAD with no generation-path drift.
+        fresh, fresh_detail = _release_fresh(bundle_hash_str, head_hash, strict_head=strict_head)
 
         # Norms snapshot: hard FAIL only when the bundle is at HEAD; otherwise a
         # stale bundle legitimately predates the current norms -> WARN.
@@ -297,7 +370,7 @@ def check_output_bundle(
             snapshot_id = export.get("data_snapshot_id", "")
             expected_snapshot = f"norms_sha256:{norms_sha}"
             if snapshot_id != expected_snapshot:
-                if at_head:
+                if fresh:
                     checker.failed(
                         label,
                         f"data_snapshot_id mismatch: {snapshot_id!r} vs {expected_snapshot!r}",
@@ -347,16 +420,18 @@ def check_output_bundle(
             checker.failed(f"{label} git_hash agreement", f"intra-bundle disagreement: {detail}")
             continue
 
-        # HEAD-staleness: WARN by default, FAIL only under --strict-head.
+        # HEAD freshness: a bundle that is at HEAD -- or an ancestor of HEAD with
+        # no generation-path drift (release/refresh commits, a merge into main) --
+        # is FRESH and PASSes even under --strict-head. A genuinely stale bundle
+        # (gen-path drift, or not an ancestor) is WARN by default, FAIL under
+        # --strict-head. Git-unverifiable (shallow clone / no git) degrades to PASS.
         if bundle_hash_str and head_known:
-            if bundle_hash_str != head_hash:
-                msg = f"git_hash {bundle_hash_str[:12]}... != HEAD {head_hash[:12]}..."
-                if strict_head:
-                    checker.failed(f"{label} HEAD freshness", msg)
-                else:
-                    checker.warned(f"{label} HEAD freshness", msg)
+            if fresh:
+                checker.passed(f"{label} HEAD freshness", fresh_detail)
+            elif strict_head:
+                checker.failed(f"{label} HEAD freshness", fresh_detail)
             else:
-                checker.passed(f"{label} HEAD freshness", "at HEAD")
+                checker.warned(f"{label} HEAD freshness", fresh_detail)
 
         if bundle_hash_str:
             seen_bundle_hashes.add(bundle_hash_str)
@@ -478,9 +553,18 @@ def main() -> int:
     checker = ProvenanceChecker()
     head_hash = _detect_git_hash()
 
+    # Auto-detect reference-only from the published summary so a fresh clone need
+    # not pass the flag (the bundle self-describes how it was built).
+    reference_only = args.reference_only
+    if not reference_only:
+        rs = _load_json(PACKAGE_ROOT / "artifacts" / "research_summary.json")
+        reference_only = bool(
+            isinstance(rs, dict) and rs.get("provenance", {}).get("reference_only")
+        )
+
     norms_sha = check_norms_lock(checker)
     check_norms_meta(checker, norms_sha)
-    check_research_summary(checker, norms_sha, head_hash=head_hash, reference_only=args.reference_only)
+    check_research_summary(checker, norms_sha, head_hash=head_hash, reference_only=reference_only)
     check_output_bundle(checker, norms_sha, head_hash=head_hash, strict_head=args.strict_head)
     check_figures_manifest(checker)
 

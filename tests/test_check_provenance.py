@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -13,6 +14,7 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 
 from scripts.check_provenance import (
     ProvenanceChecker,
+    _release_fresh,
     check_figures_manifest,
     check_norms_lock,
     check_norms_meta,
@@ -210,10 +212,15 @@ def test_check_research_summary_norms_mismatch_at_head_fails(tmp_path) -> None:
 
 
 def test_check_research_summary_norms_mismatch_stale_warns(tmp_path) -> None:
-    """A5.2: a norms mismatch on a summary that predates HEAD is a WARN, not a FAIL."""
+    """A5.2: a norms mismatch on a NON-fresh summary (predates HEAD) is a WARN, not a FAIL.
+    (_release_fresh is forced False here to simulate a genuinely stale bundle; in a non-git
+    tmp_path it would otherwise degrade to git-unverifiable=fresh.)"""
     _write_research_summary(tmp_path, git_hash="oldhash", norms_sha="wronghash")
     checker = ProvenanceChecker()
-    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+    with (
+        patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path),
+        patch("scripts.check_provenance._release_fresh", return_value=(False, "stale (predates HEAD)")),
+    ):
         check_research_summary(checker, norms_sha="correcthash", head_hash="newhead")
     assert any(r[0] == "WARN" for r in checker.results)
     assert all(r[0] != "FAIL" for r in checker.results)
@@ -294,7 +301,10 @@ def test_check_output_bundle_snapshot_stale_warns_not_fails(tmp_path) -> None:
     _write_variant_bundle(
         tmp_path, git_hash="oldhash", data_snapshot_id="norms_sha256:wrong_hash"
     )
-    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+    with (
+        patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path),
+        patch("scripts.check_provenance._release_fresh", return_value=(False, "stale (predates HEAD)")),
+    ):
         check_output_bundle(
             checker, norms_sha="correct_hash", head_hash="newhead", strict_head=False
         )
@@ -312,16 +322,24 @@ def test_check_output_bundle_skips_when_no_variants(tmp_path) -> None:
 
 
 def test_check_output_bundle_head_stale_warns_then_strict_fails(tmp_path) -> None:
-    """HEAD-staleness is WARN by default and FAIL under strict_head."""
+    """A genuinely-stale (non-fresh) bundle is WARN by default and FAIL under strict_head.
+    (_release_fresh forced False to simulate gen-path drift / non-ancestor; a non-git
+    tmp_path would otherwise degrade to git-unverifiable=fresh.)"""
     checker = ProvenanceChecker()
     _write_variant_bundle(tmp_path, git_hash="bundlehash")
-    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+    with (
+        patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path),
+        patch("scripts.check_provenance._release_fresh", return_value=(False, "generation paths changed")),
+    ):
         check_output_bundle(checker, norms_sha=None, head_hash="otherhead", strict_head=False)
     assert any(r[0] == "WARN" for r in checker.results)
     assert checker.print_summary() == 0  # WARN is not a failure
 
     strict = ProvenanceChecker()
-    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+    with (
+        patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path),
+        patch("scripts.check_provenance._release_fresh", return_value=(False, "generation paths changed")),
+    ):
         check_output_bundle(strict, norms_sha=None, head_hash="otherhead", strict_head=True)
     assert any(r[0] == "FAIL" for r in strict.results)
 
@@ -389,3 +407,116 @@ def test_full_exits_nonzero_on_skip(tmp_path) -> None:
 
     # Should exit 1 because research_summary, output/, figures/ all SKIP
     assert result == 1
+
+
+# ---------------------------------------------------------------------------
+# P3: norms-meta sidecar absent -> SKIP (not FAIL), so a fresh clone passes.
+# ---------------------------------------------------------------------------
+
+
+def test_check_norms_meta_skips_when_absent(tmp_path) -> None:
+    """A fresh clone (sidecar gitignored/not pulled) must SKIP, not FAIL."""
+    (tmp_path / "artifacts").mkdir(parents=True)
+    checker = ProvenanceChecker()
+    with patch("scripts.check_provenance.PACKAGE_ROOT", tmp_path):
+        check_norms_meta(checker, norms_sha="abc")
+    assert any(r[0] == "SKIP" and "Norms meta" in r[1] for r in checker.results)
+    assert all(r[0] != "FAIL" for r in checker.results)
+
+
+# ---------------------------------------------------------------------------
+# P4: _release_fresh — ancestor + generation-scoped-diff freshness (merge-robust,
+# git-degrading). Uses a real throwaway git repo so the merge-base / diff logic
+# is exercised, not mocked.
+# ---------------------------------------------------------------------------
+
+
+def _init_git_repo(root: Path):
+    """Init a throwaway repo with generation dirs + a docs file; return (commit fn, rev fn)."""
+    def git(*a: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(root), *a], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    root.mkdir(parents=True, exist_ok=True)
+    git("init", "-q")
+    git("config", "user.email", "t@t.test")
+    git("config", "user.name", "t")
+    git("config", "commit.gpgsign", "false")
+    (root / "pipeline").mkdir()
+    (root / "pipeline" / "stage.py").write_text("v1\n")
+    (root / "docs").mkdir()
+    (root / "docs" / "notes.md").write_text("d1\n")
+
+    def commit(msg: str) -> str:
+        git("add", "-A")
+        git("commit", "-q", "-m", msg)
+        return git("rev-parse", "HEAD")
+
+    return root, commit, git
+
+
+def test_release_fresh_exact_match() -> None:
+    assert _release_fresh("abc123", "abc123", strict_head=True)[0] is True
+    assert _release_fresh(None, "abc123", strict_head=True)[0] is True  # unknown -> degrade
+
+
+def test_release_fresh_ancestor_clean_gen_diff_is_fresh(tmp_path, monkeypatch) -> None:
+    """A release commit on top of the generation commit that touches only NON-generation
+    paths (docs) is fresh even under strict_head."""
+    repo, commit, _ = _init_git_repo(tmp_path / "r")
+    monkeypatch.setattr("scripts.check_provenance.PACKAGE_ROOT", repo)
+    base = commit("base (generation commit)")
+    (repo / "docs" / "notes.md").write_text("d2 — release docs\n")
+    head = commit("release: docs only (no generation drift)")
+    fresh, detail = _release_fresh(base, head, strict_head=True)
+    assert fresh is True, detail
+    assert "ancestor" in detail
+
+
+def test_release_fresh_generation_drift_is_stale(tmp_path, monkeypatch) -> None:
+    """A commit changing pipeline/ since the bundle commit -> NOT fresh (gen drift)."""
+    repo, commit, _ = _init_git_repo(tmp_path / "r")
+    monkeypatch.setattr("scripts.check_provenance.PACKAGE_ROOT", repo)
+    base = commit("base")
+    (repo / "pipeline" / "stage.py").write_text("v2 — generator changed\n")
+    head = commit("changed a generator without re-running")
+    fresh, detail = _release_fresh(base, head, strict_head=True)
+    assert fresh is False
+    assert "generation paths changed" in detail
+
+
+def test_release_fresh_merge_commit_is_fresh(tmp_path, monkeypatch) -> None:
+    """Merge-to-main robustness: the bundle commit stays fresh through a merge commit
+    that carried no generation-path changes."""
+    repo, commit, git = _init_git_repo(tmp_path / "r")
+    monkeypatch.setattr("scripts.check_provenance.PACKAGE_ROOT", repo)
+    base = commit("base (generation commit)")
+    git("checkout", "-q", "-b", "feature")
+    (repo / "docs" / "notes.md").write_text("feature docs\n")
+    commit("feature: docs only")
+    git("checkout", "-q", "-")  # back to the default branch
+    merge_head = git("merge", "--no-ff", "-q", "-m", "merge feature", "feature") or git("rev-parse", "HEAD")
+    fresh, detail = _release_fresh(base, git("rev-parse", "HEAD"), strict_head=True)
+    assert fresh is True, detail
+
+
+def test_release_fresh_non_ancestor_is_stale(tmp_path, monkeypatch) -> None:
+    """A bundle hash that is NOT an ancestor of HEAD -> NOT fresh."""
+    repo, commit, git = _init_git_repo(tmp_path / "r")
+    monkeypatch.setattr("scripts.check_provenance.PACKAGE_ROOT", repo)
+    base = commit("base")
+    git("checkout", "-q", "-b", "other")
+    (repo / "docs" / "notes.md").write_text("divergent\n")
+    other = commit("divergent commit (not an ancestor of base)")
+    fresh, detail = _release_fresh(other, base, strict_head=True)
+    assert fresh is False
+    assert "not an ancestor" in detail
+
+
+def test_release_fresh_git_unavailable_degrades_to_fresh(monkeypatch) -> None:
+    """No git / shallow clone (object absent) -> degrade to fresh (rely on sha chain)."""
+    monkeypatch.setattr("scripts.check_provenance._git", lambda *a: None)
+    fresh, detail = _release_fresh("aaaaaa", "bbbbbb", strict_head=True)
+    assert fresh is True
+    assert "git-unverifiable" in detail or "git unavailable" in detail
