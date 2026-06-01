@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "data_snapshot_id": "norms_sha256:a8c7c1a0dac762bc47b5a36094ffb101696fcda45aae6a8c4f46c14fb2502bf5",
+    "preprocessing_version": "d8b79fd23cd033214e439fb3b88d7fe93c961b7b",
+    "script": "12_generate_figures.py",
+    "git_hash": "d8b79fd23cd033214e439fb3b88d7fe93c961b7b",
+    "environment": {
+      "python_version": "3.14.3",
+      "python_implementation": "CPython",
+      "platform": "macOS-26.4.1-arm64-arm-64bit-Mach-O",
+      "libraries": {
+        "xgboost": "3.1.3",
+        "numpy": "2.4.2",
+        "scipy": "1.17.0",
+        "scikit-learn": "1.8.0",
+        "pandas": "3.0.0",
+        "onnx": "1.20.0",
+        "onnxmltools": "1.14.0",
+        "onnxruntime": "1.24.1"
+      }
+    }
+  },
+  "model_dir": "models/reference",
+  "source_artifacts": {
+    "baseline_comparison_results": {
+      "path": "artifacts/variants/reference/baseline_comparison_results.json",
+      "sha256": "7cbe899ba4acab88e40e64fc5bd165b971ee9708d57628c37cad0ba6170fa5c3"
+    },
+    "baseline_comparison_per_domain_csv": {
+      "path": "artifacts/variants/reference/baseline_comparison_per_domain.csv",
+      "sha256": "43961594936470b88a709c653c569a1ba1c80f345cf4579fb748860ffd5ca29b"
+    },
+    "baseline_comparison_per_domain_meta": {
+      "path": "artifacts/variants/reference/baseline_comparison_per_domain.meta.json",
+      "sha256": "69752d2c5bdb7b0fb79fbaec458de6cb38b5d6529fd2ae6d10aa29ce99ccdfec"
+    },
+    "ml_vs_averaging_comparison": {
+      "path": "artifacts/variants/reference/ml_vs_averaging_comparison.json",
+      "sha256": "8b79f8843e6bbfc40b533acb5040adfbfa211c8231671c9e59590ea6d7b17ece"
+    }
+  },
+  "figures": [
+    {
+      "filename": "fig1_efficiency_curves",
+      "formats": [
+        "png",
+        "pdf"
+      ],
+      "source_artifacts": [
+        "baseline_comparison_results"
+      ],
+      "sha256": {
+        "png": "4e1f086d19ab9d7d17dec3251a0e59855d08ee94d4917833ecab4a8761b29ea8",
+        "pdf": "448338b0edfc243938ac4fab94342bd7c5967b8a372ea9dfe38576435279f82e"
+      }
+    },
+    {
+      "filename": "fig2_domain_starvation",
+      "formats": [
+        "png",
+        "pdf"
+      ],
+      "source_artifacts": [
+        "baseline_comparison_per_domain_csv"
+      ],
+      "sha256": {
+        "png": "78e349892c43d110123d014f47e809e818d4418e3987fc03312b4bee797a90dd",
+        "pdf": "a07541c20380a2d8676a073a024a60536e6e4f6acb0284a14393ecdc09e89038"
+      }
+    },
+    {
+      "filename": "fig3_ml_vs_averaging",
+      "formats": [
+        "png",
+        "pdf"
+      ],
+      "source_artifacts": [
+        "ml_vs_averaging_comparison"
+      ],
+      "sha256": {
+        "png": "ffb1a1cf4a69deed9590cd9648968571bac917a6bc89dc6f6f04dd6f94965dd4",
+        "pdf": "051235e59573b09518b0df6416db20657e9a9a1ebdd5b6861bf6a7f7a8e0397d"
+      }
+    },
+    {
+      "filename": "fig4_per_domain_k20",
+      "formats": [
+        "png",
+        "pdf"
+      ],
+      "source_artifacts": [
+        "baseline_comparison_per_domain_csv"
+      ],
+      "series_labels": {
+        "Domain-Balanced": "domain_balanced",
+        "Mini-IPIP": "mini_ipip",
+        "Greedy Top-K": "adaptive_topk"
+      },
+      "sha256": {
+        "png": "8c80a6dfb281d074d60a2a79abe68630550be2b7395cfdc062b50e18a40c3604",
+        "pdf": "fab6bf81a1f7b55a290dcb0602df76f987003af3f9b2f24b71a8c02ffb76ec35"
+      }
+    }
+  ]
+}

@@ -90,3 +90,40 @@ infra/gpu/terraform.tfvars
 
 # Web
 web/.impeccable.md
+
+# === Force-track the small release-bundle + repo-facts artifacts (C1) ===
+# Git cannot re-include a file whose PARENT DIR is excluded, so for each
+# directory-level ignore (output/*/, data/processed/, artifacts/variants/) we
+# re-include the dir, re-exclude its contents with /*, then negate just the keep
+# files. model.onnx (248MB), simulation_detailed.json, parquet, and the SQLite db
+# stay ignored. (output/README.md is already tracked via the !output/README.md above.)
+
+# output/reference/: keep config.json, provenance.json, README.md (NOT model.onnx)
+!output/reference/
+output/reference/*
+!output/reference/config.json
+!output/reference/provenance.json
+!output/reference/README.md
+
+# artifacts: research_summary.json + norms meta sidecar
+!artifacts/research_summary.json
+!artifacts/ipip_bffm_norms.meta.json
+
+# artifacts/variants/: keep ONLY reference/ml_vs_averaging_comparison.json
+!artifacts/variants/
+artifacts/variants/*
+!artifacts/variants/reference/
+artifacts/variants/reference/*
+!artifacts/variants/reference/ml_vs_averaging_comparison.json
+
+# figures/manifest.json (no excluded parent dir — simple negation)
+!figures/manifest.json
+
+# data/processed/: repo-facts.test.ts inputs only (NOT the .db / .parquet)
+!data/processed/
+data/processed/*
+!data/processed/load_metadata.json
+!data/processed/canonical_v1/
+data/processed/canonical_v1/*
+!data/processed/canonical_v1/split_metadata.json
+!data/processed/canonical_v1/first_item.json

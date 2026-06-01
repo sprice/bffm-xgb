@@ -9,7 +9,8 @@
     "seed": 42,
     "test_size": 0.15,
     "val_size": 0.15,
-    "fit_on": "train"
+    "fit_on": "train",
+    "population_signature": "a7accf9d8be3c884ca80b9a9fac6d4a34a73eb99bbe36ca7b138c764f5305f93"
   },
   "n_respondents": 422326,
   "mini_ipip_mapping": {
