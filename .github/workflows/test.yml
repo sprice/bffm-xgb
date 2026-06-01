@@ -123,8 +123,9 @@ jobs:
 
       # MODEL_DIR points predictor.test.ts at the committed fixture (web/model's
       # gitignored symlink target is absent in CI). REQUIRE_ARTIFACTS=1 hard-fails
-      # the fixture-backed suites if it is missing. repo-facts.test.ts keeps its
-      # own data/processed guard and stays skipped here (resolves in Part C).
+      # the fixture-backed suites if it is missing. repo-facts.test.ts now RUNS in
+      # CI (the small bundle artifacts it reads are force-tracked in git), so it
+      # guards the Learn-site data.ts against drift from the published bundle.
       - name: Run tests
         run: cd web && npx vitest run
         env:

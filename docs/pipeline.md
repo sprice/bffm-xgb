@@ -265,6 +265,30 @@ the git hash, `data_snapshot_id`, `preprocessing_version`, `script`,
 and any RNG seeds or bootstrap config provided by each pipeline stage. This keeps the
 provenance chain intact while avoiding launch-time differences between successive runs.
 
+## Verifying a published release (fresh clone)
+
+A clone can verify the published reference bundle **without retraining** and without the
+SQLite DB. The small provenance/coupling artifacts (`output/reference/{config,provenance}.json`,
+the model card, `research_summary.json`, `figures/manifest.json`, the norms meta sidecar) are
+tracked in git; only the ~248 MB `model.onnx` lives on Hugging Face.
+
+```bash
+git clone <repo> && cd bffm-xgb && git checkout next
+make pull-reference            # fetch model.onnx from the pinned HF revision (sha256-verified, fail-closed)
+make verify-release            # provenance checks only — no norms-check, no DB, no retrain
+make verify-release STRICT_HEAD=1   # additionally enforce git-freshness
+```
+
+`verify-release` runs `scripts/check_provenance.py` directly (it does **not** depend on
+`norms-check`, so no SQLite DB is needed) and auto-detects reference-only mode from the
+summary. Freshness is **merge-robust**: a bundle is fresh when its stamped `git_hash` is
+HEAD, *or an ancestor of HEAD with no `pipeline/`, `lib/`, or `configs/` changes in between*
+— so the release/refresh commits on top of the generation commit, and a later merge of
+`next` into `main`, keep `--strict-head` green (the generation code at HEAD is identical to
+what produced the bundle). Where git is unavailable (shallow clone / tarball) the git check
+degrades and the content-sha chain stands alone. `pull-reference` is fail-closed against the
+`.env` `HF_SHA256_MODEL` pin, so a stale pin or wrong model is rejected rather than installed.
+
 ## Uploading to HuggingFace
 
 ```bash

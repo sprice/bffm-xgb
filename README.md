@@ -17,25 +17,25 @@ The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) is the standard short pe
 | **Items**                    | 20 (4 per domain)      | 20 (4 per domain)           |
 | **Item selection**           | Expert-curated brevity | Top-4 by within-domain *r*  |
 | **Scoring**                  | Simple scale averaging | XGBoost quantile regression |
-| **Overall *r***              | .906                   | **.927**                    |
-| **MAE (percentile pts)**     | 9.2                    | **8.2**                     |
+| **Overall *r***              | .907                   | **.928**                    |
+| **MAE (percentile pts)**     | 9.2                    | **8.1**                     |
 | **90% prediction intervals** | —                      | ✓ (89.5% coverage)          |
 
-The BFFM-XGB-20 figures above (*r* = .927, 89.5% coverage) are the **fixed, pre-specified domain-balanced 20-item form** — the top-4 items per domain — which is the deployed web form, not a post-hoc best-of-grid selection. Evaluated instead under *random* balanced 20-item masking, the model's general partial-response accuracy is *r* ≈ .909 (≈90% coverage).
+The BFFM-XGB-20 figures above (*r* = .928, 89.5% coverage) are the **fixed, pre-specified domain-balanced 20-item form** — the top-4 items per domain — which is the deployed web form, not a post-hoc best-of-grid selection. Evaluated instead under *random* balanced 20-item masking, the model's general partial-response accuracy is *r* ≈ .910 (≈90% coverage).
 
 **Per-domain accuracy at *K* = 20:**
 
 | Domain                | Mini-IPIP *α* | Mini-IPIP *r* | BFFM-XGB-20 *r* |
 | --------------------- | ------------- | ------------- | --------------- |
-| Extraversion          | .77           | .939          | **.947**        |
-| Agreeableness         | .70           | .911          | **.920**        |
-| Conscientiousness     | .69           | .909          | **.919**        |
-| Emotional Stability   | .68           | .929          | **.937**        |
-| Intellect/Imagination | .65           | .842          | **.910**        |
+| Extraversion          | .77           | .938          | **.947**        |
+| Agreeableness         | .70           | .912          | **.920**        |
+| Conscientiousness     | .69           | .910          | **.921**        |
+| Emotional Stability   | .68           | .930          | **.938**        |
+| Intellect/Imagination | .65           | .842          | **.912**        |
 
-With 15 items and XGBoost scoring (3 per domain), BFFM-XGB reaches *r* = .908, matching the 20-item simple-averaging Mini-IPIP (*r* = .906) — fewer items, though the comparison also differs in scoring method and item set.
+With 15 items and XGBoost scoring (3 per domain), BFFM-XGB reaches *r* = .909, matching the 20-item simple-averaging Mini-IPIP (*r* = .907) — fewer items, though the comparison also differs in scoring method and item set.
 
-The 20-item gain combines two levers: the **scoring method** (XGBoost vs simple averaging) and the **item set** (top-4-by-*r* vs the expert-curated Mini-IPIP items). Holding the item set fixed, XGBoost scoring alone adds roughly +0.01 *r* per domain over averaging; the remainder is item selection. The split is not uniform — for Emotional Stability the Mini-IPIP items scored with XGBoost slightly *beat* the top-4-by-*r* selection, so that domain's improvement is scoring, not selection. See the per-domain decomposition in [NOTES.md](notes/NOTES.md) and `artifacts/variants/reference/ml_vs_averaging_comparison.json`.
+The 20-item gain combines two levers: the **scoring method** (XGBoost vs simple averaging) and the **item set** (top-4-by-*r* vs the expert-curated Mini-IPIP items). Holding the item set fixed, XGBoost scoring alone adds roughly +0.004 to +0.008 *r* per domain over averaging (about +0.006 overall); the remainder is item selection. The split is not uniform — for Emotional Stability the Mini-IPIP items scored with XGBoost slightly *beat* the top-4-by-*r* selection, so that domain's improvement is scoring, not selection. See the per-domain decomposition in [NOTES.md](notes/NOTES.md) and `artifacts/variants/reference/ml_vs_averaging_comparison.json`.
 
 ## Quick Start
 

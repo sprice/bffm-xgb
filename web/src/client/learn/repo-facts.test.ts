@@ -12,11 +12,19 @@ function readJson<T>(relativePath: string): T {
   return JSON.parse(readFileSync(fullPath, "utf-8")) as T;
 }
 
-const hasArtifacts =
-  existsSync(resolve(repoRoot, "data/processed/load_metadata.json")) &&
-  existsSync(
-    resolve(repoRoot, "data/processed/canonical_v1/split_metadata.json"),
-  );
+// These small artifacts are force-tracked in the release bundle (see .gitignore),
+// so they are present in every clone and CI checkout — this tripwire runs (not
+// skips) and guards the hand-maintained data.ts against drift from the bundle. The
+// guard covers EVERY file the suite reads, so a partial/missing state skips loudly
+// rather than erroring mid-test.
+const hasArtifacts = [
+  "data/processed/load_metadata.json",
+  "data/processed/canonical_v1/split_metadata.json",
+  "data/processed/canonical_v1/first_item.json",
+  "artifacts/research_summary.json",
+  "artifacts/variants/reference/ml_vs_averaging_comparison.json",
+  "artifacts/tuned_params.json",
+].every((p) => existsSync(resolve(repoRoot, p)));
 
 describe.skipIf(!hasArtifacts)("repo facts used by the course", () => {
   it("matches cleaned-row and split metadata artifacts", () => {

@@ -4956,6 +4956,13 @@ def test_notes_md_has_no_drift_from_generators() -> None:
     """Part-D gate: regenerating NOTES.md from the committed template + artifacts
     must reproduce the committed notes/NOTES.md byte-for-byte (no stale sections)."""
     notes = _load_paper_module("generate_notes_data.py")
+    # Regenerate the SAME way the committed NOTES.md was produced: a reference-only
+    # bundle (research_summary provenance.reference_only) must be rendered with the
+    # cross-variant sections scoped to the reference variant, else the ablation
+    # generators KeyError on the absent variants. Matches `make notes REFERENCE_ONLY=1`.
+    summary = notes.load_research_summary()
+    if summary.get("provenance", {}).get("reference_only"):
+        notes._ACTIVE_VARIANT_ORDER = [notes.REFERENCE_VARIANT]
     template = notes.NOTES_TEMPLATE_PATH.read_text()
     regenerated = template
     for name, gen_fn in notes.SECTION_GENERATORS.items():

@@ -63,7 +63,7 @@ export const chapter10Evaluation: Chapter = {
           "note",
           "Important result-family distinction",
           paragraph(
-            `In the current repo, the <code>mini_ipip</code> row in stage 09 is a standalone Mini-IPIP scoring baseline—not Mini-IPIP scored by the XGBoost model. The ML-scored Mini-IPIP result appears in the separate ${abbr("ML-vs-averaging comparison", "An artifact that compares learned model scoring against simple averaging on the same selected item sets.")}; there the checked-in numbers are roughly <code>r = 0.9172</code> for ML versus <code>r = 0.9064</code> for averaging.`,
+            `In the current repo, the <code>mini_ipip</code> row in stage 09 is a standalone Mini-IPIP scoring baseline—not Mini-IPIP scored by the XGBoost model. The ML-scored Mini-IPIP result appears in the separate ${abbr("ML-vs-averaging comparison", "An artifact that compares learned model scoring against simple averaging on the same selected item sets.")}; there the checked-in numbers are roughly <code>r = ${repoFacts.mlVsAveragingK20.miniIpip.mlR.toFixed(4)}</code> for ML versus <code>r = ${repoFacts.mlVsAveragingK20.miniIpip.avgR.toFixed(4)}</code> for averaging.`,
           ),
         )}
       `,
