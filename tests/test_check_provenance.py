@@ -486,6 +486,21 @@ def test_release_fresh_generation_drift_is_stale(tmp_path, monkeypatch) -> None:
     assert "generation paths changed" in detail
 
 
+def test_release_fresh_publish_stage_edit_is_fresh(tmp_path, monkeypatch) -> None:
+    """Editing pipeline/13_upload_hf.py (the publish/transport stage) does NOT count as
+    generation drift -- it ships the already-built bundle, it doesn't produce it -- so the
+    bundle stays fresh even under strict_head."""
+    repo, commit, _ = _init_git_repo(tmp_path / "r")
+    monkeypatch.setattr("scripts.check_provenance.PACKAGE_ROOT", repo)
+    (repo / "pipeline" / "13_upload_hf.py").write_text("uploader v1\n")
+    base = commit("base (generation commit)")
+    (repo / "pipeline" / "13_upload_hf.py").write_text("uploader v2 — add branch support\n")
+    head = commit("tooling: add --revision branch upload")
+    fresh, detail = _release_fresh(base, head, strict_head=True)
+    assert fresh is True, detail
+    assert "ancestor" in detail
+
+
 def test_release_fresh_merge_commit_is_fresh(tmp_path, monkeypatch) -> None:
     """Merge-to-main robustness: the bundle commit stays fresh through a merge commit
     that carried no generation-path changes."""

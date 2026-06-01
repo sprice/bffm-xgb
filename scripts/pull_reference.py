@@ -76,16 +76,29 @@ def main() -> int:
         return 0
 
     try:
-        from huggingface_hub import hf_hub_download
+        from huggingface_hub import HfApi, hf_hub_download
     except ImportError:
         print("ERROR: huggingface_hub not installed (run `uv sync`)", file=sys.stderr)
         return 1
 
-    print(f"Downloading {variant}/model.onnx from {repo_id}@{revision[:12]}... (sha-verified)")
+    # Auto-detect repo layout (mirrors web/src/server/predictor.ts): a multi-variant
+    # upload nests the model under `<variant>/model.onnx`, while a `--variant` upload
+    # places it at the repo root (`model.onnx`). Prefer the subdir, fall back to root.
+    api = HfApi(token=token)
+    filename = f"{variant}/model.onnx"
+    for candidate in (f"{variant}/model.onnx", "model.onnx"):
+        try:
+            if api.file_exists(repo_id, candidate, revision=revision):
+                filename = candidate
+                break
+        except Exception:  # noqa: BLE001 - existence probe is best-effort; download surfaces real errors
+            pass
+
+    print(f"Downloading {filename} from {repo_id}@{revision[:12]}... (sha-verified)")
     try:
         local = hf_hub_download(
             repo_id=repo_id,
-            filename=f"{variant}/model.onnx",
+            filename=filename,
             revision=revision,
             token=token,
         )

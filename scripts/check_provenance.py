@@ -41,6 +41,10 @@ def _load_json(path: Path) -> dict | None:
 # docs, tooling) as long as NONE of these changed in between -- that proves the
 # generation code at HEAD is byte-identical to the code that produced the bundle.
 GENERATION_PATHS = ("pipeline", "lib", "configs")
+# ...minus the publish/upload stage: pipeline/13_upload_hf.py only TRANSPORTS the
+# already-built bundle to HuggingFace; it does not produce the verified artifacts,
+# so editing it (e.g. to add branch support) must not flag the bundle as stale.
+GENERATION_PATH_EXCLUDES = (":(exclude)pipeline/13_upload_hf.py",)
 
 
 def _git(*args: str) -> subprocess.CompletedProcess[str] | None:
@@ -95,7 +99,10 @@ def _release_fresh(
         return True, "git unavailable (git-unverifiable)"
     if anc.returncode != 0:
         return False, f"bundle {bundle_hash[:12]}... is not an ancestor of HEAD {head_hash[:12]}..."
-    diff = _git("diff", "--name-only", bundle_hash, head_hash, "--", *GENERATION_PATHS)
+    diff = _git(
+        "diff", "--name-only", bundle_hash, head_hash, "--",
+        *GENERATION_PATHS, *GENERATION_PATH_EXCLUDES,
+    )
     if diff is None or diff.returncode != 0:
         return True, "gen-path diff unavailable (git-unverifiable)"
     changed = [ln for ln in diff.stdout.splitlines() if ln.strip()]

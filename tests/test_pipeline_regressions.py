@@ -4169,6 +4169,62 @@ def test_upload_main_resolves_relative_output_dir_to_package_root(tmp_path, monk
     assert captured.get("output_dir") == tmp_path / "output" / "custom"
 
 
+def test_upload_revision_creates_branch_and_scopes_commit(tmp_path, monkeypatch) -> None:
+    """--revision <branch> creates the branch (if absent) and routes the commit + the
+    stale-file listing to that revision, so a release can be staged on e.g. `next`."""
+    import types
+
+    upload = _load_pipeline_module("13_upload_hf.py")
+    monkeypatch.setattr(upload, "PACKAGE_ROOT", tmp_path)
+    monkeypatch.setenv("HF_TOKEN", "test-token")
+
+    # A minimal on-disk reference variant so `--variant reference` resolves a real dir.
+    variant_path = tmp_path / "output" / "reference"
+    variant_path.mkdir(parents=True)
+    model_file = variant_path / "model.onnx"
+    model_file.write_text("onnx-bytes")
+
+    captured: dict[str, Any] = {}
+
+    class _FakeApi:
+        def __init__(self, token: str) -> None:
+            captured["token"] = token
+
+        def create_repo(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            captured["repo"] = kwargs.get("repo_id")
+
+        def create_branch(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            captured["branch"] = (kwargs.get("branch"), kwargs.get("exist_ok"))
+
+        def list_repo_files(self, **kwargs) -> list[str]:  # type: ignore[no-untyped-def]
+            captured["list_revision"] = kwargs.get("revision")
+            return []
+
+        def create_commit(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            captured["commit_revision"] = kwargs.get("revision")
+            captured["n_ops"] = len(kwargs.get("operations", []))
+
+    # CommitOperationAdd is constructed with kwargs (path_in_repo=, path_or_fileobj=) and
+    # later read via op.path_in_repo + isinstance(op, CommitOperationAdd) -> SimpleNamespace
+    # satisfies both (a SimpleNamespace built from those kwargs is an instance of the class).
+    monkeypatch.setitem(sys.modules, "huggingface_hub", types.SimpleNamespace(
+        HfApi=_FakeApi, CommitOperationAdd=types.SimpleNamespace,
+        CommitOperationDelete=types.SimpleNamespace,
+    ))
+    monkeypatch.setattr(upload, "_validate_output_bundle", lambda _p: [model_file])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["13_upload_hf.py", "--repo-id", "org/repo", "--variant", "reference", "--revision", "next"],
+    )
+
+    upload.main()
+    assert captured.get("branch") == ("next", True)
+    assert captured.get("list_revision") == "next"
+    assert captured.get("commit_revision") == "next"
+    assert captured.get("n_ops") == 1
+
+
 def _write_responses_sqlite(db_path: Path, df: pd.DataFrame) -> None:
     """Write synthetic responses table with *_score columns for norms stage tests."""
     df_out = df.copy()
@@ -6217,7 +6273,7 @@ def test_upload_main_multi_variant_flow(tmp_path, monkeypatch) -> None:
         def create_repo(self, **kwargs):
             pass
 
-        def upload_file(self, *, path_or_fileobj, path_in_repo, repo_id):
+        def upload_file(self, *, path_or_fileobj, path_in_repo, repo_id, revision=None):
             uploaded.append(path_in_repo)
 
     # Monkeypatch to inject FakeHfApi and skip .env / token checks
@@ -6284,7 +6340,7 @@ def test_upload_main_single_variant_flow(tmp_path, monkeypatch) -> None:
         def create_repo(self, **kwargs):
             pass
 
-        def list_repo_files(self, *, repo_id):
+        def list_repo_files(self, *, repo_id, revision=None):
             # Simulate stale files already in the repo
             return [
                 "config.json",
@@ -6296,7 +6352,7 @@ def test_upload_main_single_variant_flow(tmp_path, monkeypatch) -> None:
                 ".gitattributes",
             ]
 
-        def create_commit(self, *, repo_id, operations, commit_message):
+        def create_commit(self, *, repo_id, operations, commit_message, revision=None):
             committed["repo_id"] = repo_id
             committed["operations"] = operations
             committed["commit_message"] = commit_message
@@ -6413,11 +6469,11 @@ def test_upload_main_reset_single_variant(tmp_path, monkeypatch) -> None:
         def create_repo(self, **kwargs):
             calls.append(f"create_repo:{kwargs.get('repo_id')}")
 
-        def list_repo_files(self, *, repo_id):
+        def list_repo_files(self, *, repo_id, revision=None):
             # Fresh repo after reset — no stale files
             return [".gitattributes"]
 
-        def create_commit(self, *, repo_id, operations, commit_message):
+        def create_commit(self, *, repo_id, operations, commit_message, revision=None):
             committed["operations"] = operations
 
     monkeypatch.setattr("sys.argv", [
@@ -6478,7 +6534,7 @@ def test_upload_main_reset_multi_variant(tmp_path, monkeypatch) -> None:
         def create_repo(self, **kwargs):
             calls.append(f"create_repo:{kwargs.get('repo_id')}")
 
-        def upload_file(self, *, path_or_fileobj, path_in_repo, repo_id):
+        def upload_file(self, *, path_or_fileobj, path_in_repo, repo_id, revision=None):
             uploaded.append(path_in_repo)
 
     monkeypatch.setattr("sys.argv", [
@@ -6539,10 +6595,10 @@ def test_upload_main_reset_delete_repo_failure_logs(tmp_path, monkeypatch, caplo
         def create_repo(self, **kwargs):
             calls.append("create_repo")
 
-        def list_repo_files(self, *, repo_id):
+        def list_repo_files(self, *, repo_id, revision=None):
             return []
 
-        def create_commit(self, *, repo_id, operations, commit_message):
+        def create_commit(self, *, repo_id, operations, commit_message, revision=None):
             calls.append("create_commit")
 
     monkeypatch.setattr("sys.argv", [

@@ -43,8 +43,13 @@ ARTIFACTS_DIR ?= artifacts
 SKIP_PROVENANCE ?=
 FORCE ?=
 RESET ?=
+# HF_BRANCH=<name> -> upload-hf / upload-hf-reference push to that HuggingFace
+# branch (created if absent) instead of the default branch (main). Lets a release
+# be staged on e.g. `next` for validation before promoting it to main.
+HF_BRANCH ?=
 _UPLOAD_HF_DEPS := $(if $(SKIP_PROVENANCE),,provenance-check)
 _RESET_FLAG := $(if $(RESET),--reset,)
+_HF_REVISION_FLAG := $(if $(HF_BRANCH),--revision $(HF_BRANCH),)
 ARTIFACTS_VARIANTS_DIR ?= $(ARTIFACTS_DIR)/variants
 EVAL_DIR = $(ARTIFACTS_VARIANTS_DIR)/$(MODEL_NAME)
 RESEARCH_SUMMARY_PATH ?= $(ARTIFACTS_DIR)/research_summary.json
@@ -232,10 +237,10 @@ notes:
 	$(PY) scripts/generate_notes_data.py $(_REFERENCE_ONLY_FLAG)
 
 upload-hf: $(_UPLOAD_HF_DEPS)
-	$(PY) pipeline/13_upload_hf.py $(_RESET_FLAG)
+	$(PY) pipeline/13_upload_hf.py $(_RESET_FLAG) $(_HF_REVISION_FLAG)
 
 upload-hf-reference: $(_UPLOAD_HF_DEPS)
-	$(PY) pipeline/13_upload_hf.py --variant reference $(_RESET_FLAG)
+	$(PY) pipeline/13_upload_hf.py --variant reference $(_RESET_FLAG) $(_HF_REVISION_FLAG)
 
 lint:
 	uv run ruff check pipeline lib scripts python
