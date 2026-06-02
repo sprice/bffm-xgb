@@ -117,7 +117,7 @@ export const chapter02Psychometrics: Chapter = {
       "Norms And Percentiles",
       `
         ${paragraph(
-          `A raw score becomes interpretable by comparing it to a reference population. Norms are computed from the full cleaned dataset and used to convert a raw score into a ${abbr("z-score", "A standardized score showing how many standard deviations a value is above or below the mean.")} and then a percentile.`,
+          `A raw score becomes interpretable by comparing it to a reference population. Norms are computed from the training split only (validation and test rows are held out so they don't leak into the percentile targets) and used to convert a raw score into a ${abbr("z-score", "A standardized score showing how many standard deviations a value is above or below the mean.")} and then a percentile.`,
         )}
         ${table(
           ["Domain", "Current mean", "Current SD"],

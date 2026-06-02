@@ -27,8 +27,8 @@ Each model takes up to 50 item responses (Likert 1--5) and predicts Big Five dom
 
 - **15 models in one graph** -- 5 domains x 3 quantiles (q05, q50, q95), merged into a single ONNX file
 - **Sparsity augmentation** -- during training, complete responses are randomly masked to simulate missing items, teaching the model to handle arbitrary missing-item patterns
-- **Quantile regression** -- pinball loss at tau = 0.05, 0.50, 0.95 provides median predictions with empirical 90% prediction intervals whose coverage is validated for the full_50 and sparse_20_balanced runtime regimes (raw quantile spreads; no post-hoc width adjustment is applied)
-- **Norms-based percentiles** -- raw predictions are converted to population percentiles using z-score norms derived from ~603k respondents
+- **Quantile regression** -- pinball loss at tau = 0.05, 0.50, 0.95 provides median predictions with empirical 90% prediction intervals whose coverage is validated for the full_50 and sparse_20_balanced runtime regimes (raw quantile spreads; no post-hoc width adjustment is applied). Empirical coverage is approximately 89.5% at the deployed domain-balanced 20-item form and approximately 92.6% at full 50 items
+- **Norms-based percentiles** -- raw predictions are converted to population percentiles using z-score norms fit on the training split only (n = 422,326 respondents; validation and test rows are held out so the norms do not leak into the percentile targets)
 
 ## Variants
 

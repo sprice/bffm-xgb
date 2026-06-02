@@ -1122,6 +1122,7 @@ Each domain has three quantile models:
 - **Scale:** Raw domain score on the **per-item-mean 1-5 scale** — the mean of the 10 item responses for the domain, **not** the 10-50 summed scale a 10-item sum would give. A domain mean of 3.0 is neutral; see the Norms table for population means/SDs.
 - **Nominal range:** `[1, 5]`. Because these are gradient-boosted regressors (not bounded transforms), the raw `q05`/`q50`/`q95` predictions can fall **outside** `[1, 5]` — typically near the extremes of a domain's score range, and more so for low-information sparse inputs. They are **not** clamped: treat `[1, 5]` as the nominal/target range, not a hard guarantee, if you consume the raw `scores` tensor.
 - **Percentile conversion:** Use the provided norms (z-score → CDF). The transform is monotonic and saturates near 0/100, so out-of-range raw values shift the reported percentile by well under one percentile point; the reference inference packages report percentiles, not raw scores.
+- **Quantile ordering:** The `q05`/`q50`/`q95` outputs are fit independently, so the three predictions are not guaranteed to be monotonically ordered; sort them before use (the reference inference packages already do this).
 
 ## Quick Start (Python)
 
@@ -1220,7 +1221,7 @@ Evaluated on held-out test respondents:
 
 ## Norms
 
-Population norms for raw-score -> percentile conversion (from OSPP dataset):
+Population norms for raw-score -> percentile conversion, computed on the OSPP training split only (n = 422,326; validation/test held out to prevent leakage):
 
 {norms_table}
 
@@ -1312,9 +1313,13 @@ def generate_repo_readme(variants: list[tuple[str, Path]]) -> str:
         "- **Quantile regression** -- pinball loss at tau = 0.05, 0.50, 0.95 provides "
         "median predictions with empirical 90% prediction intervals whose coverage is "
         "validated for the full_50 and sparse_20_balanced runtime regimes (raw quantile "
-        "spreads; no post-hoc width adjustment is applied)",
+        "spreads; no post-hoc width adjustment is applied). Empirical coverage is "
+        "approximately 89.5% at the deployed domain-balanced 20-item form and "
+        "approximately 92.6% at full 50 items",
         "- **Norms-based percentiles** -- raw predictions are converted to population "
-        "percentiles using z-score norms derived from ~603k respondents",
+        "percentiles using z-score norms fit on the training split only (n = 422,326 "
+        "respondents; validation and test rows are held out so the norms do not leak "
+        "into the percentile targets)",
         "",
         "## Variants",
         "",
@@ -1368,6 +1373,11 @@ def main() -> int:
         help="Generate repo-level README.md from variant subdirectories in --output-dir, then exit.",
     )
     parser.add_argument(
+        "--readme-only",
+        action="store_true",
+        help="Regenerate only README.md from the existing config.json (no ONNX re-export).",
+    )
+    parser.add_argument(
         "--model-dir",
         type=Path,
         default=PACKAGE_ROOT / "models" / "reference",
@@ -1409,6 +1419,41 @@ def main() -> int:
         with open(readme_path, "w") as f:
             f.write(readme)
         log.info("Wrote repo-level README.md (%d variants) to %s", len(variants), readme_path)
+        return 0
+
+    # --- readme-only mode: regenerate README.md from existing config.json ---
+    if args.readme_only:
+        models_dir = args.model_dir
+        if not models_dir.is_absolute():
+            models_dir = PACKAGE_ROOT / models_dir
+        output_dir = args.output_dir
+        if not output_dir.is_absolute():
+            output_dir = PACKAGE_ROOT / output_dir
+        artifacts_dir = (
+            args.artifacts_dir
+            if args.artifacts_dir.is_absolute()
+            else PACKAGE_ROOT / args.artifacts_dir
+        )
+        config_path = output_dir / "config.json"
+        if not config_path.exists():
+            log.error(
+                "readme-only mode requires an existing %s; run a full export first.",
+                config_path,
+            )
+            return 1
+        try:
+            with open(config_path) as f:
+                config = json.load(f)
+            readme = generate_readme(
+                config, artifacts_dir, models_dir, variant_name=models_dir.name
+            )
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
+            log.error("README generation failed strict provenance checks: %s", e)
+            return 1
+        readme_path = output_dir / "README.md"
+        with open(readme_path, "w") as f:
+            f.write(readme)
+        log.info("Wrote README.md (readme-only) to %s", readme_path)
         return 0
 
     # --- normal export mode: require --data-dir ---

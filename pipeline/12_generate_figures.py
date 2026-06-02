@@ -399,6 +399,21 @@ def figure_1_efficiency_curves(data: dict, fig_dir: Path) -> None:
     ax.legend(loc="lower right", frameon=True)
     ax.set_title("Assessment Efficiency: Accuracy vs. Number of Items", pad=10)
 
+    # The K=50 endpoint is within-dataset score recovery (r approx 1 by
+    # construction: the target is the sum of those same 50 items), not external
+    # trait validity. Flag this so "Accuracy" is not over-read at the ceiling.
+    ax.text(
+        0.015,
+        0.015,
+        "K=50 endpoint is within-dataset score recovery (r ≈ 1 because the target is the sum of the same items).",
+        transform=ax.transAxes,
+        fontsize=7,
+        color="0.45",
+        ha="left",
+        va="bottom",
+        zorder=6,
+    )
+
     for fmt in ("png", "pdf"):
         fig.savefig(fig_dir / f"fig1_efficiency_curves.{fmt}")
     plt.close(fig)
@@ -443,7 +458,11 @@ def figure_2_domain_starvation(df: pd.DataFrame, fig_dir: Path) -> None:
 
     # Create a panel: one sub-heatmap per K value
     fig, axes = plt.subplots(1, len(k_vals), figsize=(8.5, 3.2), sharey=True)
-    fig.subplots_adjust(wspace=0.08)
+    # Reserve an explicit left margin for the leftmost panel's strategy row
+    # labels (set only on idx==0) and an explicit right margin for the manual
+    # colorbar. Without this, savefig(bbox="tight") + the add_axes([0.93, ...])
+    # colorbar can crop the y-tick strategy labels, making rows unattributable.
+    fig.subplots_adjust(left=0.16, right=0.9, bottom=0.18, top=0.83, wspace=0.08)
 
     vmin, vmax = 0, 10
 
@@ -502,22 +521,27 @@ def figure_2_domain_starvation(df: pd.DataFrame, fig_dir: Path) -> None:
         )
         ax.set_title(f"K = {k}", fontsize=10, pad=4)
 
+        # With sharey=True the y-axis ticks are shared across panels, so set the
+        # strategy ticks/labels once on the first panel and only HIDE (not clear)
+        # the labels on the rest. Calling set_yticks([]) on a shared axis wipes
+        # the ticks from every panel, leaving the strategy rows unlabelled.
+        ax.set_yticks(range(len(strategies)))
         if idx == 0:
-            ax.set_yticks(range(len(strategies)))
             ax.set_yticklabels(
                 [STRATEGY_LABELS[s].split(" (")[0] for s in strategies],
                 fontsize=8.5,
             )
         else:
-            ax.set_yticks([])
+            ax.tick_params(labelleft=False)
 
         # Remove spines for heatmap
         for spine in ax.spines.values():
             spine.set_visible(False)
         ax.tick_params(length=0)
 
-    # Colorbar
-    cbar_ax = fig.add_axes([0.93, 0.18, 0.015, 0.65])
+    # Colorbar sits in the reserved right margin (right=0.9 above) so it does
+    # not overlap the panels; its vertical extent matches the panels' bottom/top.
+    cbar_ax = fig.add_axes((0.925, 0.18, 0.015, 0.65))
     assert im is not None, "no sub-heatmaps were rendered (empty k_vals)"
     cbar = fig.colorbar(im, cax=cbar_ax)
     cbar.set_label("Items", fontsize=9)

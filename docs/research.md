@@ -13,7 +13,7 @@ Technical details on model architecture, sparsity augmentation, norms, data, and
 
 ## Sparsity Augmentation
 
-The key idea is **sparsity augmentation**: each training respondent (who answered all 50 items) is augmented 3 times (`n_augmentation_passes=3`), each time with a different random mask that sets a subset of items to NaN. The model only trains on masked data and learns to predict accurately regardless of which items are present.
+The key idea is **sparsity augmentation**: each fit respondent (who answered all 50 items) is augmented 3 times (`n_augmentation_passes=3`), each time with a different random mask that sets a subset of items to NaN. The model only trains on masked data and learns to predict accurately regardless of which items are present. Augmentation is applied only to the fit rows: a 15% early-stopping hold-out (63,349 rows) is carved out of the 422,326 training rows *before* augmentation, so just the remaining 358,977 fit respondents are tripled → 358,977 × 3 = 1,076,931 augmented rows (`n_train_augmented` in the reference config).
 
 The reference model uses **focused sparsity** with the A0.1 distribution, which assigns each augmented row to one of five masking buckets:
 
@@ -44,13 +44,13 @@ Raw-score to percentile conversion uses z-score transformation with norms derive
 Training data comes from the [Open-Source Psychometrics Project](https://openpsychometrics.org/) (OSPP) dataset:
 
 - **Split:** Single plain random train/val/test split (70/15/15, seed-locked) — the canonical `canonical_v1` partition used for every headline claim. At this dataset's scale a random split is already balanced on every domain, so no target stratification is applied.
-- **Augmentation:** Training set is augmented via 3 sparsity passes (see [Sparsity Augmentation](#sparsity-augmentation))
-- **Split before augmentation:** Train/val/test split is performed before augmentation to prevent data leakage
+- **Augmentation:** The training fit rows are augmented via 3 sparsity passes (see [Sparsity Augmentation](#sparsity-augmentation)). A 15% early-stopping hold-out (63,349 rows) is split from the 422,326 train rows before augmentation, so only the remaining 358,977 fit respondents are tripled → 1,076,931 augmented rows
+- **Split before augmentation:** The canonical train/val/test split is performed before augmentation to prevent leakage; the within-train early-stopping hold-out above is likewise carved out before any masking, distinct from that canonical split
 - **RNG seed:** 42
 
 ## Evaluation
 
-All accuracy metrics are computed on the held-out `canonical_v1` test split (*N* = 90,498). "Overall *r*" is a **respondent-pooled** Pearson correlation: the five domains' predicted and true percentile vectors are stacked into a single length-5*N* vector before correlating (numerically ≈ the mean of the per-domain *r*, because every domain is on a common 0--100 percentile scale). Prediction intervals are the raw q05/q95 quantile spreads (no post-hoc width adjustment; every fitted `scale_factor` is 1.0), validated to ~90% empirical coverage at the 20-item operating point.
+All accuracy metrics are computed on the held-out `canonical_v1` test split (*N* = 90,498). "Overall *r*" is a **respondent-pooled** Pearson correlation: the five domains' predicted and true percentile vectors are stacked into a single length-5*N* vector before correlating (numerically ≈ the mean of the per-domain *r*, because every domain is on a common 0--100 percentile scale). Prediction intervals are the raw q05/q95 quantile spreads (no post-hoc width adjustment; every fitted `scale_factor` is 1.0). Empirical coverage is ≈ 89.5% at the deployed domain-balanced 20-item form, ≈ 89.8% under random balanced 20-item masking, and ≈ 92.6% at full 50 items; because the intervals are raw spreads (scale stays 1.0), the deployed-form intervals slightly under-cover the nominal 90% by design.
 
 Headline 20-item numbers refer to the **fixed, pre-specified domain-balanced form** (top-4 items per domain — the deployed web form), not a post-hoc best-of-grid selection. The model's *general* partial-response accuracy under random balanced 20-item masking is lower (*r* ≈ .910). The full-50 self-recovery *r* ≈ 1 reflects score recovery against a target computed from the same 50 items, not external validity.
 

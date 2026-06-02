@@ -125,7 +125,8 @@ table below shows the exact allocation). Extraversion items dominate because
 they correlate moderately with other domains, which inflates their composite
 utility scores; but those cross-domain correlations are too weak to actually
 predict the other domains. The best-served domain achieves near-perfect
-recovery while the worst-served domain falls to chance-level prediction.
+recovery while the worst-served domain falls to weak/moderate prediction
+(*r* ≈ 0.43, driven only by cross-domain inference).
 
 This is not a cold-start problem. A constrained greedy start (one item per
 domain first, then greedy fill) still fell far below domain-balanced and

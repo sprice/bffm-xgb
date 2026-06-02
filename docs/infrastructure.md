@@ -98,7 +98,7 @@ make remote-all-2          # train through figures, pulls results, tears down
 
 ## Option B: GPU Tune/Train + CPU Eval (two instances)
 
-Best when tune/train is the bottleneck. GPU accelerates XGBoost training significantly (5-10x), then a CPU instance handles the CPU-bound eval steps (bootstrap, simulation).
+Best when tune/train is the bottleneck. GPU typically accelerates XGBoost (hist) training by several times (not benchmarked on this project), then a CPU instance handles the CPU-bound eval steps (bootstrap, simulation).
 
 ```bash
 # Phase 1: GPU instance — tune + train
@@ -116,7 +116,7 @@ Runs on the GPU instance (`g5.xlarge` with Deep Learning AMI).
 
 **Steps performed on the remote instance:**
 1. `make remote-push` — upload source code + artifacts
-2. `make remote-setup` — install dependencies via `uv sync` (uv is installed system-wide by the instance's cloud-init). `uv sync` also downloads the project interpreter pinned in `.python-version` (3.14); the system python the cloud-init installs is only for OS tooling, not the project venv. (This cloud-init path is untested on a fresh AWS instance — verify `uv sync` succeeds before relying on a paid run.)
+2. `make remote-setup` — install dependencies via `uv sync` (uv is installed system-wide by the instance's cloud-init). On this GPU path the cloud-init installs `python3-venv` on the Deep Learning AMI's existing Python; `uv sync` still downloads the project interpreter pinned in `.python-version` (3.14) for the project venv. (This cloud-init path is untested on a fresh AWS instance — verify `uv sync` succeeds before relying on a paid run.)
 3. Pipeline stages (via `run-pipeline.sh --end-stage train --gpu`):
    - `download` — fetch IPIP-BFFM data
    - `load` — load into SQLite

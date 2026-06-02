@@ -82,9 +82,19 @@ describe.skipIf(!hasArtifacts)("repo facts used by the course", () => {
           };
         };
       };
+      reference_notes_inputs: {
+        norms: {
+          norms: Record<string, { mean: number; sd: number }>;
+        };
+        reliability: {
+          full_50: Record<string, { r_bar: number }>;
+        };
+      };
     }>("artifacts/research_summary.json");
 
     const reference = researchSummary.variants.reference;
+    const sourceNorms = researchSummary.reference_notes_inputs.norms.norms;
+    const sourceReliability = researchSummary.reference_notes_inputs.reliability.full_50;
 
     expect(repoFacts.validation.full50R).toBeCloseTo(reference.validation.full_50.pearson_r, 4);
     expect(repoFacts.validation.full50Mae).toBeCloseTo(reference.validation.full_50.mae, 2);
@@ -120,6 +130,15 @@ describe.skipIf(!hasArtifacts)("repo facts used by the course", () => {
     expect(repoFacts.simulation.meanItemsPerDomain).toBe(
       reference.simulation.domain_metrics.ext.mean_items_used,
     );
+    expect(repoFacts.simulation.meanItemsTotal).toBe(
+      5 * repoFacts.simulation.meanItemsPerDomain,
+    );
+
+    for (const domain of ["ext", "agr", "csn", "est", "opn"] as const) {
+      expect(repoFacts.norms[domain].mean).toBeCloseTo(sourceNorms[domain].mean, 4);
+      expect(repoFacts.norms[domain].sd).toBeCloseTo(sourceNorms[domain].sd, 4);
+      expect(repoFacts.interItemRBar[domain]).toBeCloseTo(sourceReliability[domain].r_bar, 4);
+    }
   });
 
   it("matches the current tuned-params artifact and the ML-vs-averaging comparison artifact", () => {

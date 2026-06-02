@@ -39,6 +39,13 @@ export const chapter10Evaluation: Chapter = {
             ["Sparse 20", repoFacts.validation.sparse20R.toFixed(4), repoFacts.validation.sparse20Mae.toFixed(2), `${(repoFacts.validation.sparse20Coverage * 100).toFixed(1)}%`],
           ],
         )}
+        ${callout(
+          "note",
+          "Ceiling check, not validity",
+          paragraph(
+            `The full-50 r ≈ 1 is a score-recovery ceiling: the target is the sum of those same 50 items, so r ≈ 1 is expected and confirms the pipeline works rather than external-trait validity. The real operating-point accuracy is the deployed domain-balanced 20-item form at r ≈ 0.93.`,
+          ),
+        )}
       `,
     )}
     ${section(
@@ -102,7 +109,7 @@ SEM = SD_domain * sqrt(1 - alpha_k)`,
           "text",
         )}
         ${paragraph(
-          "Earlier work experimented with SEM thresholds like 0.42 and 0.38 during exploration. Currently the canonical operating point uses a 0.45 threshold plus a minimum of 4 items per domain; in practice that produces a fixed 20-item pattern in the reference simulation.",
+          "Earlier work experimented with other SEM thresholds during exploration. Currently the canonical operating point uses a 0.45 threshold plus a minimum of 4 items per domain; in practice that produces a fixed 20-item pattern in the reference simulation.",
         )}
         ${callout(
           "note",

@@ -360,24 +360,6 @@
                 }
             }
         ],
-        "./pipeline/12_generate_figures.py": [
-            {
-                "code": "reportCallIssue",
-                "range": {
-                    "startColumn": 14,
-                    "endColumn": 53,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 27,
-                    "endColumn": 52,
-                    "lineCount": 1
-                }
-            }
-        ],
         "./python/inference.py": [
             {
                 "code": "reportAttributeAccessIssue",

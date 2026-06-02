@@ -108,7 +108,7 @@ export const chapter05DataPipeline: Chapter = {
           "The predecessor repo used stratified splits — an <code>ext-est</code> scheme (Extraversion × Emotional-Stability quintiles) and a three-domain <code>ext-est-opn</code> variant. Both were dropped in favor of a single plain random split.",
         )}
         ${paragraph(
-          `The deciding evidence: an ${abbr("ablation", "A controlled variant that changes one design choice to test whether it really matters.")} comparing the two stratified schemes moved Openness recovery by about one ten-thousandth of a point — indistinguishable from noise. At this dataset's scale, how you stratify the split barely changes the numbers.`,
+          `The deciding evidence: an ${abbr("ablation", "A controlled variant that changes one design choice to test whether it really matters.")} comparing the two stratified schemes moved Openness recovery by a negligible amount — indistinguishable from noise. At this dataset's scale, how you stratify the split barely changes the numbers.`,
         )}
         ${callout(
           "why",

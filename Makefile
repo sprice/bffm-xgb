@@ -72,7 +72,7 @@ VALID_TRAIN_RUNS := 1 2 3
 RESEARCH_EVAL_TARGETS := research-eval-reference research-eval-ablation-none research-eval-ablation-focused
 _CALLER_PARALLEL_MAKEFLAGS = $(filter -j% -j --jobserver-auth=% --jobserver-fds=%,$(MAKEFLAGS))
 
-.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full verify-release pull-reference prepare correlations tune train train-1 train-2 train-3 validate baselines simulate export export-all export-repo-readme export-reference export-ablation-none export-ablation-focused figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-summary research-summary-strict notes upload-hf upload-hf-reference lint format typecheck test test-lib test-inference test-web fixtures smoke smoke-clean archive clean restore web-setup web-dev web-build deploy-web
+.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full verify-release pull-reference prepare correlations tune train train-1 train-2 train-3 validate baselines simulate export export-all export-repo-readme export-readme export-reference export-ablation-none export-ablation-focused figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-summary research-summary-strict notes upload-hf upload-hf-reference lint format typecheck test test-lib test-inference test-web fixtures smoke smoke-clean archive clean restore web-setup web-dev web-build deploy-web
 
 # Ordered phases. Each stage is a sub-make so the order holds even under `make -j`
 # (recipe lines run sequentially), while each stage keeps its own internal
@@ -191,6 +191,12 @@ export-all: export-reference export-ablation-none export-ablation-focused export
 
 export-repo-readme:
 	$(PY) pipeline/11_export_onnx.py --repo-readme --output-dir output
+
+# Regenerate only the per-variant model card (README.md) from the existing
+# config.json -- no ONNX re-export. Use after editing the card generator in
+# 11_export_onnx.py (e.g. prose/provenance fixes) to avoid rewriting model.onnx.
+export-readme:
+	$(PY) pipeline/11_export_onnx.py --readme-only --model-dir $(MODEL_DIR_NORM) --artifacts-dir $(EVAL_DIR) --output-dir output/$(MODEL_NAME)
 
 export-reference:
 	$(MAKE) export MODEL_DIR=models/reference DATA_DIR=$(DATA_DIR)

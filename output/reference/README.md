@@ -50,6 +50,7 @@ Each domain has three quantile models:
 - **Scale:** Raw domain score on the **per-item-mean 1-5 scale** — the mean of the 10 item responses for the domain, **not** the 10-50 summed scale a 10-item sum would give. A domain mean of 3.0 is neutral; see the Norms table for population means/SDs.
 - **Nominal range:** `[1, 5]`. Because these are gradient-boosted regressors (not bounded transforms), the raw `q05`/`q50`/`q95` predictions can fall **outside** `[1, 5]` — typically near the extremes of a domain's score range, and more so for low-information sparse inputs. They are **not** clamped: treat `[1, 5]` as the nominal/target range, not a hard guarantee, if you consume the raw `scores` tensor.
 - **Percentile conversion:** Use the provided norms (z-score → CDF). The transform is monotonic and saturates near 0/100, so out-of-range raw values shift the reported percentile by well under one percentile point; the reference inference packages report percentiles, not raw scores.
+- **Quantile ordering:** The `q05`/`q50`/`q95` outputs are fit independently, so the three predictions are not guaranteed to be monotonically ordered; sort them before use (the reference inference packages already do this).
 
 ## Quick Start (Python)
 
@@ -153,7 +154,7 @@ ML advantage over simple averaging: +0.006 r (domain-balanced K=20).
 
 ## Norms
 
-Population norms for raw-score -> percentile conversion (from OSPP dataset):
+Population norms for raw-score -> percentile conversion, computed on the OSPP training split only (n = 422,326; validation/test held out to prevent leakage):
 
 | Domain                | Mean  | SD    |
 |-----------------------|-------|-------|

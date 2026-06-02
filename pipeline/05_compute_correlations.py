@@ -610,6 +610,10 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Step 1: Load training data
+    # Leakage-avoidance invariant: all correlations, item ranking, first-item
+    # selection, and reliability below are computed on the TRAIN split ONLY, so
+    # they never leak information from the held-out val/test rows.
+    assert train_path.name == "train.parquet", f"expected train split, got {train_path.name}"
     log.info("Step 1: Loading training data...")
     df = pd.read_parquet(train_path)
     log.info("  Loaded %s rows, %d columns", f"{len(df):,}", len(df.columns))

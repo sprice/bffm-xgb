@@ -83,7 +83,7 @@ export function mountZScoreWidget(id = "z-score-widget"): void {
           </label>
           <label class="${WIDGET_LABEL}">
             Mean
-            <input id="${id}-mean" type="number" step="0.01" value="2.9138" class="${WIDGET_INPUT}" />
+            <input id="${id}-mean" type="number" step="0.01" value="2.9146" class="${WIDGET_INPUT}" />
           </label>
           <label class="${WIDGET_LABEL}">
             SD

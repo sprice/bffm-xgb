@@ -176,7 +176,7 @@ make train DATA_DIR=data/processed/canonical_v1
 | `NO_GATE`                   | *(none)*                                                                                                    | `NO_GATE=1` records the quality-gate outcome but saves the bundle even on a threshold miss |
 
 Thread count precedence: `N_JOBS` > `training.n_jobs` in config > `$BFFM_XGB_N_JOBS` > `os.cpu_count()`.
-The committed configs pin `training.n_jobs: 16` so defaults are machine-independent.
+The committed configs pin `training.n_jobs: 16` so the default does not silently follow `os.cpu_count()` on whatever machine runs the pipeline. **Bit-exact reproduction, however, requires matching the *recorded* thread count, not the config default:** the published reference bundle was trained with `xgb_n_jobs=10` (a CLI override, recorded as `xgb_n_jobs: 10` / `xgb_n_jobs_source: "cli"` in `models/reference/training_report.json`). Because `tree_method=hist` accumulates gradients across threads in a non-associative (non-deterministic) order, the trained trees — and therefore the exported `model.onnx` bytes — are **not** bit-identical across thread counts. To reproduce the published bundle byte-for-byte, train with `make train N_JOBS=10` to match the recorded `xgb_n_jobs`.
 
 **Quality gate (`NO_GATE`).** Stage 07 evaluates the trained models against the config's `validation` thresholds *after* training and, by default, aborts (`return 1`, saving nothing) if any threshold is missed. For the first run on a new split — where a near-miss should not discard multi-day compute — pass `NO_GATE=1` (e.g. `make train NO_GATE=1`, or `NO_GATE=1 bash scripts/run-pipeline.sh --reference-only`). The gate still runs and its outcome is recorded honestly in `training_report.json` as `quality_gates: {passed, enforced}`, but the bundle is saved regardless. **A bundle with `enforced: false` (or `passed: false`) must have its `validation_metrics` reviewed manually before it is published** — `NO_GATE` only suppresses the abort, not the check. Only `NO_GATE=1` enables it; any other value (including `0`) leaves the gate enforcing.
 
@@ -260,6 +260,21 @@ All downstream provenance uses a stable `data_snapshot_id` derived from
 `artifacts/ipip_bffm_norms.json` SHA-256 (`norms_sha256:<hash>`), so run identity
 is not coupled to wall-clock dates during long multi-day pipeline runs.
 
+Note that `data/processed/load_metadata.json`'s `data_snapshot_id` may *lag* the
+canonical locked-norms SHA used downstream (e.g. a metadata-only edit to the norms
+file re-keyed its whole-file SHA while the norm *values* stayed byte-identical).
+This is benign: downstream binding uses the split's `split_signature` plus the locked
+`norms_sha256`, not `load_metadata`'s snapshot field.
+
+For the same reason, a provenance sidecar's `git_hash` / `preprocessing_version` can
+point at an earlier or rewritten commit — e.g. `artifacts/ipip_bffm_norms.meta.json` is
+stamped at the commit that locked the norms, which later history may have rebased so the
+hash is no longer reachable from the current branch. The binding identity is the content
+SHA (`norms_sha256`, `split_signature`), not the `git_hash`, so an unreachable sidecar
+`git_hash` does not affect reproducibility; regenerate the sidecar with `make norms` if a
+reachable hash is wanted (the locked norm values are byte-identical, so `norms_sha256` is
+unchanged).
+
 The metadata omits per-run timestamps. Key fields stored by `build_provenance()` include
 the git hash, `data_snapshot_id`, `preprocessing_version`, `script`,
 and any RNG seeds or bootstrap config provided by each pipeline stage. This keeps the
@@ -332,3 +347,5 @@ The `artifacts/` directory contains global pipeline artifacts. Per-model evaluat
 | `variants/<name>/simulation_results.json`          | Adaptive assessment simulation metrics per variant      |
 
 These artifacts allow `12_generate_figures.py` to produce publication figures without retraining. They also serve as regression tests; the pipeline validates that newly trained models reproduce these numbers within tolerance.
+
+**Reproduction expectations.** `artifacts/research_summary.json` is the source of truth for the cited numbers. A full `make all` reproduces them only *up to* XGBoost thread-count nondeterminism — `tree_method=hist` accumulates gradients across threads in a non-associative order — so retrained metrics match within tolerance, not bit-for-bit. Bit-exact reproduction of the published `model.onnx` additionally requires matching the recorded `xgb_n_jobs` (see [Hyperparameter Tuning](#hyperparameter-tuning)).

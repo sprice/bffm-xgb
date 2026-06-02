@@ -2,9 +2,9 @@
   "schema_version": 1,
   "provenance": {
     "data_snapshot_id": "norms_sha256:a8c7c1a0dac762bc47b5a36094ffb101696fcda45aae6a8c4f46c14fb2502bf5",
-    "preprocessing_version": "d8b79fd23cd033214e439fb3b88d7fe93c961b7b",
+    "preprocessing_version": "5539376b0b23663132e2b65658a35201ece9aa5f",
     "script": "12_generate_figures.py",
-    "git_hash": "d8b79fd23cd033214e439fb3b88d7fe93c961b7b",
+    "git_hash": "5539376b0b23663132e2b65658a35201ece9aa5f",
     "environment": {
       "python_version": "3.14.3",
       "python_implementation": "CPython",
@@ -51,8 +51,8 @@
         "baseline_comparison_results"
       ],
       "sha256": {
-        "png": "4e1f086d19ab9d7d17dec3251a0e59855d08ee94d4917833ecab4a8761b29ea8",
-        "pdf": "448338b0edfc243938ac4fab94342bd7c5967b8a372ea9dfe38576435279f82e"
+        "png": "81615acf79dc83c088b6a3dead4dd1ef8dd488b3381091729a837baa03e9a4c7",
+        "pdf": "77110e337c25850df541036697f825d6d8bef28e9115d1a0cae8d47f0b0429a0"
       }
     },
     {
@@ -65,8 +65,8 @@
         "baseline_comparison_per_domain_csv"
       ],
       "sha256": {
-        "png": "78e349892c43d110123d014f47e809e818d4418e3987fc03312b4bee797a90dd",
-        "pdf": "a07541c20380a2d8676a073a024a60536e6e4f6acb0284a14393ecdc09e89038"
+        "png": "40309c76439cb766f342ac453d57003baa25ef106eb9beedad1fbf9ee0c9a0c5",
+        "pdf": "e906e85aeabaf35be460fea33f60ed60864cf8170f5eb31253ad45948ab308d4"
       }
     },
     {
@@ -80,7 +80,7 @@
       ],
       "sha256": {
         "png": "ffb1a1cf4a69deed9590cd9648968571bac917a6bc89dc6f6f04dd6f94965dd4",
-        "pdf": "051235e59573b09518b0df6416db20657e9a9a1ebdd5b6861bf6a7f7a8e0397d"
+        "pdf": "7fbcc7370f7802de697d52ac8ac2b829da9b9035448a57ae44776fae60bbebbc"
       }
     },
     {
@@ -99,7 +99,7 @@
       },
       "sha256": {
         "png": "8c80a6dfb281d074d60a2a79abe68630550be2b7395cfdc062b50e18a40c3604",
-        "pdf": "fab6bf81a1f7b55a290dcb0602df76f987003af3f9b2f24b71a8c02ffb76ec35"
+        "pdf": "f062ce75fc21025999615050e7f1ae7a1b9ba054022e4ff242382ccd52d3314a"
       }
     }
   ]

@@ -79,9 +79,10 @@ export function HomePage() {
         <p>
           I wanted to find out if it would work and built a machine learning
           model to test the idea. I was able to invalidate the adaptive part,
-          but the model itself turned out to be good at something else:
-          predicting reliable Big Five scores from just 20 fixed questions, with
-          a confidence range that shows where the uncertainty actually is.
+          but the model itself turned out to be good at something else: closely
+          reproducing your full 50-item Big Five scores from just 20 fixed
+          questions, with a confidence range that shows where the uncertainty
+          actually is.
         </p>
 
         <p>

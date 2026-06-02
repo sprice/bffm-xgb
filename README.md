@@ -25,13 +25,15 @@ The BFFM-XGB-20 figures above (*r* = .928, 89.5% coverage) are the **fixed, pre-
 
 **Per-domain accuracy at *K* = 20:**
 
-| Domain                | Mini-IPIP *α* | Mini-IPIP *r* | BFFM-XGB-20 *r* |
-| --------------------- | ------------- | ------------- | --------------- |
-| Extraversion          | .77           | .938          | **.947**        |
-| Agreeableness         | .70           | .912          | **.920**        |
-| Conscientiousness     | .69           | .910          | **.921**        |
-| Emotional Stability   | .68           | .930          | **.938**        |
-| Intellect/Imagination | .65           | .842          | **.912**        |
+| Domain                | Mini-IPIP *α* (reported) | Mini-IPIP *r* | BFFM-XGB-20 *r* |
+| --------------------- | ------------------------ | ------------- | --------------- |
+| Extraversion          | .77                      | .938          | **.947**        |
+| Agreeableness         | .70                      | .912          | **.920**        |
+| Conscientiousness     | .69                      | .910          | **.921**        |
+| Emotional Stability   | .68                      | .930          | **.938**        |
+| Intellect/Imagination | .65                      | .842          | **.912**        |
+
+The Mini-IPIP *α* column reports the published Donnellan et al. (2006) reliabilities, not values computed on this sample — so it is not directly comparable to the same-sample recovery *r* columns (the repo's own OSPP-train Mini-IPIP alpha differ and are in `reliability.json`).
 
 With 15 items and XGBoost scoring (3 per domain), BFFM-XGB reaches *r* = .909, matching the 20-item simple-averaging Mini-IPIP (*r* = .907) — fewer items, though the comparison also differs in scoring method and item set.
 

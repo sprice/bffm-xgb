@@ -2,7 +2,7 @@
 
 ## Overview
 
-The inference packages provide standalone Big Five personality prediction from IPIP-BFFM item responses. Each package loads pre-trained ONNX models exported by the pipeline and returns percentile scores with empirical 90% prediction intervals (validated to ~90% coverage at the 20-item operating point; no post-hoc width adjustment is applied).
+The inference packages provide standalone Big Five personality prediction from IPIP-BFFM item responses. Each package loads pre-trained ONNX models exported by the pipeline and returns percentile scores with empirical 90% prediction intervals (raw quantile spreads, no post-hoc width adjustment; achieved coverage is ≈ 89.5% at the deployed 20-item operating point and ≈ 92.6% at full 50 items, so the 20-item intervals slightly under-cover the nominal 90% by design).
 
 Models and configuration are in [`output/reference/`](../output/reference/) (the published reference variant). Each variant directory contains:
 - `model.onnx` — XGBoost quantile regression models (5 domains × 3 quantiles)
@@ -85,7 +85,7 @@ Exported inference dispatches between two coverage-validated regimes by answered
 | `full_50` | 50 | All items answered |
 | `sparse_20_balanced` | ≤49 | Primary 20-item domain-balanced operating point |
 
-Predictions remain available for arbitrary partial-response patterns, but the intervals are raw quantile spreads (no post-hoc width adjustment), and their coverage is validated only at the primary 20-item domain-balanced operating point — not at every possible sub-50 response pattern.
+Predictions remain available for arbitrary partial-response patterns, but the intervals are raw quantile spreads (no post-hoc width adjustment), and their coverage is validated only at the primary 20-item domain-balanced operating point (≈ 89.5% empirical, slightly under the nominal 90% by design) — not at every possible sub-50 response pattern.
 
 ## Determinism
 

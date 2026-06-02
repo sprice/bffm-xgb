@@ -49,7 +49,7 @@ export const chapter03Stats: Chapter = {
           `Using the current Extraversion norms, mean ≈ ${repoFacts.norms.ext.mean.toFixed(4)} and SD ≈ ${repoFacts.norms.ext.sd.toFixed(4)}. Suppose a respondent's predicted raw score is 3.80.`,
         )}
         ${codeBlock(
-          `z = (3.80 - 2.9138) / 0.9112 ≈ 0.972\npercentile ≈ 83.5`,
+          `z = (3.80 - 2.9146) / 0.9112 ≈ 0.972\npercentile ≈ 83.5`,
           "text",
         )}
         ${paragraph(
@@ -88,6 +88,13 @@ export const chapter03Stats: Chapter = {
           "Important nuance",
           paragraph(
             `High Pearson r means the short-form predictions track the full-scale criterion well. But it doesn't automatically mean every domain is equally good (or that absolute error is small in every case). That's why the repo also tracks ${abbr("MAE", "Mean absolute error: the average size of prediction errors without regard to direction.")}, ${abbr("RMSE", "Root mean squared error: an error metric that penalizes larger mistakes more strongly.")}, within-5, and coverage.`,
+          ),
+        )}
+        ${callout(
+          "note",
+          "Reading the top of the scale",
+          paragraph(
+            `The full-50 r ≈ 1 is a score-recovery ceiling, not external-trait validity: the target is the sum of those same 50 items, so r ≈ 1 is expected. The real operating-point accuracy is the K = 20 short form at r ≈ 0.93.`,
           ),
         )}
       `,
