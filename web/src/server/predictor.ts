@@ -295,6 +295,17 @@ async function resolveModelDir(): Promise<string> {
       );
     }
 
+    // The two file checksums still pin the bytes we serve, so a branch name is
+    // not fatal — but it can silently drift to new commits between deploys.
+    // Warn (do not fail) unless HF_REVISION is a 40-hex commit sha.
+    if (!/^[0-9a-f]{40}$/.test(revision)) {
+      console.warn(
+        `WARNING: HF_REVISION="${revision}" is a branch/tag name, not a 40-hex commit sha. ` +
+          "The integrity pins still verify the downloaded bytes, but a mutable ref can " +
+          "drift between deploys. Pin a full commit sha for reproducibility."
+      );
+    }
+
     const safeRepoId = repoId.replace(/\//g, "--");
     const cacheDir = join(tmpdir(), "bffm-xgb-model", safeRepoId, revision, variant);
 

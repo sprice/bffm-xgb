@@ -48,9 +48,14 @@ make remote-reference
 so expensive outputs are synced locally before final teardown.
 
 `make remote-reference` follows the same remote CPU path but only builds the
-reference data/model path after load/norms: `prepare`,
-`correlations`, `train 1`, `research-eval-reference`,
-`export-reference`, `export-repo-readme`, `notes`, and `figures`. It now runs
+reference data/model path after load/norms: `prepare`, `correlations`, `tune`,
+`train 1`, `research-eval-reference`,
+`export-reference`, `export-repo-readme`, `notes`, and `figures`. Note that
+`tune` is **not** skipped on the reference-only path: `run-pipeline.sh
+--reference-only` runs the full Optuna tune unconditionally before
+`train` (the `--reference-only` flag only scopes train/eval/export to the
+reference variant, it does not bypass tuning; the tuning budget is recorded
+in [GPU Training Details](#gpu-training-details)). It now runs
 `notes` scoped to the reference variant (`make notes REFERENCE_ONLY=1`),
 producing a single-variant `NOTES.md` + `research_summary.json` that disclose
 the ablation variants were not run (generated on the remote; regenerate locally
@@ -185,6 +190,14 @@ CPU training (default, unchanged):
 
 - `make tune N_JOBS=96`
 - `make train N_JOBS=96 PARALLEL_DOMAINS=5`
+
+The `96`/`5` values above are illustrative CLI examples for a 96-vCPU box, not properties of the published run. The recorded config of the published reference bundle is:
+
+<!-- BEGIN GENERATED: training-config -->
+- **Optuna tuning budget:** 200 trials.
+- **Cross-validation:** 3-fold.
+- **Recorded XGBoost thread count (published bundle):** `xgb_n_jobs = 10` (CLI override) — reproduce byte-for-byte with `make train N_JOBS=10`.
+<!-- END GENERATED: training-config -->
 
 ---
 

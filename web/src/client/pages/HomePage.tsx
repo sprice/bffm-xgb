@@ -81,7 +81,7 @@ export function HomePage() {
           model to test the idea. I was able to invalidate the adaptive part,
           but the model itself turned out to be good at something else: closely
           reproducing your full 50-item Big Five scores from just 20 fixed
-          questions, with a confidence range that shows where the uncertainty
+          questions, with an estimated range that shows where the uncertainty
           actually is.
         </p>
 

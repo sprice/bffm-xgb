@@ -2,7 +2,7 @@
 
 ## Overview
 
-The inference packages provide standalone Big Five personality prediction from IPIP-BFFM item responses. Each package loads pre-trained ONNX models exported by the pipeline and returns percentile scores with empirical 90% prediction intervals (raw quantile spreads, no post-hoc width adjustment; achieved coverage is ≈ 89.5% at the deployed 20-item operating point and ≈ 92.6% at full 50 items, so the 20-item intervals slightly under-cover the nominal 90% by design).
+The inference packages provide standalone Big Five personality prediction from IPIP-BFFM item responses. Each package loads pre-trained ONNX models exported by the pipeline and returns percentile scores with empirical 90% prediction intervals (raw quantile spreads, no post-hoc width adjustment). The intervals slightly under-cover the nominal 90% at the deployed 20-item operating point and over-cover at full 50 items by design; the [Calibration Note](#calibration-note) lists the empirical coverage at each regime.
 
 Models and configuration are in [`output/reference/`](../output/reference/) (the published reference variant). Each variant directory contains:
 - `model.onnx` — XGBoost quantile regression models (5 domains × 3 quantiles)
@@ -74,7 +74,7 @@ Run tests: `npm test`
 
 The Python and TypeScript inference packages expect inputs to already match training-time preprocessing. You must reverse-score the 24 negatively keyed IPIP-BFFM items yourself before calling `predict()`. The [web app](../web/) does this automatically on the server; the standalone packages do not.
 
-The 24 reverse-keyed items are defined in `lib/constants.py` (`REVERSE_KEYED_ITEMS`). To reverse-score: `6 - raw_value`.
+The 24 reverse-keyed items are defined in `lib/constants.py` (`REVERSE_KEYED`). To reverse-score: `6 - raw_value`.
 
 ## Calibration Note
 
@@ -85,7 +85,15 @@ Exported inference dispatches between two coverage-validated regimes by answered
 | `full_50` | 50 | All items answered |
 | `sparse_20_balanced` | ≤49 | Primary 20-item domain-balanced operating point |
 
-Predictions remain available for arbitrary partial-response patterns, but the intervals are raw quantile spreads (no post-hoc width adjustment), and their coverage is validated only at the primary 20-item domain-balanced operating point (≈ 89.5% empirical, slightly under the nominal 90% by design) — not at every possible sub-50 response pattern.
+Empirical coverage of the raw 90% prediction intervals at each validated regime:
+
+<!-- BEGIN GENERATED: coverage-by-regime -->
+- **Deployed 20-item form (SEM-stopped adaptive sim):** 89.5% empirical coverage (*r* = 0.93) — slightly under the nominal 90% by design.
+- **Random balanced 20-item masking:** 89.8% empirical coverage (*r* = 0.911).
+- **Full 50 items (self-recovery):** 92.6% empirical coverage (*r* = 0.9997).
+<!-- END GENERATED: coverage-by-regime -->
+
+Predictions remain available for arbitrary partial-response patterns, but the intervals are raw quantile spreads (no post-hoc width adjustment), and their coverage is validated only at the primary 20-item domain-balanced operating point (slightly under the nominal 90% by design) — not at every possible sub-50 response pattern.
 
 ## Determinism
 

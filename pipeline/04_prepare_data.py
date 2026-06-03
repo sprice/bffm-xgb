@@ -441,7 +441,7 @@ def write_metadata(
         "split_signature": split_signature,
         "inputs": {
             "sqlite_db": {
-                "path": str(db_path),
+                "path": relative_to_root(db_path),
                 "sha256": db_sha256,
             },
             "norms": {
@@ -451,22 +451,22 @@ def write_metadata(
         },
         "outputs": {
             "train": {
-                "path": str(train_path),
+                "path": relative_to_root(train_path),
                 "sha256": train_sha256,
                 "rows": int(len(train_df)),
             },
             "val": {
-                "path": str(val_path),
+                "path": relative_to_root(val_path),
                 "sha256": val_sha256,
                 "rows": int(len(val_df)),
             },
             "test": {
-                "path": str(test_path),
+                "path": relative_to_root(test_path),
                 "sha256": test_sha256,
                 "rows": int(len(test_df)),
             },
             "split_metadata": {
-                "path": str(meta_path),
+                "path": relative_to_root(meta_path),
             },
         },
         # Convenience mirrors used by strict model/data provenance checks.

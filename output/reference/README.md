@@ -139,12 +139,15 @@ session.release();
 
 Evaluated on held-out test respondents:
 
-| Strategy          | Items (K) | Correlation (r) |
-|-------------------|-----------|-----------------|
-| Full assessment   | 50        | 0.9997          |
-| Domain-balanced   | 20        | 0.928           |
-| Mini-IPIP mapping | 20        | 0.907           |
-| Greedy top-K      | 20        | 0.823           |
+| Strategy          | Items (K) | Scoring            | Correlation (r) |
+|-------------------|-----------|--------------------|-----------------|
+| Full assessment   | 50        | XGBoost            | 0.9997          |
+| Domain-balanced   | 20        | XGBoost            | 0.928           |
+| Mini-IPIP items   | 20        | XGBoost            | 0.918           |
+| Mini-IPIP mapping | 20        | simple averaging ¹ | 0.907           |
+| Greedy top-K      | 20        | XGBoost            | 0.823           |
+
+> ¹ The **Mini-IPIP mapping** row scores the four-per-domain Mini-IPIP items by **simple averaging** (the published Mini-IPIP scoring key), so its *r* is not comparable on the same axis as the XGBoost rows. The **Mini-IPIP items** row applies the XGBoost model to the *same* four-per-domain items; the gap between the two is the contribution of the learned scorer over simple averaging.
 
 > The domain-balanced 20-item form is the pre-specified primary operating point and the deployed web form (not a post-hoc best-of-grid selection). The full-50 row recovers a target computed from the same 50 items, so *r* ≈ 1 reflects score recovery, not external validity.
 
@@ -174,7 +177,7 @@ Population norms for raw-score -> percentile conversion, computed on the OSPP tr
 - Exported calibration regimes are `full_50` and `sparse_20_balanced`; arbitrary sub-50 response patterns use the sparse regime as a fallback rather than a separately fit calibration curve
 - The deployed 20-item domain-balanced Emotional Stability subscale (est1, est6, est7, est8) is composed entirely of reverse-keyed items, so the short-form EST score is vulnerable to acquiescence (yea-saying) response bias; the other four domains mix keyed directions, and the full 50-item assessment is unaffected
 - Accuracy degrades with fewer items; 20 items is the recommended minimum for reliable scoring
-- Not intended for clinical diagnosis or high-stakes selection decisions
+- Not validated for clinical diagnosis or high-stakes selection
 
 ## Item Source
 

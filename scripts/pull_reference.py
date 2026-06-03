@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -69,6 +70,18 @@ def main() -> int:
         )
         return 1
     assert repo_id is not None and revision is not None and sha_model is not None  # narrow for type-checkers
+
+    # The sha256 pin still verifies the downloaded bytes, so a branch/tag name is
+    # not fatal -- but it can silently drift to new commits between pulls. Warn
+    # (do not fail) unless HF_REVISION is a 40-hex commit sha (mirrors the web
+    # runtime's check in web/src/server/predictor.ts).
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        print(
+            f'WARNING: HF_REVISION="{revision}" is a branch/tag name, not a 40-hex commit sha. '
+            "The integrity pin still verifies the downloaded bytes, but a mutable ref can "
+            "drift between pulls. Pin a full commit sha for reproducibility.",
+            file=sys.stderr,
+        )
 
     dest = PACKAGE_ROOT / "output" / variant / "model.onnx"
     if dest.exists() and _sha256(dest).lower() == sha_model.lower():

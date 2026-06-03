@@ -112,7 +112,8 @@ export function App() {
             </Link>
           </p>
           <p className="mt-1 opacity-60">
-            For educational purposes only · Code available on{" "}
+            Not validated for clinical diagnosis or high-stakes selection ·
+            Code available on{" "}
             <a
               href="https://github.com/sprice/bffm-xgb"
               target="_blank"

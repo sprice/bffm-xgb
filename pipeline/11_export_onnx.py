@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     import onnx
 
 from lib.constants import (
+    DEFAULT_STAGE07_CV_FOLDS,
     DOMAIN_LABELS,
     DOMAINS,
     ITEM_COLUMNS,
@@ -852,6 +853,20 @@ def _artifact_matches_signature(
     return True
 
 
+def _humanize_label(label: str) -> str:
+    """Split a camel-case domain label ('EmotionalStability') into words.
+
+    DOMAIN_LABELS stores compact labels (e.g. 'EmotionalStability'); prose wants
+    'Emotional Stability'. Insert a space before each interior capital letter.
+    """
+    out: list[str] = []
+    for i, ch in enumerate(label):
+        if i > 0 and ch.isupper() and not label[i - 1].isupper():
+            out.append(" ")
+        out.append(ch)
+    return "".join(out)
+
+
 def _format_md_table(headers: list[str], rows: list[list[str]]) -> str:
     """Format a Markdown table with padded, equal-width columns."""
     widths = [len(h) for h in headers]
@@ -936,15 +951,60 @@ def generate_readme(config: dict, artifacts_dir: Path, model_dir: Path, *, varia
             label=f"baseline {method}@K={k} pearson_r",
         )
 
-    perf_table = _format_md_table(
-        ["Strategy", "Items (K)", "Correlation (r)"],
-        [
-            ["Full assessment", "50", f"{_r_at(k50.get('full_50'), method='full_50', k=50):.4f}"],
-            ["Domain-balanced", "20", f"{_r_at(k20.get('domain_balanced'), method='domain_balanced', k=20):.3f}"],
-            ["Mini-IPIP mapping", "20", f"{_r_at(k20.get('mini_ipip'), method='mini_ipip', k=20):.3f}"],
-            ["Greedy top-K", "20", f"{_r_at(k20.get('adaptive_topk'), method='adaptive_topk', k=20):.3f}"],
-        ],
+    # The Mini-IPIP *mapping* row scores the four-per-domain Mini-IPIP items by
+    # SIMPLE AVERAGING (the published Mini-IPIP scoring key); every other row in
+    # this table is an XGBoost prediction. Surface the matched XGBoost-scored
+    # Mini-IPIP-items row (ml_r for mini_ipip @ K=20) when available so the
+    # averaging-r and the ML-r are never conflated under one undifferentiated
+    # "Correlation (r)" axis. The XGBoost-items row is optional (absent in some
+    # ablation comparisons); the explicit "simple averaging" scoring tag and the
+    # footnote keep the distinction even when it is omitted.
+    mini_ipip_ml_r: float | None = None
+    for row in ml_vs_avg.get("comparisons", []):
+        if (
+            isinstance(row, dict)
+            and row.get("method") == "mini_ipip"
+            and int(row.get("n_items", -1)) == 20
+            and isinstance(row.get("ml_r"), (int, float))
+            and not isinstance(row.get("ml_r"), bool)
+        ):
+            candidate = float(row["ml_r"])
+            if np.isfinite(candidate):
+                mini_ipip_ml_r = candidate
+            break
+
+    perf_rows = [
+        ["Full assessment", "50", "XGBoost", f"{_r_at(k50.get('full_50'), method='full_50', k=50):.4f}"],
+        ["Domain-balanced", "20", "XGBoost", f"{_r_at(k20.get('domain_balanced'), method='domain_balanced', k=20):.3f}"],
+    ]
+    if mini_ipip_ml_r is not None:
+        perf_rows.append(["Mini-IPIP items", "20", "XGBoost", f"{mini_ipip_ml_r:.3f}"])
+    perf_rows.append(
+        ["Mini-IPIP mapping", "20", "simple averaging ¹", f"{_r_at(k20.get('mini_ipip'), method='mini_ipip', k=20):.3f}"]
     )
+    perf_rows.append(
+        ["Greedy top-K", "20", "XGBoost", f"{_r_at(k20.get('adaptive_topk'), method='adaptive_topk', k=20):.3f}"]
+    )
+    perf_table = _format_md_table(
+        ["Strategy", "Items (K)", "Scoring", "Correlation (r)"],
+        perf_rows,
+    )
+    # Footnote text adapts to whether the paired XGBoost-items row is present.
+    if mini_ipip_ml_r is not None:
+        mini_ipip_footnote = (
+            "> ¹ The **Mini-IPIP mapping** row scores the four-per-domain Mini-IPIP "
+            "items by **simple averaging** (the published Mini-IPIP scoring key), so "
+            "its *r* is not comparable on the same axis as the XGBoost rows. The "
+            "**Mini-IPIP items** row applies the XGBoost model to the *same* "
+            "four-per-domain items; the gap between the two is the contribution of "
+            "the learned scorer over simple averaging."
+        )
+    else:
+        mini_ipip_footnote = (
+            "> ¹ The **Mini-IPIP mapping** row scores the four-per-domain Mini-IPIP "
+            "items by **simple averaging** (the published Mini-IPIP scoring key), so "
+            "its *r* is not comparable on the same axis as the XGBoost rows above."
+        )
 
     validation_metrics = validation.get("metrics", {})
     validation_sparse = validation.get("sparse_20", {})
@@ -1005,6 +1065,17 @@ def generate_readme(config: dict, artifacts_dir: Path, model_dir: Path, *, varia
         "ML advantage over simple averaging: "
         f"{delta_r:+.3f} r (domain-balanced K=20)."
     )
+
+    # CV fold count. This matches the stage-07 *default* (lib.constants); stage-07
+    # itself uses the effective value from config.training.cv_folds and only falls
+    # back to this constant when that key is absent (07_train.py:1462). The
+    # variant config.json this generator receives carries no training.cv_folds
+    # field, so the effective value is unavailable here -- if a future variant
+    # overrides training.cv_folds to a non-default value, this card must source
+    # the effective fold count from the stage-07 training report rather than the
+    # constant. For all current publication configs no override is set, so the
+    # default is correct.
+    cv_folds = DEFAULT_STAGE07_CV_FOLDS
 
     # Hyperparameters
     hp = config.get("hyperparameters", {})
@@ -1205,13 +1276,15 @@ session.release();
 - **Training data:** {training_data_line}
 - **Sparsity augmentation:** Training samples are randomly masked to simulate adaptive (partial) responses, teaching the model to handle missing items
 - **Hyperparameters:** n_estimators={n_est}, max_depth={max_d}, learning_rate={lr_str}
-- **Cross-validation:** 3-fold cross-validation robustness analysis with evaluation split before augmentation
+- **Cross-validation:** {cv_folds}-fold cross-validation robustness analysis with evaluation split before augmentation
 
 ## Performance
 
 Evaluated on held-out test respondents:
 
 {perf_table}
+
+{mini_ipip_footnote}
 
 > The domain-balanced 20-item form is the pre-specified primary operating point and the deployed web form (not a post-hoc best-of-grid selection). The full-50 row recovers a target computed from the same 50 items, so *r* ≈ 1 reflects score recovery, not external validity.
 
@@ -1221,7 +1294,7 @@ Evaluated on held-out test respondents:
 
 ## Norms
 
-Population norms for raw-score -> percentile conversion, computed on the OSPP training split only (n = 422,326; validation/test held out to prevent leakage):
+Population norms for raw-score -> percentile conversion, computed on the OSPP training split only (n = {n_train_orig_str}; validation/test held out to prevent leakage):
 
 {norms_table}
 
@@ -1235,7 +1308,7 @@ Population norms for raw-score -> percentile conversion, computed on the OSPP tr
 - Exported calibration regimes are `full_50` and `sparse_20_balanced`; arbitrary sub-50 response patterns use the sparse regime as a fallback rather than a separately fit calibration curve
 - The deployed 20-item domain-balanced Emotional Stability subscale (est1, est6, est7, est8) is composed entirely of reverse-keyed items, so the short-form EST score is vulnerable to acquiescence (yea-saying) response bias; the other four domains mix keyed directions, and the full 50-item assessment is unaffected
 - Accuracy degrades with fewer items; 20 items is the recommended minimum for reliable scoring
-- Not intended for clinical diagnosis or high-stakes selection decisions
+- Not validated for clinical diagnosis or high-stakes selection
 
 ## Item Source
 
@@ -1253,11 +1326,66 @@ CC0 1.0 Universal -- Public Domain Dedication
 # ---------------------------------------------------------------------------
 
 
-def generate_repo_readme(variants: list[tuple[str, Path]]) -> str:
+def _repo_readme_coverage_line(artifacts_dir: Path | None, primary: str) -> str:
+    """Derive the empirical 90% coverage prose for the repo README.
+
+    Sources the three coverage approximations (domain-balanced 20-item,
+    full_50, sparse_20_balanced) from the PRIMARY variant's artifacts -- the
+    same files and JSON paths the per-variant model card reads in
+    ``generate_readme`` -- so a retrain that shifts these numbers updates the
+    repo README too instead of going stale. ``artifacts_dir`` is the parent
+    artifacts directory; per-variant artifacts live in ``variants/<name>/``.
+
+    Falls back to a non-numeric phrasing if the artifacts are missing or
+    malformed so the repo-readme scan mode never breaks on a partial tree.
+    """
+    fallback = (
+        "Empirical 90% prediction-interval coverage is validated for the "
+        "deployed domain-balanced 20-item form (held-out baseline evaluation), "
+        "the sparse_20_balanced runtime regime (validation under random "
+        "balanced 20-item masking), and the full_50 regime (validation)"
+    )
+    if artifacts_dir is None or primary == "unknown":
+        return fallback
+    variant_artifacts = artifacts_dir / "variants" / primary
+    baseline_path = variant_artifacts / "baseline_comparison_results.json"
+    validation_path = variant_artifacts / "validation_results.json"
+    try:
+        with open(baseline_path) as f:
+            baselines = json.load(f)
+        with open(validation_path) as f:
+            validation = json.load(f)
+        db_cov = baselines["overall"]["20"]["domain_balanced"]["coverage_90"]
+        full_cov = validation["metrics"]["overall"]["coverage_90"]
+        sparse_cov = validation["sparse_20"]["metrics"]["overall"]["coverage_90"]
+        covs = (db_cov, full_cov, sparse_cov)
+        if any(isinstance(c, bool) or not isinstance(c, (int, float)) for c in covs):
+            return fallback
+        if not all(np.isfinite(float(c)) for c in covs):
+            return fallback
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return fallback
+    return (
+        f"Empirical 90% prediction-interval coverage is approximately "
+        f"{float(db_cov) * 100:.1f}% for the deployed domain-balanced 20-item "
+        f"form (held-out baseline evaluation), approximately "
+        f"{float(sparse_cov) * 100:.1f}% for the sparse_20_balanced runtime "
+        f"regime (validation under random balanced 20-item masking), and "
+        f"approximately {float(full_cov) * 100:.1f}% for the full_50 regime "
+        f"(validation)"
+    )
+
+
+def generate_repo_readme(
+    variants: list[tuple[str, Path]], artifacts_dir: Path | None = None
+) -> str:
     """Generate a top-level README listing all variants.
 
     Args:
         variants: list of (variant_name, variant_path) tuples.
+        artifacts_dir: parent artifacts directory (per-variant artifacts live in
+            ``variants/<name>/``); used to derive the primary variant's coverage
+            numbers. When None, coverage prose falls back to a non-numeric form.
     """
     variant_names = [name for name, _ in variants if name]
     primary = "reference" if "reference" in variant_names else (variant_names[0] if variant_names else "unknown")
@@ -1269,6 +1397,42 @@ def generate_repo_readme(variants: list[tuple[str, Path]]) -> str:
         else:
             variant_row_data.append([f"`{name}`", "Research ablation variant"])
     variant_table = _format_md_table(["Variant", "Description"], variant_row_data)
+
+    # De-hardcode the model-architecture facts from lib.constants so the count and
+    # quantile names cannot drift from the actual exported graph.
+    n_domains = len(DOMAINS)
+    n_quantiles = len(QUANTILE_NAME_LIST)
+    n_models = n_domains * n_quantiles
+    quantile_list = ", ".join(QUANTILE_NAME_LIST)
+    # Human-readable domain names (camel-case labels split for prose).
+    domain_names = ", ".join(
+        _humanize_label(DOMAIN_LABELS[d]) for d in DOMAINS
+    )
+
+    # De-hardcode the training-split size from the primary variant's config.json
+    # (norms n_train_original). Fall back to a generic phrasing if unavailable so
+    # the repo-readme scan mode never breaks on a missing/partial config.
+    norms_n_str = ""
+    primary_path = next((p for name, p in variants if name == primary), None)
+    if primary_path is not None:
+        config_path = primary_path / "config.json"
+        if config_path.is_file():
+            try:
+                with open(config_path) as f:
+                    primary_config = json.load(f)
+                n_train_orig = (
+                    primary_config.get("provenance", {}).get("n_train_original")
+                    if isinstance(primary_config, dict)
+                    else None
+                )
+                if isinstance(n_train_orig, int) and n_train_orig > 0:
+                    norms_n_str = f" (n = {n_train_orig:,})"
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                norms_n_str = ""
+
+    # Derive the empirical-coverage prose from the primary variant's artifacts so
+    # the repo README tracks a retrain rather than going stale on hardcoded numbers.
+    coverage_sentence = _repo_readme_coverage_line(artifacts_dir, primary)
 
     lines = [
         "---",
@@ -1295,9 +1459,8 @@ def generate_repo_readme(variants: list[tuple[str, Path]]) -> str:
         "## What These Models Do",
         "",
         "Each model takes up to 50 item responses (Likert 1--5) and predicts Big Five "
-        "domain scores (Extraversion, Agreeableness, Conscientiousness, Emotional "
-        "Stability, Intellect). The exported calibration regimes are fit for full "
-        "50-item completion and the primary domain-balanced 20-item sparse regime.",
+        f"domain scores ({domain_names}). The exported calibration regimes are fit for "
+        "full 50-item completion and the primary domain-balanced 20-item sparse regime.",
         "",
         "**Key capability: sparse input.** The models produce accurate predictions even "
         "when most items are unanswered (NaN). This allows fixed short-form "
@@ -1305,21 +1468,26 @@ def generate_repo_readme(variants: list[tuple[str, Path]]) -> str:
         "",
         "## How It Works",
         "",
-        "- **15 models in one graph** -- 5 domains x 3 quantiles (q05, q50, q95), "
-        "merged into a single ONNX file",
-        "- **Sparsity augmentation** -- during training, complete responses are randomly "
-        "masked to simulate missing items, teaching the model to handle arbitrary "
-        "missing-item patterns",
+        f"- **{n_models} models in one graph** -- {n_domains} domains x {n_quantiles} "
+        f"quantiles ({quantile_list}), merged into a single ONNX file",
+        "- **Structured sparsity augmentation** -- training responses are masked into "
+        "*structured* partial-response patterns (not uniform random dropout): focused "
+        "buckets spanning 10-50 retained items (a 10-20-item target-assessment range, a "
+        "21-35-item transition range, and a 36-50-item near-complete range, each keeping "
+        "a minimum number of items per domain), explicit injection of the Mini-IPIP "
+        "4-per-domain 20-item pattern, and roughly 15% imbalanced patterns that allow "
+        "0-item domains so the model also sees skewed coverage. Within each bucket the "
+        "retained items are filled by information-rank-weighted sampling (items with "
+        "higher cross-domain information are more likely to be kept). The deployed "
+        "operating point is the domain-balanced 4-per-domain 20-item form",
         "- **Quantile regression** -- pinball loss at tau = 0.05, 0.50, 0.95 provides "
         "median predictions with empirical 90% prediction intervals whose coverage is "
         "validated for the full_50 and sparse_20_balanced runtime regimes (raw quantile "
-        "spreads; no post-hoc width adjustment is applied). Empirical coverage is "
-        "approximately 89.5% at the deployed domain-balanced 20-item form and "
-        "approximately 92.6% at full 50 items",
+        "spreads; no post-hoc width adjustment is applied). " + coverage_sentence,
         "- **Norms-based percentiles** -- raw predictions are converted to population "
-        "percentiles using z-score norms fit on the training split only (n = 422,326 "
-        "respondents; validation and test rows are held out so the norms do not leak "
-        "into the percentile targets)",
+        f"percentiles using z-score norms fit on the training split only{norms_n_str}; "
+        "validation and test rows are held out so the norms do not leak "
+        "into the percentile targets",
         "",
         "## Variants",
         "",
@@ -1414,7 +1582,12 @@ def main() -> int:
         if not variants:
             log.error("No variant subdirectories found in %s", output_dir)
             return 1
-        readme = generate_repo_readme(variants)
+        repo_artifacts_dir = (
+            args.artifacts_dir
+            if args.artifacts_dir.is_absolute()
+            else PACKAGE_ROOT / args.artifacts_dir
+        )
+        readme = generate_repo_readme(variants, artifacts_dir=repo_artifacts_dir)
         readme_path = output_dir / "README.md"
         with open(readme_path, "w") as f:
             f.write(readme)

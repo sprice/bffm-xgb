@@ -1,3 +1,6 @@
+import { repoFacts } from "../learn/content/data";
+import { formatR } from "../lib/utils";
+
 export function InfoCards() {
   return (
     <>
@@ -63,9 +66,19 @@ export function InfoCards() {
 
         <p className="text-base text-text-muted leading-relaxed mt-3">
           The model was trained on the 50 question IPIP-BFFM question set and
-          predicts Big Five scores with high accuracy from just 20 questions.
-          And it's more accurate than the standard 20-question Mini Big Five
-          assessment (MINI-IPIP).
+          closely recovers your full 50-item scores from just 20 questions
+          (domain-balanced,{" "}
+          {`r ≈ ${formatR(repoFacts.baselineK20.domainBalancedR)}`}
+          ), edging out simple averaging of the standard 20-question Mini Big
+          Five form (MINI-IPIP,{" "}
+          {`r ≈ ${formatR(repoFacts.baselineK20.miniIpipStandaloneR)}`}
+          ).
+        </p>
+
+        <p className="text-sm text-text-muted leading-relaxed mt-3">
+          These figures measure how well the model reproduces the longer
+          assessment&rsquo;s own scores on a held-out split of the same dataset
+          &mdash; not external personality validity.
         </p>
 
         <p className="text-base text-text-muted leading-relaxed mt-3">

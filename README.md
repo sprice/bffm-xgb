@@ -10,9 +10,10 @@ Open-source pipeline for training XGBoost quantile regression models that predic
 
 ### Comparison with the Mini-IPIP
 
-The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) is the standard short personality test in psychology research (Donnellan et al., 2006). Both approaches use 20 items (4 per domain) to recover the full 50-item IPIP-BFFM scale scores. All *r* values are Pearson correlations with the full 50-item scale on the held-out `canonical_v1` test set (*N* = 90,498). "Overall *r*" is a respondent-pooled correlation across all five domains' stacked percentile vectors (numerically ≈ the mean of the per-domain *r*).
+The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) is the standard short personality test in psychology research (Donnellan et al., 2006). Both approaches use 20 items (4 per domain) to recover the full 50-item IPIP-BFFM scale scores. All *r* values are Pearson correlations with the full 50-item scale on the held-out `canonical_v1` test split (the test rows in the data counts in [docs/research.md](docs/research.md#data)). "Overall *r*" is a respondent-pooled correlation across all five domains' stacked percentile vectors (numerically ≈ the mean of the per-domain *r*).
 
-|                              | Mini-IPIP              | BFFM-XGB-20                 |
+<!-- BEGIN GENERATED: comparison-table -->
+|                              | Mini-IPIP (averaging)  | BFFM-XGB-20 (XGBoost)       |
 | ---------------------------- | ---------------------- | --------------------------- |
 | **Items**                    | 20 (4 per domain)      | 20 (4 per domain)           |
 | **Item selection**           | Expert-curated brevity | Top-4 by within-domain *r*  |
@@ -20,24 +21,42 @@ The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) is the standard short pe
 | **Overall *r***              | .907                   | **.928**                    |
 | **MAE (percentile pts)**     | 9.2                    | **8.1**                     |
 | **90% prediction intervals** | —                      | ✓ (89.5% coverage)          |
+<!-- END GENERATED: comparison-table -->
 
-The BFFM-XGB-20 figures above (*r* = .928, 89.5% coverage) are the **fixed, pre-specified domain-balanced 20-item form** — the top-4 items per domain — which is the deployed web form, not a post-hoc best-of-grid selection. Evaluated instead under *random* balanced 20-item masking, the model's general partial-response accuracy is *r* ≈ .910 (≈90% coverage).
+The BFFM-XGB-20 figures in the table above are the **fixed, pre-specified domain-balanced 20-item form** — the top-4 items per domain — which is the deployed web form, not a post-hoc best-of-grid selection. Evaluated instead under *random* balanced 20-item masking (the random-balanced row below), the model's general partial-response accuracy is lower. Empirical 90%-PI coverage and the paired recovery *r* at each operating point:
+
+<!-- BEGIN GENERATED: coverage-by-regime -->
+- **Deployed 20-item form (SEM-stopped adaptive sim):** 89.5% empirical coverage (*r* = 0.93) — slightly under the nominal 90% by design.
+- **Random balanced 20-item masking:** 89.8% empirical coverage (*r* = 0.911).
+- **Full 50 items (self-recovery):** 92.6% empirical coverage (*r* = 0.9997).
+<!-- END GENERATED: coverage-by-regime -->
+
+Sparse-20 headline metrics are computed on a single fixed balanced mask (RNG seed 42); the reported bootstrap CI reflects respondent-sampling variance only and does not include mask-selection variance (stage-07 training averages over multiple masks).
 
 **Per-domain accuracy at *K* = 20:**
 
-| Domain                | Mini-IPIP *α* (reported) | Mini-IPIP *r* | BFFM-XGB-20 *r* |
-| --------------------- | ------------------------ | ------------- | --------------- |
+<!-- BEGIN GENERATED: per-domain-k20 -->
+| Domain                | Mini-IPIP *α* (reported) | Mini-IPIP *r* (averaging) | BFFM-XGB-20 *r* (XGBoost) |
+| --------------------- | ------------------------ | ------------------------- | ------------------------- |
 | Extraversion          | .77                      | .938          | **.947**        |
 | Agreeableness         | .70                      | .912          | **.920**        |
 | Conscientiousness     | .69                      | .910          | **.921**        |
 | Emotional Stability   | .68                      | .930          | **.938**        |
 | Intellect/Imagination | .65                      | .842          | **.912**        |
+<!-- END GENERATED: per-domain-k20 -->
 
 The Mini-IPIP *α* column reports the published Donnellan et al. (2006) reliabilities, not values computed on this sample — so it is not directly comparable to the same-sample recovery *r* columns (the repo's own OSPP-train Mini-IPIP alpha differ and are in `reliability.json`).
 
-With 15 items and XGBoost scoring (3 per domain), BFFM-XGB reaches *r* = .909, matching the 20-item simple-averaging Mini-IPIP (*r* = .907) — fewer items, though the comparison also differs in scoring method and item set.
+With only 15 items and XGBoost scoring (3 per domain), BFFM-XGB matches the overall recovery of the 20-item simple-averaging Mini-IPIP (the Mini-IPIP **Overall *r*** in the table above) — fewer items, though the comparison also differs in scoring method and item set. The 15-item figure and the full per-*K* curve are in [NOTES.md](notes/NOTES.md) and `artifacts/variants/reference/ml_vs_averaging_comparison.json`.
 
-The 20-item gain combines two levers: the **scoring method** (XGBoost vs simple averaging) and the **item set** (top-4-by-*r* vs the expert-curated Mini-IPIP items). Holding the item set fixed, XGBoost scoring alone adds roughly +0.004 to +0.008 *r* per domain over averaging (about +0.006 overall); the remainder is item selection. The split is not uniform — for Emotional Stability the Mini-IPIP items scored with XGBoost slightly *beat* the top-4-by-*r* selection, so that domain's improvement is scoring, not selection. See the per-domain decomposition in [NOTES.md](notes/NOTES.md) and `artifacts/variants/reference/ml_vs_averaging_comparison.json`.
+The 20-item gain combines two levers: the **scoring method** (XGBoost vs simple averaging) and the **item set** (top-4-by-*r* vs the expert-curated Mini-IPIP items). Holding the item set fixed (the domain-balanced top-4), the scoring lever alone accounts for the gains below; the remainder is item selection.
+
+<!-- BEGIN GENERATED: decomposition -->
+- **Scoring lever (item set held fixed):** XGBoost scoring alone adds roughly +0.004 to +0.008 *r* per domain over averaging (about +0.006 overall, bootstrap 95% CI [+0.0062, +0.0065]).
+- **Selection lever:** the remainder of the 20-item gain is item selection (top-4-by-*r* vs the expert-curated Mini-IPIP items); for Emotional Stability the Mini-IPIP items scored with XGBoost slightly *beat* the top-4-by-*r* selection (scoring, not selection).
+<!-- END GENERATED: decomposition -->
+
+See the per-domain decomposition in [NOTES.md](notes/NOTES.md) and `artifacts/variants/reference/ml_vs_averaging_comparison.json`.
 
 ## Quick Start
 
@@ -108,8 +127,9 @@ bffm-xgb/
 - Models are trained on English-language IPIP items only
 - **No demographic-subgroup or measurement-invariance analysis** has been performed; accuracy may vary by gender, age, or region
 - **No external / out-of-distribution validation:** every reported number is on a held-out split of the *same* OSPP dataset, so these are *score-recovery* metrics (recovering the full-scale score from a subset of its own items), not external-trait validity
+- The deployed 20-item Emotional Stability subscale is composed entirely of reverse-keyed items, so it is more sensitive to acquiescence (yea-saying) and careless responding than the full 50-item assessment; the other four short-form domains mix keyed directions
 - Accuracy degrades with fewer items; 20 items is the recommended minimum for reliable scoring
-- Intended for educational use only
+- **Not validated for clinical diagnosis or high-stakes selection**
 
 ## License
 

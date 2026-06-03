@@ -36,13 +36,13 @@ EXPECTED = {
         "training": {"random_state": 42, "n_jobs": 16},
         "validation": {
             "min_pearson_r": 0.90,
-            "min_coverage_90": 0.88,
-            "per_domain": {"min_pearson_r": 0.90, "min_coverage_90": 0.88},
+            "min_coverage_90": 0.91,
+            "per_domain": {"min_pearson_r": 0.90, "min_coverage_90": 0.90},
             "sparse_20": {
                 "enabled": True,
                 "min_pearson_r": 0.90,
                 "min_coverage_90": 0.88,
-                "per_domain": {"min_pearson_r": 0.85, "min_coverage_90": 0.84},
+                "per_domain": {"min_pearson_r": 0.85, "min_coverage_90": 0.87},
             },
         },
     },

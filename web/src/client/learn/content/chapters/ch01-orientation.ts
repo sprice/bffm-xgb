@@ -61,7 +61,7 @@ export const chapter01Orientation: Chapter = {
           "note",
           "Read the full-50 r as a ceiling",
           paragraph(
-            `The full-50 validation r ≈ 1 is a score-recovery ceiling, not external-trait validity: the target is the sum of those same 50 items, so r ≈ 1 is expected. The real operating-point accuracy is the domain-balanced 20-item form at r ≈ 0.93.`,
+            `The full-50 validation r ≈ 1 is a score-recovery ceiling, not external-trait validity: the target is a deterministic transform (domain mean -> percentile) of those same 50 items, so r ≈ 1 is expected. The real operating-point accuracy is the domain-balanced 20-item form at r ≈ 0.93.`,
           ),
         )}
         ${callout(

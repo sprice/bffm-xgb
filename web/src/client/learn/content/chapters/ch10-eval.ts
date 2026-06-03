@@ -43,7 +43,7 @@ export const chapter10Evaluation: Chapter = {
           "note",
           "Ceiling check, not validity",
           paragraph(
-            `The full-50 r ≈ 1 is a score-recovery ceiling: the target is the sum of those same 50 items, so r ≈ 1 is expected and confirms the pipeline works rather than external-trait validity. The real operating-point accuracy is the deployed domain-balanced 20-item form at r ≈ 0.93.`,
+            `The full-50 r ≈ 1 is a score-recovery ceiling: the target is a deterministic transform (domain mean -> percentile) of those same 50 items, so r ≈ 1 is expected and confirms the pipeline works rather than external-trait validity. The real operating-point accuracy is the deployed domain-balanced 20-item form at r ≈ 0.93.`,
           ),
         )}
       `,
@@ -81,13 +81,20 @@ export const chapter10Evaluation: Chapter = {
         ${paragraph(
           `The old intuition was attractive: rank items by global predictive utility, ask the best ones first. But the actual result was ${abbr("domain starvation", "A failure mode where some personality domains get too few items because the selection rule keeps favoring other domains.")}. Greedy selection kept choosing highly cross-correlated items (especially from Extraversion and Emotional Stability) and delayed or omitted items from more psychometrically distinct domains like Intellect/Openness.`,
         )}
-        ${barList([
-          { label: "Extraversion", percent: 45, value: "9 items" },
-          { label: "Emotional Stability", percent: 30, value: "6 items" },
-          { label: "Agreeableness", percent: 15, value: "3 items" },
-          { label: "Conscientiousness", percent: 10, value: "2 items" },
-          { label: "Intellect / Openness", percent: 0, value: "0 items" },
-        ])}
+        ${barList(
+          (
+            [
+              ["Extraversion", "ext"],
+              ["Emotional Stability", "est"],
+              ["Agreeableness", "agr"],
+              ["Conscientiousness", "csn"],
+              ["Intellect / Openness", "opn"],
+            ] as const
+          ).map(([label, dom]) => {
+            const n = repoFacts.greedyTopK20ItemsPerDomain[dom];
+            return { label, percent: (n / 20) * 100, value: `${n} items` };
+          }),
+        )}
         ${callout(
           "warning",
           "Core mechanism",

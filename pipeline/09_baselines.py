@@ -1127,9 +1127,20 @@ def _run_comparisons_at_k(
         overall_results["full_50"] = ov
         per_domain_results["full_50"] = pd_res
 
-    # Add calibration regime to all results
-    for method_metrics in overall_results.values():
-        method_metrics["calibration_regime"] = calibration_regime
+    # Tag each method's scoring method and calibration regime. Mini-IPIP is the
+    # one standalone simple-averaging arm; every other strategy is XGBoost (ML).
+    # The averaging arm applies no ML interval calibration (its coverage_90 is
+    # null), so its calibration_regime is "none" rather than the ML regime label
+    # used by the XGBoost methods.
+    # NOTE (deferred regen): the published baseline_comparison_results.json
+    # predates this edit -- it has no `scoring` field and still records
+    # mini_ipip calibration_regime="sparse_20_balanced". The new "scoring" tag
+    # and the "none" regime only materialize after a stage-09 rerun
+    # (`make baselines` + `make research-summary`); no retrain is required.
+    for method, method_metrics in overall_results.items():
+        is_averaging = method == "mini_ipip"
+        method_metrics["scoring"] = "averaging" if is_averaging else "ml"
+        method_metrics["calibration_regime"] = "none" if is_averaging else calibration_regime
 
     return overall_results, per_domain_results
 

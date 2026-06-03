@@ -27,6 +27,16 @@ Because the sample is self-selected and online, it is not a probability sample
 of any general population — see the Limitations sections in `README.md` and
 [`docs/research.md`](docs/research.md).
 
+**Quasi-identifiers dropped.** The pipeline ingests only the 50 IPIP item
+responses, the five derived domain scores, and `country` (`pipeline/02_load_sqlite.py`,
+`select_output_columns`). All other raw metadata fields that could function as
+quasi-identifiers are discarded and never reach the SQLite database, the model,
+or any published artifact, namely: approximate geolocation
+(`lat_appx_lots_of_err`, `long_appx_lots_of_err`); the IP-count field `IPC`
+(used only transiently to keep one record per IP, then dropped); response timing
+(`introelapse`, `testelapse`, `endelapse`) and the load timestamp (`dateload`);
+and screen dimensions (`screenw`, `screenh`).
+
 ## References
 
 - Goldberg, L. R. (1999). A broad-bandwidth, public domain, personality

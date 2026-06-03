@@ -173,7 +173,7 @@ else: scale = 1.0`,
           "note",
           "Full-50 r is a ceiling check",
           paragraph(
-            `The full-50 validation r ≈ 1 is a score-recovery ceiling: the target is the sum of those same 50 items, so r ≈ 1 is expected and just confirms the pipeline works, not external-trait validity. The real operating-point accuracy is the deployed domain-balanced 20-item form at r ≈ 0.93.`,
+            `The full-50 validation r ≈ 1 is a score-recovery ceiling: the target is a deterministic transform (domain mean -> percentile) of those same 50 items, so r ≈ 1 is expected and just confirms the pipeline works, not external-trait validity. The real operating-point accuracy is the deployed domain-balanced 20-item form at r ≈ 0.93.`,
           ),
         )}
       `,

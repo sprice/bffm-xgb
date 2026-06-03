@@ -1,9 +1,9 @@
 {
   "provenance": {
-    "data_snapshot_id": "norms_sha256:47c3e9c08bafc024d29cd6aa035b7d99ca1b75e08e44bd391c551746903e3600",
-    "preprocessing_version": "d8b79fd23cd033214e439fb3b88d7fe93c961b7b",
+    "data_snapshot_id": "norms_sha256:a8c7c1a0dac762bc47b5a36094ffb101696fcda45aae6a8c4f46c14fb2502bf5",
+    "preprocessing_version": "f1463f53c2f4676f92b944220997bc5827fa2229",
     "script": "02_load_sqlite.py",
-    "git_hash": "d8b79fd23cd033214e439fb3b88d7fe93c961b7b",
+    "git_hash": "f1463f53c2f4676f92b944220997bc5827fa2229",
     "environment": {
       "python_version": "3.14.3",
       "python_implementation": "CPython",

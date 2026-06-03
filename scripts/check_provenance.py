@@ -5,8 +5,52 @@ Checks that all provenance sidecars, manifests, and cross-references
 are internally consistent. Designed for CI and pre-submission verification.
 
 Usage:
-    python scripts/check_provenance.py          # advisory mode
-    python scripts/check_provenance.py --strict  # exit 1 on any failure
+    uv run python scripts/check_provenance.py              # advisory mode
+    uv run python scripts/check_provenance.py --strict     # exit 1 on any FAIL (CI)
+    uv run python scripts/check_provenance.py --strict-head # also FAIL on git-staleness
+    make verify-release                                    # clone-side, no DB / no retrain
+    make verify-release STRICT_HEAD=1                      # enforce git-freshness
+
+Status legend:
+    PASS  internally consistent.
+    WARN  a non-fatal advisory -- the bundle is internally consistent but predates
+          HEAD, or an on-disk file was cosmetically re-stamped (see below). WARN does
+          NOT fail --strict; it DOES fail under --strict-head where noted.
+    FAIL  a genuine inconsistency (checksum mismatch, intra-bundle git_hash
+          disagreement, substantive generation-code drift).
+    SKIP  an artifact is absent (e.g. gitignored on a fresh clone).
+
+Release freshness, honestly (M19/M20) -- no retraining required to reconcile:
+    A bundle is "fresh" when its export git_hash is HEAD, OR an ancestor of HEAD with
+    NO drift under pipeline/ + lib/ + configs/ (release/refresh commits and a later
+    merge into main legitimately sit on top of the generation commit). Drift in those
+    paths -> WARN by default, FAIL under --strict-head, with the changed paths named.
+
+    To reconcile a stale bundle WITHOUT retraining, regenerate the affected artifact
+    at HEAD and re-run this check:
+      * model card (output/<variant>/README.md) only -- no ONNX re-export, no retrain,
+        and NOTE this rewrites the human-readable card ONLY; it does NOT re-stamp any
+        provenance lock (see the item_info-lock note below):
+            make export-readme MODEL_DIR=models/reference   # rewrites README.md only
+      * notes / research_summary:   make notes
+      * figures:                    make figures
+    A FULL bundle regeneration (new model.onnx) requires `make all` / the remote
+    pipeline and is the ONLY path that should ever change a model checksum. This
+    checker never auto-regenerates or retrains; it only reports what is stale.
+
+    item_info.json carries its OWN embedded provenance git_hash, so regenerating
+    stage 05 at a newer commit re-stamps that hash and moves the on-disk file SHA
+    even when the ranking/correlation logic is byte-identical (e.g. a post-bundle
+    stage-05 delta that is only a comment + a leakage-guard assert). The per-bundle
+    "item_info lock" check distinguishes that cosmetic re-stamp (WARN) from a
+    substantive ranking change (FAIL). IMPORTANT: the locked SHA lives in
+    models/<variant>/training_report.json (data.item_info_sha256) and is written ONLY
+    by stage 07 (train); `make export-readme` rewrites README.md and CANNOT change it.
+    A cosmetic re-stamp WARN is reconciled by restoring the on-disk
+    data/processed/<variant>/item_info.json to the locked training-time bytes (or, if
+    the on-disk content is intended to become the new locked bytes, by re-running
+    stage 07 to re-stamp the lock) -- never by `make export-readme`, which would loop
+    with no effect. See check_output_bundle.
 """
 
 from __future__ import annotations
@@ -45,6 +89,12 @@ GENERATION_PATHS = ("pipeline", "lib", "configs")
 # already-built bundle to HuggingFace; it does not produce the verified artifacts,
 # so editing it (e.g. to add branch support) must not flag the bundle as stale.
 GENERATION_PATH_EXCLUDES = (":(exclude)pipeline/13_upload_hf.py",)
+
+# The stage that produces data/processed/<variant>/item_info.json (the item ranking
+# + correlations the model is trained against). Used by the item_info lock-state
+# reconciliation below to decide whether an on-disk-vs-locked SHA drift is a
+# data-changing edit (FAIL territory) or a cosmetic re-stamp (WARN).
+ITEM_INFO_STAGE = "pipeline/05_compute_correlations.py"
 
 
 def _git(*args: str) -> subprocess.CompletedProcess[str] | None:
@@ -108,8 +158,92 @@ def _release_fresh(
     changed = [ln for ln in diff.stdout.splitlines() if ln.strip()]
     if changed:
         shown = ", ".join(changed[:5]) + (" …" if len(changed) > 5 else "")
-        return False, f"generation paths changed since bundle commit: {shown}"
+        return (
+            False,
+            f"generation paths changed since bundle commit {bundle_hash[:12]}...: "
+            f"{shown} -- regenerate the bundle at HEAD (see module docstring), no retrain "
+            "needed unless model.onnx itself is affected",
+        )
     return True, f"bundle {bundle_hash[:12]}... is an ancestor of HEAD; no generation-path drift"
+
+
+def _diff_is_cosmetic(unified_diff: str) -> bool:
+    """Classify a unified diff of ITEM_INFO_STAGE as cosmetic (no ranking/correlation
+    logic change) vs substantive. Returns True only when EVERY added/removed content
+    line is provably non-computational: a comment, a blank line, or a bare ``assert``
+    leakage-guard. Any other changed line (or a diff we cannot parse) is treated as
+    substantive, so the classifier never blesses a real logic change -- it only
+    de-escalates the known no-op edits (comment + leakage-guard assert) that would
+    otherwise hard-FAIL a provably-identical ranking under the multi-variant retrain."""
+    saw_change = False
+    for raw in unified_diff.splitlines():
+        if raw.startswith(("+++", "---", "@@", "diff ", "index ")):
+            continue
+        if not raw or raw[0] not in "+-":
+            continue
+        body = raw[1:].strip()
+        saw_change = True
+        if not body:
+            continue  # blank line
+        if body.startswith("#"):
+            continue  # comment
+        if body.startswith(("assert ", "assert(")):
+            continue  # leakage-guard / invariant assert: does not alter rankings
+        return False  # a real code line changed -> substantive
+    return saw_change  # all changed lines were cosmetic (and there was at least one)
+
+
+def _item_info_stage_diff(bundle_hash: str, disk_hash: str) -> tuple[str, bool]:
+    """Diff the item-ranking stage (05_compute_correlations.py) between the commit
+    the bundle was locked at (``bundle_hash``) and the commit the on-disk
+    item_info.json was last generated at (``disk_hash``, read from its embedded
+    provenance git_hash). Returns (detail, stage_changed):
+
+      stage_changed == False -> the two commits produce a byte-identical item_info
+        for the same inputs; an on-disk-vs-locked SHA mismatch is therefore COSMETIC
+        (the SHA moved only because the file re-embedded a newer provenance git_hash),
+        and NO retrain / re-lock is required to reconcile it.
+      stage_changed == True  -> the ranking/correlation logic genuinely differs
+        between the two commits, so the mismatch could reflect a real data change.
+
+    Multi-variant note: all three variants (reference, ablation_none, ablation_focused)
+    share data_regime canonical_v1, so they lock the SAME item_info SHA. A no-op
+    stage-05 edit (comment- or assert-only) between the lock commit and the on-disk
+    commit changes the file bytes but NOT the rankings; classifying purely on whether
+    stage-05 appears in `git diff --name-only` would hard-FAIL all three variants for a
+    provably-identical ranking. We therefore inspect the diff CONTENT and treat a
+    comment/blank/assert-only delta as cosmetic. The locked item_info content is not
+    recoverable here (only its SHA is stored), so this source-diff classification is the
+    best available content signal; anything not provably cosmetic stays substantive.
+
+    Git-unverifiable inputs (missing objects, no git) -> ("git-unverifiable", True)
+    so the caller stays conservative and does not silently bless a real drift."""
+    if not bundle_hash or not disk_hash:
+        return "embedded git_hash unknown (git-unverifiable)", True
+    if bundle_hash == disk_hash:
+        return "same generation commit", False
+    if _git("rev-parse", "--git-dir") is None:
+        return "git unavailable (git-unverifiable)", True
+    if not _commit_present(bundle_hash) or not _commit_present(disk_hash):
+        return "bundle/on-disk commit object absent (shallow clone; git-unverifiable)", True
+    names = _git("diff", "--name-only", bundle_hash, disk_hash, "--", ITEM_INFO_STAGE)
+    if names is None or names.returncode != 0:
+        return "stage diff unavailable (git-unverifiable)", True
+    if not names.stdout.strip():
+        return f"{ITEM_INFO_STAGE} unchanged between the two commits", False
+    # Stage 05 source differs: decide substantive vs cosmetic on the diff CONTENT,
+    # not merely on the path appearing in the name-only diff (a comment/assert-only
+    # edit must NOT FAIL a provably-identical ranking under the multi-variant retrain).
+    content = _git("diff", "--unified=0", bundle_hash, disk_hash, "--", ITEM_INFO_STAGE)
+    if content is None or content.returncode != 0:
+        return f"{ITEM_INFO_STAGE} changed between the two commits", True
+    if _diff_is_cosmetic(content.stdout):
+        return (
+            f"{ITEM_INFO_STAGE} changed between the two commits but only in "
+            "comment/blank/assert lines (no ranking/correlation logic change)",
+            False,
+        )
+    return f"{ITEM_INFO_STAGE} changed between the two commits", True
 
 
 class ProvenanceChecker:
@@ -405,6 +539,89 @@ def check_output_bundle(
                 checker.failed(label, "model_onnx_sha256 does not match model.onnx")
                 continue
 
+        # Item-info lock-state reconciliation (M20).
+        #
+        # The bundle locks the SHA-256 of the item ranking / correlations file
+        # (data/processed/<variant>/item_info.json) it was trained against. The
+        # on-disk file is gitignored, so on a fresh clone it is absent -> SKIP.
+        #
+        # When the on-disk file IS present and its SHA differs from the lock, the
+        # mismatch is reported honestly rather than swallowed: a SHA can move for
+        # two very different reasons, and the operator needs to know which:
+        #   * COSMETIC re-stamp (WARN) -- item_info.json embeds its own provenance
+        #     git_hash, so regenerating stage 05 at a newer commit that did NOT touch
+        #     the ranking/correlation logic re-stamps that hash and changes the file
+        #     SHA while leaving every ranking/correlation byte-identical (e.g. a
+        #     post-bundle stage-05 delta that is only a comment + a leakage-guard
+        #     assert). It is NOT a model problem: the published model is unaffected.
+        #     The lock SHA lives in models/<variant>/training_report.json
+        #     (data.item_info_sha256), written ONLY by stage 07 (train). It is
+        #     reconciled either by restoring the on-disk item_info.json to the locked
+        #     training-time bytes (the lock is the source of truth for the published
+        #     bundle), or -- if the on-disk content is intended to become the new lock
+        #     -- by re-running stage 07 to re-stamp that SHA. It is NOT reconciled by
+        #     `make export-readme`, which only regenerates the human-readable card
+        #     (output/<variant>/README.md) and never touches the lock. NO retrain of
+        #     the model weights is required, since the ranking/correlation bytes are
+        #     identical.
+        #   * SUBSTANTIVE change (FAIL) -- the ranking/correlation logic itself
+        #     differs between the lock commit and the on-disk file's commit, so the
+        #     on-disk item_info may no longer match what the model was trained on.
+        data_block = training.get("data") if isinstance(training, dict) else None
+        if isinstance(data_block, dict):
+            locked_item_info_sha = data_block.get("item_info_sha256")
+            item_info_rel = data_block.get("item_info_path")
+            if (
+                isinstance(locked_item_info_sha, str)
+                and locked_item_info_sha
+                and isinstance(item_info_rel, str)
+                and item_info_rel
+            ):
+                item_info_path = Path(item_info_rel)
+                if not item_info_path.is_absolute():
+                    item_info_path = PACKAGE_ROOT / item_info_path
+                if not item_info_path.exists():
+                    checker.skipped(
+                        f"{label} item_info lock",
+                        "item_info.json absent (gitignored / not pulled on a clone)",
+                    )
+                else:
+                    disk_item_info_sha = file_sha256(item_info_path)
+                    if disk_item_info_sha.lower() == locked_item_info_sha.lower():
+                        checker.passed(
+                            f"{label} item_info lock",
+                            f"on-disk matches lock ({locked_item_info_sha[:12]}...)",
+                        )
+                    else:
+                        disk_doc = _load_json(item_info_path)
+                        disk_git_hash = ""
+                        if isinstance(disk_doc, dict):
+                            prov = disk_doc.get("provenance")
+                            if isinstance(prov, dict):
+                                gh = prov.get("git_hash")
+                                disk_git_hash = gh if isinstance(gh, str) else ""
+                        stage_detail, stage_changed = _item_info_stage_diff(
+                            bundle_hash_str or "", disk_git_hash
+                        )
+                        base = (
+                            f"on-disk {disk_item_info_sha[:12]}... != lock "
+                            f"{locked_item_info_sha[:12]}..."
+                        )
+                        if stage_changed:
+                            checker.failed(
+                                f"{label} item_info lock",
+                                f"{base}; {stage_detail} (ranking/correlations may differ)",
+                            )
+                            continue
+                        checker.warned(
+                            f"{label} item_info lock",
+                            f"{base}; cosmetic re-stamp only ({stage_detail}; "
+                            "embedded provenance git_hash moved, rankings byte-identical) "
+                            "-- reconcile by restoring on-disk item_info.json to the locked "
+                            "bytes, or re-run stage 07 to re-stamp the lock; `make "
+                            "export-readme` does NOT touch the lock and will not clear this",
+                        )
+
         # Intra-bundle git_hash agreement: export / training.provenance /
         # config.provenance must agree regardless of staleness (always FAIL).
         # (The nested tune payload_provenance hash legitimately differs and is
@@ -578,7 +795,7 @@ def main() -> int:
     n_fail = checker.print_summary()
     n_skip = sum(1 for s, _, _ in checker.results if s == "SKIP")
 
-    if args.strict and n_fail > 0:
+    if (args.strict or args.strict_head) and n_fail > 0:
         return 1
     if args.full and (n_fail > 0 or n_skip > 0):
         return 1

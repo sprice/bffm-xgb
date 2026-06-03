@@ -22,6 +22,17 @@ make all
 
 `make all` runs all local stages in order (through figure generation), including hyperparameter tuning, strict norm drift checks, cross-variant evaluation (`research-eval`), ONNX export via `export-all`, and research notes generation. You can also run individual stages (see [Pipeline Stages](#pipeline-stages) below).
 
+## Regenerating model-derived docs
+
+Every model-derived number in the docs and web app is **generated from artifacts**, never hand-typed — the model cards, `output/README.md`, `notes/NOTES.md`, the `<!-- BEGIN/END GENERATED -->` fences in `README.md`/`docs/*.md`, and `web/.../repo-facts.generated.ts` (imported by the web app). `make all` regenerates all of them at the end. After a *partial* re-run (or after pulling fresh artifacts, or editing a generator), refresh every surface from the current artifacts in one shot — **no retrain, no re-eval**:
+
+```bash
+make refresh-docs                   # reference + both ablations
+make refresh-docs REFERENCE_ONLY=1  # only the reference variant has been trained
+```
+
+Then `git diff` and commit the result. CI runs `make check-docs`, which fails if any committed generated surface is stale relative to the artifacts — so a forgotten regeneration is caught automatically. (Figures regenerate too; matplotlib embeds non-deterministic PDF metadata, so `figures/manifest.json` PDF SHAs may change even when the underlying data did not.)
+
 ## Running Tests
 
 ```bash
@@ -176,7 +187,13 @@ make train DATA_DIR=data/processed/canonical_v1
 | `NO_GATE`                   | *(none)*                                                                                                    | `NO_GATE=1` records the quality-gate outcome but saves the bundle even on a threshold miss |
 
 Thread count precedence: `N_JOBS` > `training.n_jobs` in config > `$BFFM_XGB_N_JOBS` > `os.cpu_count()`.
-The committed configs pin `training.n_jobs: 16` so the default does not silently follow `os.cpu_count()` on whatever machine runs the pipeline. **Bit-exact reproduction, however, requires matching the *recorded* thread count, not the config default:** the published reference bundle was trained with `xgb_n_jobs=10` (a CLI override, recorded as `xgb_n_jobs: 10` / `xgb_n_jobs_source: "cli"` in `models/reference/training_report.json`). Because `tree_method=hist` accumulates gradients across threads in a non-associative (non-deterministic) order, the trained trees — and therefore the exported `model.onnx` bytes — are **not** bit-identical across thread counts. To reproduce the published bundle byte-for-byte, train with `make train N_JOBS=10` to match the recorded `xgb_n_jobs`.
+The committed configs pin `training.n_jobs: 16` so the default does not silently follow `os.cpu_count()` on whatever machine runs the pipeline. **Bit-exact reproduction, however, requires matching the *recorded* thread count, not the config default:** the published reference bundle was trained with a CLI override (recorded as `xgb_n_jobs_source: "cli"` in `models/reference/training_report.json`). Because `tree_method=hist` accumulates gradients across threads in a non-associative (non-deterministic) order, the trained trees — and therefore the exported `model.onnx` bytes — are **not** bit-identical across thread counts. To reproduce the published bundle byte-for-byte, match the recorded thread count below:
+
+<!-- BEGIN GENERATED: training-config -->
+- **Optuna tuning budget:** 200 trials.
+- **Cross-validation:** 3-fold.
+- **Recorded XGBoost thread count (published bundle):** `xgb_n_jobs = 10` (CLI override) — reproduce byte-for-byte with `make train N_JOBS=10`.
+<!-- END GENERATED: training-config -->
 
 **Quality gate (`NO_GATE`).** Stage 07 evaluates the trained models against the config's `validation` thresholds *after* training and, by default, aborts (`return 1`, saving nothing) if any threshold is missed. For the first run on a new split — where a near-miss should not discard multi-day compute — pass `NO_GATE=1` (e.g. `make train NO_GATE=1`, or `NO_GATE=1 bash scripts/run-pipeline.sh --reference-only`). The gate still runs and its outcome is recorded honestly in `training_report.json` as `quality_gates: {passed, enforced}`, but the bundle is saved regardless. **A bundle with `enforced: false` (or `passed: false`) must have its `validation_metrics` reviewed manually before it is published** — `NO_GATE` only suppresses the abort, not the check. Only `NO_GATE=1` enables it; any other value (including `0`) leaves the gate enforcing.
 

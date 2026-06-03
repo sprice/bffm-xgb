@@ -388,7 +388,9 @@ def figure_1_efficiency_curves(data: dict, fig_dir: Path) -> None:
     ax.set_xlabel("Number of items")
     ax.set_ylabel("Pearson r (overall)")
     ax.set_xlim(3, 52)
-    ax.set_ylim(0.50, 1.02)
+    # Floor at 0.45 (not 0.50) so the Worst-K K=5 negative control (r ≈ 0.467)
+    # and its CI render instead of being clipped at the bottom of the axis.
+    ax.set_ylim(0.45, 1.02)
     ax.set_xticks([5, 10, 15, 20, 25, 30, 40, 50])
     ax.yaxis.set_major_locator(mticker.MultipleLocator(0.05))
     ax.yaxis.set_minor_locator(mticker.MultipleLocator(0.025))
@@ -397,15 +399,16 @@ def figure_1_efficiency_curves(data: dict, fig_dir: Path) -> None:
     ax.yaxis.grid(True, which="major", linewidth=0.4, color="0.85", zorder=0)
 
     ax.legend(loc="lower right", frameon=True)
-    ax.set_title("Assessment Efficiency: Accuracy vs. Number of Items", pad=10)
+    ax.set_title("Assessment Efficiency: Score Recovery vs. Number of Items", pad=10)
 
     # The K=50 endpoint is within-dataset score recovery (r approx 1 by
-    # construction: the target is the sum of those same 50 items), not external
-    # trait validity. Flag this so "Accuracy" is not over-read at the ceiling.
+    # construction: the target is a deterministic transform of those same 50
+    # items), not external trait validity. Flag this so the curve is not
+    # over-read as accuracy at the ceiling.
     ax.text(
         0.015,
         0.015,
-        "K=50 endpoint is within-dataset score recovery (r ≈ 1 because the target is the sum of the same items).",
+        "K=50 endpoint is within-dataset score recovery (r ≈ 1 because the target is a deterministic transform of those same 50 items).",
         transform=ax.transAxes,
         fontsize=7,
         color="0.45",
@@ -903,7 +906,7 @@ def figure_4_per_domain_k20(df: pd.DataFrame, fig_dir: Path) -> None:
         )
 
     ax.legend(loc="lower left", frameon=True)
-    ax.set_title("Per-Domain Accuracy at 20 Items", pad=10)
+    ax.set_title("Per-Domain Score Recovery at 20 Items", pad=10)
 
     for fmt in ("png", "pdf"):
         fig.savefig(fig_dir / f"fig4_per_domain_k20.{fmt}")

@@ -29,7 +29,7 @@ export const chapter02Psychometrics: Chapter = {
           `The ${abbr("IPIP-BFFM inventory", "The IPIP Big Five Factor Markers questionnaire: a public-domain 50-item Big Five personality measure.")} measures five broad personality domains: Extraversion, Agreeableness, Conscientiousness, Emotional Stability, and Intellect/Openness.`,
         )}
         ${paragraph(
-          `In this repo, each domain has 10 items, so the full questionnaire has 50 total. A domain score is the average of its 10 ${abbr("keyed items", "Questionnaire items after accounting for whether they should count positively or negatively toward the trait.")}. The model doesn't predict a hidden mystical quantity; it predicts the score that the full questionnaire would have produced under the inventory's scoring rules.`,
+          `In this repo, each domain has 10 items, so the full questionnaire has 50 total. A domain score is the average of its 10 ${abbr("keyed items", "Questionnaire items after accounting for whether they should count positively or negatively toward the trait.")}&mdash;a summed self-report total, not the underlying ${abbr("latent trait", "The unobservable psychological dimension a questionnaire tries to estimate, distinct from the observed sum of answers.")} itself. The model doesn't predict a hidden mystical quantity; it predicts the score that the full questionnaire would have produced under the inventory's scoring rules.`,
         )}
         ${table(
           ["Domain", "Plain-language intuition", "Typical item flavor"],

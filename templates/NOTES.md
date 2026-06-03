@@ -375,7 +375,12 @@ psychometrically independent factor.
 
 The ML advantage holds across all tested item counts, as the table shows, and is
 largest at fewer items where cross-domain information sharing matters most. Both
-correlation and MAE improvements are consistent across budgets.
+correlation and MAE improvements are consistent across budgets. The `r` and `MAE`
+columns are explicitly tagged by scoring method — *(XGBoost)* for the ML columns and
+*(averaging)* for the simple-averaging columns — so neither can be misattributed to a
+single method. Each `Delta` column carries its paired bootstrap 95% CI, and the line
+below the table reports the headline domain-balanced-(XGBoost) vs Mini-IPIP-(averaging)
+contrast with a *paired*, same-respondent CI.
 
 #### Decomposing the Headline: Scoring vs Item Selection (K = 20)
 
@@ -475,11 +480,16 @@ are in `reliability.json`.)
 *Data will be populated after training run.*
 <!-- END:reliability -->
 
-### Greedy Item Ranking (Cross-Domain Info Score)
+### Greedy Item Ranking (Composite Score)
 
-Top 20 items by cross-domain information score. The domain distribution is heavily
-skewed, which drives the domain starvation mechanism described above (see the
-domain starvation table for counts).
+Top 20 items by the adaptive-selection **composite** score. The domain distribution
+is heavily skewed, which drives the domain starvation mechanism described above (see
+the domain starvation table for counts).
+
+> Rows are sorted by the **composite** score actually used for greedy ranking
+> (`composite = cross_domain_info + 0.2·entropy − 0.1·|skew|`, per
+> `pipeline/05_compute_correlations.py`), **not** by the lone "Info Score" column
+> shown below — so the displayed Info Score is not monotone down the Rank column.
 
 <!-- BEGIN:greedy_ranking -->
 *Data will be populated after training run.*

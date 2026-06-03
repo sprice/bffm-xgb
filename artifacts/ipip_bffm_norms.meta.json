@@ -1,9 +1,9 @@
 {
   "provenance": {
     "data_snapshot_id": "norms_sha256:a8c7c1a0dac762bc47b5a36094ffb101696fcda45aae6a8c4f46c14fb2502bf5",
-    "preprocessing_version": "24947224ef1baa683da8b35a6ecc1378f29bd320",
+    "preprocessing_version": "f1463f53c2f4676f92b944220997bc5827fa2229",
     "script": "03_compute_norms.py",
-    "git_hash": "24947224ef1baa683da8b35a6ecc1378f29bd320",
+    "git_hash": "f1463f53c2f4676f92b944220997bc5827fa2229",
     "environment": {
       "python_version": "3.14.3",
       "python_implementation": "CPython",

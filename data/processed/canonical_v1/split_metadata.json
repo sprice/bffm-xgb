@@ -1,9 +1,9 @@
 {
   "provenance": {
     "data_snapshot_id": "norms_sha256:a8c7c1a0dac762bc47b5a36094ffb101696fcda45aae6a8c4f46c14fb2502bf5",
-    "preprocessing_version": "d8b79fd23cd033214e439fb3b88d7fe93c961b7b",
+    "preprocessing_version": "f1463f53c2f4676f92b944220997bc5827fa2229",
     "script": "04_prepare_data.py",
-    "git_hash": "d8b79fd23cd033214e439fb3b88d7fe93c961b7b",
+    "git_hash": "f1463f53c2f4676f92b944220997bc5827fa2229",
     "rng_seed": 42,
     "environment": {
       "python_version": "3.14.3",
@@ -166,7 +166,7 @@
   "split_signature": "f688d5f439e89d28f2a886ab113f7011b33ffeb94440da269a4173c0cf7c23dc",
   "inputs": {
     "sqlite_db": {
-      "path": "/Users/shawnprice/S/research/bffm-xgb/data/processed/ipip_bffm.db",
+      "path": "data/processed/ipip_bffm.db",
       "sha256": "da8beacff0727ead84f462c347d84c98135d6a14fe2856a03396589b4026139e"
     },
     "norms": {
@@ -176,22 +176,22 @@
   },
   "outputs": {
     "train": {
-      "path": "/Users/shawnprice/S/research/bffm-xgb/data/processed/canonical_v1/train.parquet",
+      "path": "data/processed/canonical_v1/train.parquet",
       "sha256": "858fd9123edd94b256553e94c2280b8592ecde9fba0d88912b75fc74ba39674a",
       "rows": 422326
     },
     "val": {
-      "path": "/Users/shawnprice/S/research/bffm-xgb/data/processed/canonical_v1/val.parquet",
+      "path": "data/processed/canonical_v1/val.parquet",
       "sha256": "d4d2583ed1088a3bd5cb040d7fb1189b9b1e36d1b8e5267e2aa44d9d9cc158f5",
       "rows": 90498
     },
     "test": {
-      "path": "/Users/shawnprice/S/research/bffm-xgb/data/processed/canonical_v1/test.parquet",
+      "path": "data/processed/canonical_v1/test.parquet",
       "sha256": "81daefb09ffaf94e981f6f67b37d563ee88d265bafed560892853ea17c0b4701",
       "rows": 90498
     },
     "split_metadata": {
-      "path": "/Users/shawnprice/S/research/bffm-xgb/data/processed/canonical_v1/split_metadata.json"
+      "path": "data/processed/canonical_v1/split_metadata.json"
     }
   },
   "train_sha256": "858fd9123edd94b256553e94c2280b8592ecde9fba0d88912b75fc74ba39674a",

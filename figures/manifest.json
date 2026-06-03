@@ -2,9 +2,9 @@
   "schema_version": 1,
   "provenance": {
     "data_snapshot_id": "norms_sha256:a8c7c1a0dac762bc47b5a36094ffb101696fcda45aae6a8c4f46c14fb2502bf5",
-    "preprocessing_version": "5539376b0b23663132e2b65658a35201ece9aa5f",
+    "preprocessing_version": "f1463f53c2f4676f92b944220997bc5827fa2229",
     "script": "12_generate_figures.py",
-    "git_hash": "5539376b0b23663132e2b65658a35201ece9aa5f",
+    "git_hash": "f1463f53c2f4676f92b944220997bc5827fa2229",
     "environment": {
       "python_version": "3.14.3",
       "python_implementation": "CPython",
@@ -51,8 +51,8 @@
         "baseline_comparison_results"
       ],
       "sha256": {
-        "png": "81615acf79dc83c088b6a3dead4dd1ef8dd488b3381091729a837baa03e9a4c7",
-        "pdf": "77110e337c25850df541036697f825d6d8bef28e9115d1a0cae8d47f0b0429a0"
+        "png": "72a083dc5e90895882302ca44702e5199a65f13361f9f2284e077ba50b7b891c",
+        "pdf": "13a5e37f65abdddf9b62f80f8ed1be5792f7a4abfbc3a1a434f1022c1c7f584d"
       }
     },
     {
@@ -66,7 +66,7 @@
       ],
       "sha256": {
         "png": "40309c76439cb766f342ac453d57003baa25ef106eb9beedad1fbf9ee0c9a0c5",
-        "pdf": "e906e85aeabaf35be460fea33f60ed60864cf8170f5eb31253ad45948ab308d4"
+        "pdf": "a0860b7abb60ae2ab0c0b7f76aec26906a1c8b45049df3b85b0b2c2b5cf0d6cd"
       }
     },
     {
@@ -80,7 +80,7 @@
       ],
       "sha256": {
         "png": "ffb1a1cf4a69deed9590cd9648968571bac917a6bc89dc6f6f04dd6f94965dd4",
-        "pdf": "7fbcc7370f7802de697d52ac8ac2b829da9b9035448a57ae44776fae60bbebbc"
+        "pdf": "8925aa95d587f5c7bc8fa2f807c100a8d3e5f5c9598b6e117fe48b0b6471eb33"
       }
     },
     {
@@ -98,8 +98,8 @@
         "Greedy Top-K": "adaptive_topk"
       },
       "sha256": {
-        "png": "8c80a6dfb281d074d60a2a79abe68630550be2b7395cfdc062b50e18a40c3604",
-        "pdf": "f062ce75fc21025999615050e7f1ae7a1b9ba054022e4ff242382ccd52d3314a"
+        "png": "9efbca2c15c3a058b01ba9107511896224c0a8835e696b70f12479e82876ce5a",
+        "pdf": "de139236acaa82f0e734a54d1699c06369e7e20570338b10a4a6ff2e53062013"
       }
     }
   ]

@@ -874,6 +874,13 @@ def main() -> int:
     log.info("Step 4: Evaluating at sparse 20-item...")
     t0 = time.time()
 
+    # NOTE (mask-selection variance): the sparse-20 headline is computed on a
+    # SINGLE fixed domain-balanced mask drawn from a deterministic RNG (seed 42).
+    # The bootstrap CI below (also seed 42) resamples respondents only, so it
+    # reflects respondent-sampling variance and NOT mask-selection variance
+    # (i.e. which 20 of the 50 items happen to be observed). Stage-07 training
+    # averages over many masks; this validation point does not. Do not change
+    # the seed or computation here without re-deriving the published headline.
     X_sparse = _apply_adaptive_sparsity_balanced(
         X_test.copy(), item_info,
         min_items_per_domain=4,

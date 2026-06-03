@@ -251,14 +251,19 @@ Full-50 and sparse-20 validation tables for each trained variant.
 **Sparse-20 validation:**
 
 
-| Domain                | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
-|-----------------------|------------|----------|-----------|-----------|--------------|
-| Extraversion          | 0.9358     | 7.72     | 10.68     | 46.9%     | 90.5%        |
-| Agreeableness         | 0.9089     | 8.88     | 12.19     | 41.7%     | 89.8%        |
-| Conscientiousness     | 0.8943     | 9.84     | 13.37     | 38.3%     | 89.4%        |
-| Emotional Stability   | 0.9244     | 8.33     | 11.50     | 44.3%     | 90.0%        |
-| Intellect/Imagination | 0.8879     | 10.01    | 13.73     | 38.4%     | 89.2%        |
-| **Overall**           | **0.9107** | **8.96** | **12.35** | **41.9%** | **89.8%**    |
+| Domain                | r          | MAE      | RMSE      | Within-5  | 90% Coverage | Central Cov (20-80) | Tail Cov (<20,>80) |
+|-----------------------|------------|----------|-----------|-----------|--------------|---------------------|--------------------|
+| Extraversion          | 0.9358     | 7.72     | 10.68     | 46.9%     | 90.5%        | 90.9%               | 89.9%              |
+| Agreeableness         | 0.9089     | 8.88     | 12.19     | 41.7%     | 89.8%        | 90.7%               | 88.5%              |
+| Conscientiousness     | 0.8943     | 9.84     | 13.37     | 38.3%     | 89.4%        | 91.0%               | 87.3%              |
+| Emotional Stability   | 0.9244     | 8.33     | 11.50     | 44.3%     | 90.0%        | 90.3%               | 89.5%              |
+| Intellect/Imagination | 0.8879     | 10.01    | 13.73     | 38.4%     | 89.2%        | 90.8%               | 87.3%              |
+| **Overall**           | **0.9107** | **8.96** | **12.35** | **41.9%** | **89.8%**    | **90.7%**           | **88.5%**          |
+
+The deployed domain-balanced 20-item form shows the same under-coverage at the score extremes as the full-50 ceiling: aggregate 90% coverage is near nominal, but the tail band (below the 20th / above the 80th percentile) under-covers relative to the central band — compare the Central and Tail columns above. Treat the 90% prediction interval as well-calibrated mainly in the central score range.
+
+> Sparse-20 headline metrics are computed on a single fixed balanced mask (RNG seed 42); the reported bootstrap CI reflects respondent-sampling variance only and does not include mask-selection variance (stage-07 training averages over multiple masks).
+
 <!-- END:ablation_validation_details -->
 
 ### Cross-Variant Baseline Curves (All Runs)
@@ -272,16 +277,16 @@ Item-selection baseline curves (K=5..50) for each trained variant.
 #### Reference
 
 
-| K  | Domain-Balanced          | Constrained-Adaptive | Mini-IPIP                | First-N              | Random               | Adaptive Top-K       | Greedy-Balanced      | Worst-K              |
-|----|--------------------------|----------------------|--------------------------|----------------------|----------------------|----------------------|----------------------|----------------------|
-| 5  | 0.748 [0.746, 0.749]     | 0.691 [0.689, 0.693] | ---                      | 0.698 [0.696, 0.699] | 0.604 [0.603, 0.604] | 0.578 [0.576, 0.579] | 0.660 [0.658, 0.662] | 0.467 [0.465, 0.469] |
-| 10 | 0.853 [0.852, 0.854]     | 0.795 [0.794, 0.796] | ---                      | 0.821 [0.820, 0.822] | 0.766 [0.765, 0.766] | 0.707 [0.705, 0.708] | 0.764 [0.763, 0.765] | 0.649 [0.647, 0.651] |
-| 15 | 0.909 [0.908, 0.910]     | 0.849 [0.848, 0.850] | ---                      | 0.873 [0.873, 0.874] | 0.847 [0.846, 0.847] | 0.793 [0.792, 0.794] | 0.824 [0.823, 0.825] | 0.763 [0.762, 0.765] |
-| 20 | **0.928 [0.927, 0.928]** | 0.907 [0.906, 0.907] | **0.907 [0.906, 0.907]** | 0.911 [0.910, 0.911] | 0.895 [0.895, 0.896] | 0.823 [0.822, 0.824] | 0.850 [0.849, 0.851] | 0.810 [0.809, 0.811] |
-| 25 | 0.945 [0.945, 0.946]     | 0.939 [0.939, 0.940] | ---                      | 0.939 [0.939, 0.939] | 0.934 [0.933, 0.934] | 0.900 [0.899, 0.900] | 0.900 [0.899, 0.900] | 0.889 [0.888, 0.889] |
-| 30 | 0.961 [0.961, 0.961]     | 0.952 [0.952, 0.953] | ---                      | 0.957 [0.957, 0.957] | 0.952 [0.952, 0.952] | 0.929 [0.928, 0.929] | 0.929 [0.928, 0.929] | 0.929 [0.929, 0.930] |
-| 40 | 0.983 [0.983, 0.983]     | 0.980 [0.980, 0.980] | ---                      | 0.984 [0.984, 0.984] | 0.982 [0.982, 0.982] | 0.968 [0.968, 0.968] | 0.968 [0.968, 0.968] | 0.978 [0.977, 0.978] |
-| 50 | 1.000 [1.000, 1.000]     | 1.000 [1.000, 1.000] | ---                      | 1.000 [1.000, 1.000] | 1.000 [1.000, 1.000] | 1.000 [1.000, 1.000] | 1.000 [1.000, 1.000] | 1.000 [1.000, 1.000] |
+| K  | Domain-Balanced          | Constrained-Adaptive    | Mini-IPIP                | First-N                 | Random                  | Adaptive Top-K          | Greedy-Balanced         | Worst-K                 |
+|----|--------------------------|-------------------------|--------------------------|-------------------------|-------------------------|-------------------------|-------------------------|-------------------------|
+| 5  | 0.748 [0.746, 0.749]     | 0.691 [0.689, 0.693]    | ---                      | 0.698 [0.696, 0.699]    | 0.604 [0.603, 0.604]    | 0.578 [0.576, 0.579]    | 0.660 [0.658, 0.662]    | 0.467 [0.465, 0.469]    |
+| 10 | 0.853 [0.852, 0.854]     | 0.795 [0.794, 0.796]    | ---                      | 0.821 [0.820, 0.822]    | 0.766 [0.765, 0.766]    | 0.707 [0.705, 0.708]    | 0.764 [0.763, 0.765]    | 0.649 [0.647, 0.651]    |
+| 15 | 0.909 [0.908, 0.910]     | 0.849 [0.848, 0.850]    | ---                      | 0.873 [0.873, 0.874]    | 0.847 [0.846, 0.847]    | 0.793 [0.792, 0.794]    | 0.824 [0.823, 0.825]    | 0.763 [0.762, 0.765]    |
+| 20 | **0.928 [0.927, 0.928]** | 0.907 [0.906, 0.907]    | **0.907 [0.906, 0.907]** | 0.911 [0.910, 0.911]    | 0.895 [0.895, 0.896]    | 0.823 [0.822, 0.824]    | 0.850 [0.849, 0.851]    | 0.810 [0.809, 0.811]    |
+| 25 | 0.945 [0.945, 0.946]     | 0.939 [0.939, 0.940]    | ---                      | 0.939 [0.939, 0.939]    | 0.934 [0.933, 0.934]    | 0.900 [0.899, 0.900]    | 0.900 [0.899, 0.900]    | 0.889 [0.888, 0.889]    |
+| 30 | 0.961 [0.961, 0.961]     | 0.952 [0.952, 0.953]    | ---                      | 0.957 [0.957, 0.957]    | 0.952 [0.952, 0.952]    | 0.929 [0.928, 0.929]    | 0.929 [0.928, 0.929]    | 0.929 [0.929, 0.930]    |
+| 40 | 0.983 [0.983, 0.983]     | 0.980 [0.980, 0.980]    | ---                      | 0.984 [0.984, 0.984]    | 0.982 [0.982, 0.982]    | 0.968 [0.968, 0.968]    | 0.968 [0.968, 0.968]    | 0.978 [0.977, 0.978]    |
+| 50 | 0.9997 [0.9997, 0.9997]  | 0.9997 [0.9997, 0.9997] | ---                      | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] |
 <!-- END:ablation_baselines_details -->
 
 ### Cross-Variant Per-Domain K=20 (All Runs)
@@ -357,13 +362,15 @@ ML-vs-averaging deltas for matched item sets across each variant.
 #### Reference
 
 
-| Strategy        | K  | ML r   | Avg r  | Delta r | ML MAE | Avg MAE | Delta MAE |
-|-----------------|----|--------|--------|---------|--------|---------|-----------|
-| Domain-balanced | 10 | 0.8533 | 0.8428 | +0.0105 | 11.64  | 12.09   | -0.44     |
-| Domain-balanced | 15 | 0.9090 | 0.9026 | +0.0065 | 9.10   | 9.49    | -0.39     |
-| Domain-balanced | 20 | 0.9277 | 0.9214 | +0.0063 | 8.13   | 8.52    | -0.39     |
-| Mini-IPIP       | 20 | 0.9180 | 0.9068 | +0.0113 | 8.57   | 9.17    | -0.60     |
-| Domain-balanced | 25 | 0.9452 | 0.9395 | +0.0057 | 7.10   | 7.47    | -0.37     |
+| Strategy        | K  | ML r (XGBoost) | Avg r (averaging) | Delta r | Delta r 95% CI     | ML MAE (XGBoost) | Avg MAE (averaging) | Delta MAE | Delta MAE 95% CI |
+|-----------------|----|----------------|-------------------|---------|--------------------|------------------|---------------------|-----------|------------------|
+| Domain-balanced | 10 | 0.8533         | 0.8428            | +0.0105 | [+0.0102, +0.0107] | 11.64            | 12.09               | -0.44     | [-0.46, -0.43]   |
+| Domain-balanced | 15 | 0.9090         | 0.9026            | +0.0065 | [+0.0063, +0.0066] | 9.10             | 9.49                | -0.39     | [-0.40, -0.38]   |
+| Domain-balanced | 20 | 0.9277         | 0.9214            | +0.0063 | [+0.0062, +0.0065] | 8.13             | 8.52                | -0.39     | [-0.40, -0.38]   |
+| Mini-IPIP       | 20 | 0.9180         | 0.9068            | +0.0113 | [+0.0110, +0.0115] | 8.57             | 9.17                | -0.60     | [-0.61, -0.59]   |
+| Domain-balanced | 25 | 0.9452         | 0.9395            | +0.0057 | [+0.0056, +0.0059] | 7.10             | 7.47                | -0.37     | [-0.38, -0.36]   |
+
+Paired (same-respondent) headline contrast at K=20 — domain-balanced (XGBoost) vs Mini-IPIP (averaging): Δr = +0.0210 [+0.0204, +0.0215], ΔMAE = -1.04 pp [-1.06, -1.01] (bootstrap 95% CI, paired differences).
 <!-- END:ablation_ml_vs_averaging_details -->
 
 ### Cross-Variant Simulation Results (All Runs)
@@ -429,7 +436,7 @@ Sparsity augmentation and training settings from `configs/reference.yaml`.
 | CV folds                    | 3         |
 | Random state                | 42        |
 | Min Pearson r gate          | 0.90      |
-| Min 90% coverage gate       | 0.88      |
+| Min 90% coverage gate       | 0.91      |
 <!-- END:training_config -->
 
 ### Model Configuration
@@ -547,16 +554,16 @@ distribution.
 Pearson r with full 50-item scores. Bootstrap 95% CIs from 1,000 resamples.
 
 <!-- BEGIN:baselines -->
-| K  | Domain-Balanced          | Constrained-Adaptive | Mini-IPIP                | First-N              | Random               | Adaptive Top-K       | Greedy-Balanced      | Worst-K              |
-|----|--------------------------|----------------------|--------------------------|----------------------|----------------------|----------------------|----------------------|----------------------|
-| 5  | 0.748 [0.746, 0.749]     | 0.691 [0.689, 0.693] | ---                      | 0.698 [0.696, 0.699] | 0.604 [0.603, 0.604] | 0.578 [0.576, 0.579] | 0.660 [0.658, 0.662] | 0.467 [0.465, 0.469] |
-| 10 | 0.853 [0.852, 0.854]     | 0.795 [0.794, 0.796] | ---                      | 0.821 [0.820, 0.822] | 0.766 [0.765, 0.766] | 0.707 [0.705, 0.708] | 0.764 [0.763, 0.765] | 0.649 [0.647, 0.651] |
-| 15 | 0.909 [0.908, 0.910]     | 0.849 [0.848, 0.850] | ---                      | 0.873 [0.873, 0.874] | 0.847 [0.846, 0.847] | 0.793 [0.792, 0.794] | 0.824 [0.823, 0.825] | 0.763 [0.762, 0.765] |
-| 20 | **0.928 [0.927, 0.928]** | 0.907 [0.906, 0.907] | **0.907 [0.906, 0.907]** | 0.911 [0.910, 0.911] | 0.895 [0.895, 0.896] | 0.823 [0.822, 0.824] | 0.850 [0.849, 0.851] | 0.810 [0.809, 0.811] |
-| 25 | 0.945 [0.945, 0.946]     | 0.939 [0.939, 0.940] | ---                      | 0.939 [0.939, 0.939] | 0.934 [0.933, 0.934] | 0.900 [0.899, 0.900] | 0.900 [0.899, 0.900] | 0.889 [0.888, 0.889] |
-| 30 | 0.961 [0.961, 0.961]     | 0.952 [0.952, 0.953] | ---                      | 0.957 [0.957, 0.957] | 0.952 [0.952, 0.952] | 0.929 [0.928, 0.929] | 0.929 [0.928, 0.929] | 0.929 [0.929, 0.930] |
-| 40 | 0.983 [0.983, 0.983]     | 0.980 [0.980, 0.980] | ---                      | 0.984 [0.984, 0.984] | 0.982 [0.982, 0.982] | 0.968 [0.968, 0.968] | 0.968 [0.968, 0.968] | 0.978 [0.977, 0.978] |
-| 50 | 1.000 [1.000, 1.000]     | 1.000 [1.000, 1.000] | ---                      | 1.000 [1.000, 1.000] | 1.000 [1.000, 1.000] | 1.000 [1.000, 1.000] | 1.000 [1.000, 1.000] | 1.000 [1.000, 1.000] |
+| K  | Domain-Balanced          | Constrained-Adaptive    | Mini-IPIP                | First-N                 | Random                  | Adaptive Top-K          | Greedy-Balanced         | Worst-K                 |
+|----|--------------------------|-------------------------|--------------------------|-------------------------|-------------------------|-------------------------|-------------------------|-------------------------|
+| 5  | 0.748 [0.746, 0.749]     | 0.691 [0.689, 0.693]    | ---                      | 0.698 [0.696, 0.699]    | 0.604 [0.603, 0.604]    | 0.578 [0.576, 0.579]    | 0.660 [0.658, 0.662]    | 0.467 [0.465, 0.469]    |
+| 10 | 0.853 [0.852, 0.854]     | 0.795 [0.794, 0.796]    | ---                      | 0.821 [0.820, 0.822]    | 0.766 [0.765, 0.766]    | 0.707 [0.705, 0.708]    | 0.764 [0.763, 0.765]    | 0.649 [0.647, 0.651]    |
+| 15 | 0.909 [0.908, 0.910]     | 0.849 [0.848, 0.850]    | ---                      | 0.873 [0.873, 0.874]    | 0.847 [0.846, 0.847]    | 0.793 [0.792, 0.794]    | 0.824 [0.823, 0.825]    | 0.763 [0.762, 0.765]    |
+| 20 | **0.928 [0.927, 0.928]** | 0.907 [0.906, 0.907]    | **0.907 [0.906, 0.907]** | 0.911 [0.910, 0.911]    | 0.895 [0.895, 0.896]    | 0.823 [0.822, 0.824]    | 0.850 [0.849, 0.851]    | 0.810 [0.809, 0.811]    |
+| 25 | 0.945 [0.945, 0.946]     | 0.939 [0.939, 0.940]    | ---                      | 0.939 [0.939, 0.939]    | 0.934 [0.933, 0.934]    | 0.900 [0.899, 0.900]    | 0.900 [0.899, 0.900]    | 0.889 [0.888, 0.889]    |
+| 30 | 0.961 [0.961, 0.961]     | 0.952 [0.952, 0.953]    | ---                      | 0.957 [0.957, 0.957]    | 0.952 [0.952, 0.952]    | 0.929 [0.928, 0.929]    | 0.929 [0.928, 0.929]    | 0.929 [0.929, 0.930]    |
+| 40 | 0.983 [0.983, 0.983]     | 0.980 [0.980, 0.980]    | ---                      | 0.984 [0.984, 0.984]    | 0.982 [0.982, 0.982]    | 0.968 [0.968, 0.968]    | 0.968 [0.968, 0.968]    | 0.978 [0.977, 0.978]    |
+| 50 | 0.9997 [0.9997, 0.9997]  | 0.9997 [0.9997, 0.9997] | ---                      | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] |
 <!-- END:baselines -->
 
 At K>=25, greedy-balanced and adaptive top-K converge (identical item sets once the
@@ -624,18 +631,25 @@ psychometrically independent factor.
 ### ML vs Simple Averaging (Same Items)
 
 <!-- BEGIN:ml_vs_averaging -->
-| Strategy        | K  | ML r   | Avg r  | Delta r | ML MAE | Avg MAE | Delta MAE |
-|-----------------|----|--------|--------|---------|--------|---------|-----------|
-| Domain-balanced | 10 | 0.8533 | 0.8428 | +0.0105 | 11.64  | 12.09   | -0.44     |
-| Domain-balanced | 15 | 0.9090 | 0.9026 | +0.0065 | 9.10   | 9.49    | -0.39     |
-| Domain-balanced | 20 | 0.9277 | 0.9214 | +0.0063 | 8.13   | 8.52    | -0.39     |
-| Mini-IPIP       | 20 | 0.9180 | 0.9068 | +0.0113 | 8.57   | 9.17    | -0.60     |
-| Domain-balanced | 25 | 0.9452 | 0.9395 | +0.0057 | 7.10   | 7.47    | -0.37     |
+| Strategy        | K  | ML r (XGBoost) | Avg r (averaging) | Delta r | Delta r 95% CI     | ML MAE (XGBoost) | Avg MAE (averaging) | Delta MAE | Delta MAE 95% CI |
+|-----------------|----|----------------|-------------------|---------|--------------------|------------------|---------------------|-----------|------------------|
+| Domain-balanced | 10 | 0.8533         | 0.8428            | +0.0105 | [+0.0102, +0.0107] | 11.64            | 12.09               | -0.44     | [-0.46, -0.43]   |
+| Domain-balanced | 15 | 0.9090         | 0.9026            | +0.0065 | [+0.0063, +0.0066] | 9.10             | 9.49                | -0.39     | [-0.40, -0.38]   |
+| Domain-balanced | 20 | 0.9277         | 0.9214            | +0.0063 | [+0.0062, +0.0065] | 8.13             | 8.52                | -0.39     | [-0.40, -0.38]   |
+| Mini-IPIP       | 20 | 0.9180         | 0.9068            | +0.0113 | [+0.0110, +0.0115] | 8.57             | 9.17                | -0.60     | [-0.61, -0.59]   |
+| Domain-balanced | 25 | 0.9452         | 0.9395            | +0.0057 | [+0.0056, +0.0059] | 7.10             | 7.47                | -0.37     | [-0.38, -0.36]   |
+
+Paired (same-respondent) headline contrast at K=20 — domain-balanced (XGBoost) vs Mini-IPIP (averaging): Δr = +0.0210 [+0.0204, +0.0215], ΔMAE = -1.04 pp [-1.06, -1.01] (bootstrap 95% CI, paired differences).
 <!-- END:ml_vs_averaging -->
 
 The ML advantage holds across all tested item counts, as the table shows, and is
 largest at fewer items where cross-domain information sharing matters most. Both
-correlation and MAE improvements are consistent across budgets.
+correlation and MAE improvements are consistent across budgets. The `r` and `MAE`
+columns are explicitly tagged by scoring method — *(XGBoost)* for the ML columns and
+*(averaging)* for the simple-averaging columns — so neither can be misattributed to a
+single method. Each `Delta` column carries its paired bootstrap 95% CI, and the line
+below the table reports the headline domain-balanced-(XGBoost) vs Mini-IPIP-(averaging)
+contrast with a *paired*, same-respondent CI.
 
 #### Decomposing the Headline: Scoring vs Item Selection (K = 20)
 
@@ -791,11 +805,16 @@ Cronbach's alpha by domain, computed on the **training split**. Standardized alp
 | Intellect/Imagination | 0.800        | 0.683              | 0.695        |
 <!-- END:reliability -->
 
-### Greedy Item Ranking (Cross-Domain Info Score)
+### Greedy Item Ranking (Composite Score)
 
-Top 20 items by cross-domain information score. The domain distribution is heavily
-skewed, which drives the domain starvation mechanism described above (see the
-domain starvation table for counts).
+Top 20 items by the adaptive-selection **composite** score. The domain distribution
+is heavily skewed, which drives the domain starvation mechanism described above (see
+the domain starvation table for counts).
+
+> Rows are sorted by the **composite** score actually used for greedy ranking
+> (`composite = cross_domain_info + 0.2·entropy − 0.1·|skew|`, per
+> `pipeline/05_compute_correlations.py`), **not** by the lone "Info Score" column
+> shown below — so the displayed Info Score is not monotone down the Rank column.
 
 <!-- BEGIN:greedy_ranking -->
 | Rank | Item  | Domain | Own-Domain r | Info Score | Ext   | Agr   | Csn   | Est   | Opn   |

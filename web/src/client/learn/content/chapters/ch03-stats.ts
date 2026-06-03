@@ -15,6 +15,34 @@ import {
 import type { Chapter } from "../../types";
 import { mountZScoreWidget } from "../../widgets";
 
+// Standard-normal CDF (Beasley-Springer/Hart approximation), kept in
+// lockstep with the identical helper used by the z-score widget so the
+// worked example below and the interactive widget agree to the displayed
+// precision. Used only to render the worked example from `repoFacts`.
+function standardNormalCdf(z: number): number {
+  const absZ = Math.abs(z);
+  const t = 1 / (1 + 0.2316419 * absZ);
+  const d = Math.exp(-0.5 * absZ * absZ) / Math.sqrt(2 * Math.PI);
+  const poly =
+    t *
+    (0.31938153 +
+      t *
+        (-0.356563782 +
+          t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  const cnd = 1 - d * poly;
+  return z >= 0 ? cnd : 1 - cnd;
+}
+
+// Worked example: convert a fixed pedagogical raw score (3.80) to a
+// percentile using the *current* locked Extraversion norms from
+// `repoFacts`. Mean/SD/z/percentile are all derived here so the codeBlock
+// and prose can never drift from the generated norms.
+const EXAMPLE_RAW_SCORE = 3.8;
+const exampleMean = repoFacts.norms.ext.mean;
+const exampleSd = repoFacts.norms.ext.sd;
+const exampleZ = (EXAMPLE_RAW_SCORE - exampleMean) / exampleSd;
+const examplePercentile = standardNormalCdf(exampleZ) * 100;
+
 export const chapter03Stats: Chapter = {
   slug: "03-statistics",
   order: 3,
@@ -46,14 +74,14 @@ export const chapter03Stats: Chapter = {
       "Worked Example: Raw Score To Percentile",
       `
         ${paragraph(
-          `Using the current Extraversion norms, mean ≈ ${repoFacts.norms.ext.mean.toFixed(4)} and SD ≈ ${repoFacts.norms.ext.sd.toFixed(4)}. Suppose a respondent's predicted raw score is 3.80.`,
+          `Using the current Extraversion norms, mean ≈ ${exampleMean.toFixed(4)} and SD ≈ ${exampleSd.toFixed(4)}. Suppose a respondent's predicted raw score is ${EXAMPLE_RAW_SCORE.toFixed(2)}.`,
         )}
         ${codeBlock(
-          `z = (3.80 - 2.9146) / 0.9112 ≈ 0.972\npercentile ≈ 83.5`,
+          `z = (${EXAMPLE_RAW_SCORE.toFixed(2)} - ${exampleMean.toFixed(4)}) / ${exampleSd.toFixed(4)} ≈ ${exampleZ.toFixed(3)}\npercentile ≈ ${examplePercentile.toFixed(1)}`,
           "text",
         )}
         ${paragraph(
-          "So the respondent scored higher than roughly 83.5% of the reference sample on Extraversion&mdash;exactly the conversion style used by <code>lib/scoring.py</code> and the inference packages.",
+          `So the respondent scored higher than roughly ${examplePercentile.toFixed(1)}% of the reference sample on Extraversion&mdash;exactly the conversion style used by <code>lib/scoring.py</code> and the inference packages.`,
         )}
         ${callout(
           "note",
@@ -94,7 +122,7 @@ export const chapter03Stats: Chapter = {
           "note",
           "Reading the top of the scale",
           paragraph(
-            `The full-50 r ≈ 1 is a score-recovery ceiling, not external-trait validity: the target is the sum of those same 50 items, so r ≈ 1 is expected. The real operating-point accuracy is the K = 20 short form at r ≈ 0.93.`,
+            `The full-50 r ≈ 1 is a score-recovery ceiling, not external-trait validity: the target is a deterministic transform (domain mean -> percentile) of those same 50 items, so r ≈ 1 is expected. The real operating-point accuracy is the K = 20 short form at r ≈ 0.93.`,
           ),
         )}
       `,

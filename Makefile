@@ -53,6 +53,11 @@ _HF_REVISION_FLAG := $(if $(HF_BRANCH),--revision $(HF_BRANCH),)
 ARTIFACTS_VARIANTS_DIR ?= $(ARTIFACTS_DIR)/variants
 EVAL_DIR = $(ARTIFACTS_VARIANTS_DIR)/$(MODEL_NAME)
 RESEARCH_SUMMARY_PATH ?= $(ARTIFACTS_DIR)/research_summary.json
+# Markdown files with GENERATED fences, used by the check-docs git-diff guard.
+# Single-sourced from the generator's MARKDOWN_TARGETS via its `list-targets` mode
+# so the two can never drift (a hand-maintained literal would silently un-guard a
+# file if a 6th fence were added on the Python side only). Override-able for tests.
+MARKDOWN_DOC_TARGETS ?= $(shell $(PY) scripts/generate_doc_data.py list-targets)
 LOGS_DIR ?= logs
 
 # --- Smoke run (tiny sampled end-to-end; isolated tree, never clobbers real artifacts) ---
@@ -72,7 +77,7 @@ VALID_TRAIN_RUNS := 1 2 3
 RESEARCH_EVAL_TARGETS := research-eval-reference research-eval-ablation-none research-eval-ablation-focused
 _CALLER_PARALLEL_MAKEFLAGS = $(filter -j% -j --jobserver-auth=% --jobserver-fds=%,$(MAKEFLAGS))
 
-.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full verify-release pull-reference prepare correlations tune train train-1 train-2 train-3 validate baselines simulate export export-all export-repo-readme export-readme export-reference export-ablation-none export-ablation-focused figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-summary research-summary-strict notes upload-hf upload-hf-reference lint format typecheck test test-lib test-inference test-web fixtures smoke smoke-clean archive clean restore web-setup web-dev web-build deploy-web
+.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full verify-release pull-reference prepare correlations tune train train-1 train-2 train-3 validate baselines simulate export export-all export-repo-readme export-readme export-reference export-ablation-none export-ablation-focused figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-summary research-summary-strict notes gen-docs check-docs refresh-docs upload-hf upload-hf-reference lint format typecheck test test-lib test-inference test-web fixtures smoke smoke-clean archive clean restore web-setup web-dev web-build deploy-web
 
 # Ordered phases. Each stage is a sub-make so the order holds even under `make -j`
 # (recipe lines run sequentially), while each stage keeps its own internal
@@ -90,6 +95,7 @@ all:
 	$(MAKE) research-eval
 	$(MAKE) export-all
 	$(MAKE) notes
+	$(MAKE) gen-docs
 	$(MAKE) figures
 
 setup: setup-python setup-typescript setup-web
@@ -126,6 +132,21 @@ provenance-check-full:
 # Clone-side release verification: runs ONLY the provenance checker (NO norms-check,
 # so no SQLite DB / no retrain needed on a fresh clone). Auto-detects reference-only
 # from the published summary. STRICT_HEAD=1 enforces git-freshness.
+#
+# Reconciling a WARN without retraining (the bundle legitimately predates HEAD when
+# release/refresh commits sit on top of the generation commit):
+#   - model card (README only):                  make export-readme MODEL_DIR=models/reference
+#   - provenance.json:                           make export-reference  (full export re-runs
+#                                                build_provenance + rewrites provenance.json;
+#                                                export-readme writes ONLY README.md)
+#   - item_info lock (cosmetic re-stamp WARN):   restore data/processed/<variant>/item_info.json
+#                                                to the locked training-time bytes (the lock SHA
+#                                                is written by stage 07 into training_report.json;
+#                                                export-readme does NOT re-stamp it)
+#   - notes / research_summary:                  make notes
+#   - figures:                                   make figures
+# Only a FULL pipeline run (`make all`) changes model.onnx. See the check_provenance.py
+# module docstring for the per-WARN reconcile mapping.
 verify-release:
 	$(PY) scripts/check_provenance.py --strict $(_STRICT_HEAD_FLAG) $(_REFERENCE_ONLY_FLAG)
 
@@ -241,6 +262,68 @@ research-summary-strict:
 notes:
 	$(MAKE) research-summary-strict REFERENCE_ONLY=$(REFERENCE_ONLY)
 	$(PY) scripts/generate_notes_data.py $(_REFERENCE_ONLY_FLAG)
+
+# Regenerate the doc-data surfaces (reference variant) from the source-of-truth
+# artifacts: web/.../repo-facts.generated.ts (MECHANISM 1) + GENERATED markdown
+# fences (MECHANISM 2). research-summary-strict refreshes the single source of
+# truth first so the generated outputs can never lag behind the artifacts.
+gen-docs:
+	$(MAKE) research-summary-strict REFERENCE_ONLY=$(REFERENCE_ONLY)
+	$(PY) scripts/generate_doc_data.py all
+
+# Fail if the committed generated doc-data is stale relative to the artifacts.
+# Two complementary gates, both run against committed artifacts only — no retrain,
+# no rebuild of research_summary.json — so this is cheap and safe in CI:
+#   1. Non-destructive `--check` gate: re-derives the outputs from the artifacts
+#      and reports STALE *without writing*. This catches hand-edits to a generated
+#      surface (e.g. tweaking a number in repo-facts.generated.ts or a GENERATED
+#      markdown fence) even when no artifact changed — the write-then-diff gate
+#      alone would silently self-heal such edits by overwriting them.
+#   2. git-diff gate (write mode): regenerates in place, then diffs working tree
+#      vs HEAD so a non-zero diff means the committed generated surfaces
+#      (repo-facts.generated.ts + the GENERATED markdown fences) do not match what
+#      the generator produces, i.e. an artifact changed without running gen-docs.
+#      Diffing against HEAD (not the index) also catches staged-but-stale outputs
+#      locally; in CI the index equals HEAD so behavior is unchanged.
+# MARKDOWN_DOC_TARGETS MUST list every injected .md.
+check-docs:
+	$(PY) scripts/generate_doc_data.py all --check \
+		|| { echo "ERROR: generated docs are stale or hand-edited (do not match the artifacts). Run 'make gen-docs' and commit the result." >&2; exit 1; }
+	$(PY) scripts/generate_doc_data.py all
+	@git diff --exit-code HEAD -- web/src/client/learn/content/repo-facts.generated.ts $(MARKDOWN_DOC_TARGETS) \
+		|| { echo "ERROR: generated docs are stale (or the regenerated refactor is uncommitted). Run 'make gen-docs' and commit the result." >&2; exit 1; }
+
+# One-shot regeneration of EVERY model-derived output from the CURRENT artifacts:
+# per-variant model cards (re-rendered via --readme-only, NO ONNX re-export),
+# the repo readme, NOTES.md, the README/docs GENERATED fences + web repoFacts,
+# and figures. NO retrain, NO re-eval (08/09/10), NO data prep. Run this after a
+# pipeline re-run, after pulling fresh artifacts, or after editing a generator, to
+# auto-update all model values everywhere. A full `make all` already performs the
+# equivalent regeneration at the end, so this is for partial/standalone refreshes.
+# Use REFERENCE_ONLY=1 when only the reference variant has been trained (the
+# ablation cards require their config.json to exist).
+#   make refresh-docs                   # reference + both ablations
+#   make refresh-docs REFERENCE_ONLY=1  # reference only
+# Then `git diff` and commit; `make check-docs` (CI) fails if you forget.
+# NOTE: figures regenerate from the artifacts; matplotlib embeds non-deterministic
+# PDF metadata, so figures/manifest.json PDF SHAs can change even when no data did.
+ifeq ($(strip $(REFERENCE_ONLY)),1)
+refresh-docs:
+	$(MAKE) export-readme MODEL_DIR=models/reference
+	$(MAKE) export-repo-readme
+	$(MAKE) notes REFERENCE_ONLY=1
+	$(MAKE) gen-docs REFERENCE_ONLY=1
+	$(MAKE) figures
+else
+refresh-docs:
+	$(MAKE) export-readme MODEL_DIR=models/reference
+	$(MAKE) export-readme MODEL_DIR=models/ablation_none
+	$(MAKE) export-readme MODEL_DIR=models/ablation_focused
+	$(MAKE) export-repo-readme
+	$(MAKE) notes
+	$(MAKE) gen-docs
+	$(MAKE) figures
+endif
 
 upload-hf: $(_UPLOAD_HF_DEPS)
 	$(PY) pipeline/13_upload_hf.py $(_RESET_FLAG) $(_HF_REVISION_FLAG)

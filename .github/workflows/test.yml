@@ -62,6 +62,15 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check pipeline lib scripts python
 
+      # Regenerate the doc-data surfaces from the force-tracked source-of-truth
+      # artifacts and fail (with the offending git diff) if the committed outputs
+      # (repo-facts.generated.ts + the GENERATED markdown fences) are stale.
+      # check-docs runs ONLY the generator against the committed artifacts, then
+      # git-diffs the outputs; it does NOT retrain or rebuild research_summary.json,
+      # so stale docs fail without touching the training pipeline.
+      - name: Check generated docs are up to date
+        run: make check-docs
+
   typecheck:
     runs-on: ubuntu-latest
     steps:
@@ -78,6 +87,33 @@ jobs:
       # against .basedpyright/baseline.json: fails only on NEW type errors.
       - name: Type-check (basedpyright)
         run: uv run basedpyright
+
+  # Verify the committed artifact provenance tree is internally consistent
+  # (checksums, intra-bundle git_hash agreement, norms references, item_info lock
+  # state). This runs the CLONE-SIDE checker only -- no SQLite DB, no retrain -- so
+  # it is cheap and never regenerates the bundle. Plain --strict (NOT --strict-head):
+  # the published bundle legitimately predates HEAD (release/refresh commits sit on
+  # top of the generation commit), so git-staleness is an advisory WARN here, not a
+  # failure; only genuine inconsistencies fail the job. Promote to --strict-head
+  # (STRICT_HEAD=1) once the bundle has been regenerated at HEAD.
+  provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # full history so release-freshness can resolve the bundle's ancestor
+          # commit (a shallow clone degrades the git checks to git-unverifiable PASS)
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Verify provenance tree (clone-side, no retrain)
+        run: make verify-release
 
   test-typescript:
     runs-on: ubuntu-latest

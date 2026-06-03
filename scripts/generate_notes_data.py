@@ -24,7 +24,12 @@ PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
 from lib.config import load_config_with_base
-from lib.constants import DEFAULT_STAGE07_CV_FOLDS, REFERENCE_VARIANT
+from lib.constants import (
+    DEFAULT_STAGE07_CV_FOLDS,
+    DOMAINS,
+    QUANTILE_NAME_LIST,
+    REFERENCE_VARIANT,
+)
 
 ARTIFACTS_DIR = PACKAGE_ROOT / "artifacts"
 CONFIGS_DIR = PACKAGE_ROOT / "configs"
@@ -112,9 +117,15 @@ def load_reference_notes_inputs() -> dict:
     return notes_inputs
 
 
-def load_variant_notes_inputs(variant: str) -> dict:
-    """Load variant-scoped NOTES inputs from research_summary.json."""
-    payload = load_research_summary()
+def load_variant_notes_inputs(variant: str, payload: dict | None = None) -> dict:
+    """Load variant-scoped NOTES inputs from research_summary.json.
+
+    Pass an already-parsed ``payload`` (from a single ``load_research_summary()``
+    call) to avoid re-reading/re-parsing the multi-MB summary once per variant;
+    omitting it preserves the standalone behavior of reading from disk.
+    """
+    if payload is None:
+        payload = load_research_summary()
     variants = payload.get("variants", {})
     if not isinstance(variants, dict):
         raise ValueError(f"{RESEARCH_SUMMARY_PATH} has invalid 'variants' object.")
@@ -237,10 +248,22 @@ def pad_table(rows: list[list[str]]) -> str:
 
 def gen_model_config() -> str:
     hp = load_hyperparameters_for_notes()
+    # De-hardcode the model count, quantile labels, and RNG seed: the count is
+    # (domains x quantiles) from lib.constants and the seed is the reference
+    # config's training.random_state, so this row never drifts from the source.
+    n_domains = len(DOMAINS)
+    n_quantiles = len(QUANTILE_NAME_LIST)
+    quantile_str = ", ".join(QUANTILE_NAME_LIST)
+    ref = load_config_with_base(CONFIGS_DIR / "reference.yaml")
+    rng_seed = str(ref["training"]["random_state"])
     rows = [
         ["Parameter", "Value"],
         ["Algorithm", "XGBoost quantile regression (pinball loss)"],
-        ["Models", "15 (5 domains x 3 quantiles: q05, q50, q95)"],
+        [
+            "Models",
+            f"{n_domains * n_quantiles} ({n_domains} domains x {n_quantiles} "
+            f"quantiles: {quantile_str})",
+        ],
         ["n_estimators", f"{hp['n_estimators']:,}"],
         ["max_depth", str(hp["max_depth"])],
         ["learning_rate", fmt_f(hp["learning_rate"], 4)],
@@ -249,7 +272,7 @@ def gen_model_config() -> str:
         ["colsample_bytree", fmt_f(hp["colsample_bytree"], 3)],
         ["reg_lambda", fmt_f(hp["reg_lambda"], 3)],
         ["reg_alpha", fmt_f(hp["reg_alpha"], 3)],
-        ["RNG seed", "42"],
+        ["RNG seed", rng_seed],
     ]
     return pad_table(rows)
 
@@ -346,6 +369,11 @@ def _gen_baselines_from_notes_inputs(notes_inputs: dict) -> str:
     for k in [5, 10, 15, 20, 25, 30, 40, 50]:
         k_data = overall.get(str(k), {})
         row = [str(k)]
+        # At the K=50 ceiling every strategy collapses to the full scale with
+        # r ~= 0.9997; rendering those cells at 3 decimals reads as "1.000" and
+        # falsely asserts perfect recovery, so render the ceiling row at 4
+        # decimals (fmt_r) like the validation table.
+        fmt_cell = fmt_r if k == 50 else fmt_r3
         for method, _ in strategy_order:
             entry = k_data.get(method)
             if entry is None:
@@ -353,9 +381,9 @@ def _gen_baselines_from_notes_inputs(notes_inputs: dict) -> str:
                 continue
             r = entry["pearson_r"]
             ci = entry.get("pearson_r_ci")
-            r_str = fmt_r3(r)
+            r_str = fmt_cell(r)
             if ci:
-                r_str += f" [{fmt_r3(ci[0])}, {fmt_r3(ci[1])}]"
+                r_str += f" [{fmt_cell(ci[0])}, {fmt_cell(ci[1])}]"
             if k == 20 and method in ("domain_balanced", "mini_ipip"):
                 r_str = f"**{r_str}**"
             row.append(r_str)
@@ -457,10 +485,36 @@ def gen_ml_vs_averaging() -> str:
     return _gen_ml_vs_averaging_from_notes_inputs(notes_inputs)
 
 
+def _ci_bracket(ci: object, places: int, signed: bool = False) -> str:
+    """Render a [lo, hi] CI pair, degrading to '---' when absent/malformed."""
+    if isinstance(ci, (list, tuple)) and len(ci) == 2:
+        lo, hi = ci
+        if isinstance(lo, (int, float)) and isinstance(hi, (int, float)):
+            if signed:
+                return f"[{lo:+.{places}f}, {hi:+.{places}f}]"
+            return f"[{fmt_f(float(lo), places)}, {fmt_f(float(hi), places)}]"
+    return "---"
+
+
 def _gen_ml_vs_averaging_from_notes_inputs(notes_inputs: dict) -> str:
     comp = _notes_input_dict(notes_inputs, "ml_vs_averaging_comparison")
+    # Scoring-method tags (M12): the r/MAE columns mix two scoring methods, so
+    # tag each header so a skimmer cannot attribute both to one method. The Delta
+    # columns carry their paired bootstrap 95% CI (M11): data already exists in
+    # ml_vs_averaging_comparison (delta_r_ci / delta_mae_ci) — no recompute.
     rows = [
-        ["Strategy", "K", "ML r", "Avg r", "Delta r", "ML MAE", "Avg MAE", "Delta MAE"]
+        [
+            "Strategy",
+            "K",
+            "ML r (XGBoost)",
+            "Avg r (averaging)",
+            "Delta r",
+            "Delta r 95% CI",
+            "ML MAE (XGBoost)",
+            "Avg MAE (averaging)",
+            "Delta MAE",
+            "Delta MAE 95% CI",
+        ]
     ]
     for entry in comp["comparisons"]:
         method = entry["method"]
@@ -477,12 +531,32 @@ def _gen_ml_vs_averaging_from_notes_inputs(notes_inputs: dict) -> str:
                 fmt_f(entry["ml_r"], 4),
                 fmt_f(entry["avg_r"], 4),
                 f"{entry['delta_r']:+.4f}",
+                _ci_bracket(entry.get("delta_r_ci"), 4, signed=True),
                 fmt_f(entry["ml_mae"], 2),
                 fmt_f(entry["avg_mae"], 2),
                 f"{entry['delta_mae']:+.2f}",
+                _ci_bracket(entry.get("delta_mae_ci"), 2, signed=True),
             ]
         )
-    return pad_table(rows)
+    table = pad_table(rows)
+
+    # Surface the paired (same-respondent) delta CI for the headline
+    # domain-balanced-ML vs Mini-IPIP-averaging contrast (M11).
+    paired = comp.get("xgb_vs_mini_ipip_paired")
+    if isinstance(paired, dict):
+        dr = paired.get("delta_pearson_r")
+        dmae = paired.get("delta_mae")
+        if isinstance(dr, (int, float)) and isinstance(dmae, (int, float)):
+            table += (
+                f"\n\nPaired (same-respondent) headline contrast at K="
+                f"{paired.get('n_items', 20)} — domain-balanced (XGBoost) vs "
+                f"Mini-IPIP (averaging): Δr = {dr:+.4f} "
+                f"{_ci_bracket(paired.get('delta_pearson_r_ci'), 4, signed=True)}, "
+                f"ΔMAE = {dmae:+.2f} pp "
+                f"{_ci_bracket(paired.get('delta_mae_ci'), 2, signed=True)} "
+                "(bootstrap 95% CI, paired differences)."
+            )
+    return table
 
 
 def gen_ml_vs_averaging_per_domain() -> str:
@@ -1032,10 +1106,17 @@ def gen_ablation_provenance() -> str:
 
 
 def _iter_variant_notes_inputs() -> list[tuple[str, str, dict]]:
+    # Read research_summary.json (multi-MB; embeds every variant's full
+    # notes_inputs) ONCE and reuse the parsed payload across all variants, rather
+    # than re-reading/re-parsing it per variant. Each of the cross-variant detail
+    # generators calls this, so the single read keeps a 3-variant build from
+    # parsing the summary dozens of times. A genuinely absent variant still
+    # raises KeyError from load_variant_notes_inputs (fail-loud, unchanged).
+    payload = load_research_summary()
     records: list[tuple[str, str, dict]] = []
     for variant in _ACTIVE_VARIANT_ORDER:
         label = VARIANT_LABELS.get(variant, variant)
-        notes_inputs = load_variant_notes_inputs(variant)
+        notes_inputs = load_variant_notes_inputs(variant, payload)
         records.append((variant, label, notes_inputs))
     return records
 
@@ -1045,7 +1126,21 @@ def _gen_sparse20_validation_from_notes_inputs(notes_inputs: dict) -> str:
     sparse = val.get("sparse_20", {}).get("metrics", {})
     if not isinstance(sparse, dict) or "overall" not in sparse:
         raise KeyError("validation_results.sparse_20.metrics missing.")
-    rows = [["Domain", "r", "MAE", "RMSE", "Within-5", "90% Coverage"]]
+    # Central/Tail coverage columns (M15): the deployed sparse-20 form under-covers
+    # at the score extremes just like the full-50 ceiling, so surface the same
+    # central (20-80) vs tail (<20,>80) split here too.
+    rows = [
+        [
+            "Domain",
+            "r",
+            "MAE",
+            "RMSE",
+            "Within-5",
+            "90% Coverage",
+            "Central Cov (20-80)",
+            "Tail Cov (<20,>80)",
+        ]
+    ]
     for d in DOMAIN_ORDER:
         dm = sparse[d]
         rows.append(
@@ -1056,6 +1151,8 @@ def _gen_sparse20_validation_from_notes_inputs(notes_inputs: dict) -> str:
                 fmt_f(dm["rmse"], 2),
                 fmt_pct(dm["within_5_pct"] * 100),
                 fmt_pct(dm["coverage_90"] * 100),
+                _cov_cell(dm.get("coverage_central")),
+                _cov_cell(dm.get("coverage_tail")),
             ]
         )
     ov = sparse["overall"]
@@ -1067,9 +1164,27 @@ def _gen_sparse20_validation_from_notes_inputs(notes_inputs: dict) -> str:
             f"**{fmt_f(ov['rmse'], 2)}**",
             f"**{fmt_pct(ov['within_5_pct'] * 100)}**",
             f"**{fmt_pct(ov['coverage_90'] * 100)}**",
+            f"**{_cov_cell(ov.get('coverage_central'))}**",
+            f"**{_cov_cell(ov.get('coverage_tail'))}**",
         ]
     )
-    return pad_table(rows)
+    caveat = (
+        "\n\nThe deployed domain-balanced 20-item form shows the same "
+        "under-coverage at the score extremes as the full-50 ceiling: aggregate "
+        "90% coverage is near nominal, but the tail band (below the 20th / above "
+        "the 80th percentile) under-covers relative to the central band — compare "
+        "the Central and Tail columns above. Treat the 90% prediction interval as "
+        "well-calibrated mainly in the central score range.\n"
+    )
+    # Mask-selection-variance disclosure (M9): the sparse-20 headline is computed
+    # on a SINGLE fixed balanced mask, so its bootstrap CI is respondent-only.
+    mask_disclosure = (
+        "\n> Sparse-20 headline metrics are computed on a single fixed balanced "
+        "mask (RNG seed 42); the reported bootstrap CI reflects respondent-sampling "
+        "variance only and does not include mask-selection variance (stage-07 "
+        "training averages over multiple masks).\n"
+    )
+    return pad_table(rows) + caveat + mask_disclosure
 
 
 def gen_ablation_validation_details() -> str:
