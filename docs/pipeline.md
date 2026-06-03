@@ -74,7 +74,8 @@ Everything is namespaced under `smoke_v1` / `models/smoke` / `output/smoke` /
 never touches the canonical artifacts. It needs the SQLite DB (`make load`)
 present. The smoke config (`configs/smoke.yaml` + `configs/smoke_params.json`)
 relaxes the validation gates to 0.0 and uses tiny hyperparameters — it is **not**
-a publication config. Sampling is leakage-safe: `make norms --sample N` fits
+a publication config. Sampling is leakage-safe: running the stage-03 norms step
+with `--sample N` (`uv run python pipeline/03_compute_norms.py --sample N`) fits
 norms on the same first-N respondents stage 04 splits, and the stage-04
 `population_signature` guard fails closed if the norms population differs.
 
@@ -142,7 +143,7 @@ The pipeline consists of 13 numbered scripts, executed in order. Each script is 
 | 12  | `12_generate_figures.py`     | `figures`                                                         | Generates publication figures from artifacts (efficiency curves, heatmaps, etc.)                                                        |
 | 13  | `13_upload_hf.py`            | `upload-hf`                                                       | Uploads exported model and model card to HuggingFace Hub (requires `HF_TOKEN`)                                                          |
 
-`make all` runs: download, load, norms, norms-check, prepare, correlations, tune, train, research-eval, export-all, notes, and figures. It excludes stage 13 (upload-hf). Evaluation stages (08-10) run via `research-eval`, which evaluates all three model variants in parallel by default and writes results to `artifacts/variants/<variant>/`.
+`make all` runs: download, load, norms, norms-check, prepare, correlations, tune, train, research-eval, export-all, notes, gen-docs, and figures. It excludes stage 13 (upload-hf). Evaluation stages (08-10) run via `research-eval`, which evaluates all three model variants in parallel by default and writes results to `artifacts/variants/<variant>/`.
 
 ## Hyperparameter Tuning
 
