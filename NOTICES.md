@@ -19,12 +19,15 @@ Models are trained on the **IPIP-FFM** response dataset published by the
 specifically the `IPIP-FFM-data-8Nov2018` release
 (<https://openpsychometrics.org/_rawdata/IPIP-FFM-data-8Nov2018.zip>).
 
-**Terms.** OSPP makes its raw datasets available for free reuse and places the
-data in the public domain (see <https://openpsychometrics.org/_rawdata/>). The
-responses were collected from self-selected, anonymous online visitors who
-completed the assessment voluntarily; the data contain no direct identifiers.
-Because the sample is self-selected and online, it is not a probability sample
-of any general population — see the Limitations sections in `README.md` and
+**Terms.** OSPP publishes its raw datasets for research use at
+<https://openpsychometrics.org/_rawdata/>. The responses were collected from
+self-selected, anonymous online visitors who, on finishing the test, agreed that
+their answers could be saved and used for research. The data are anonymous and
+contain no direct identifiers. OSPP does not attach an explicit public-domain
+dedication or open license to the raw response data, so we make no public-domain
+or free-reuse claim about it and use it solely for research. Because the sample
+is self-selected and online, it is not a probability sample of any general
+population — see the Limitations sections in `README.md` and
 [`docs/research.md`](docs/research.md).
 
 **Quasi-identifiers dropped.** The pipeline ingests only the 50 IPIP item
@@ -34,8 +37,9 @@ quasi-identifiers are discarded and never reach the SQLite database, the model,
 or any published artifact, namely: approximate geolocation
 (`lat_appx_lots_of_err`, `long_appx_lots_of_err`); the IP-count field `IPC`
 (used only transiently to keep one record per IP, then dropped); response timing
-(`introelapse`, `testelapse`, `endelapse`) and the load timestamp (`dateload`);
-and screen dimensions (`screenw`, `screenh`).
+(`introelapse`, `testelapse`, `endelapse`, and the 50 per-item response-latency
+columns `<ITEM>_E`, e.g. `EXT1_E`) and the load timestamp (`dateload`); and
+screen dimensions (`screenw`, `screenh`).
 
 ## References
 
