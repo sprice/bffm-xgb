@@ -122,14 +122,14 @@ else: scale = 1.0`,
         ${table(
           ["Gate", "Reference threshold"],
           [
-            ["Overall full-50 r", "≥ 0.90"],
-            ["Overall full-50 90% coverage", "≥ 0.88"],
-            ["Per-domain full-50 r", "≥ 0.90"],
-            ["Per-domain full-50 90% coverage", "≥ 0.88"],
-            ["Overall sparse-20 r", "≥ 0.90"],
-            ["Overall sparse-20 90% coverage", "≥ 0.88"],
-            ["Per-domain sparse-20 r", "≥ 0.85"],
-            ["Per-domain sparse-20 90% coverage", "≥ 0.84"],
+            ["Overall full-50 r", `≥ ${repoFacts.gates.full50.overallR.toFixed(2)}`],
+            ["Overall full-50 90% coverage", `≥ ${repoFacts.gates.full50.overallCoverage.toFixed(2)}`],
+            ["Per-domain full-50 r", `≥ ${repoFacts.gates.full50.perDomainR.toFixed(2)}`],
+            ["Per-domain full-50 90% coverage", `≥ ${repoFacts.gates.full50.perDomainCoverage.toFixed(2)}`],
+            ["Overall sparse-20 r", `≥ ${repoFacts.gates.sparse20.overallR.toFixed(2)}`],
+            ["Overall sparse-20 90% coverage", `≥ ${repoFacts.gates.sparse20.overallCoverage.toFixed(2)}`],
+            ["Per-domain sparse-20 r", `≥ ${repoFacts.gates.sparse20.perDomainR.toFixed(2)}`],
+            ["Per-domain sparse-20 90% coverage", `≥ ${repoFacts.gates.sparse20.perDomainCoverage.toFixed(2)}`],
           ],
         )}
         ${paragraph(

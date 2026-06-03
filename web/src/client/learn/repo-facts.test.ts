@@ -184,4 +184,30 @@ describe.skipIf(!hasArtifacts)("repo facts used by the course", () => {
     expect(repoFacts.mlVsAveragingK20.miniIpip.avgR).toBeCloseTo(miniIpip!.avg_r, 4);
     expect(repoFacts.mlVsAveragingK20.miniIpip.deltaR).toBeCloseTo(miniIpip!.delta_r, 4);
   });
+
+  it("exposes sane reference quality-gate floors (sourced from configs/reference.yaml)", () => {
+    // The exact values are sourced from configs/reference.yaml by the generator
+    // and guarded against drift by `make check-docs` (which regenerates
+    // repo-facts.generated.ts and git-diffs it; the web suite has no YAML
+    // parser). Here we assert the gates are present, are well-formed
+    // probabilities, and are internally consistent so a corrupted regeneration
+    // is also caught in the web suite.
+    const { full50, sparse20 } = repoFacts.gates;
+    for (const floor of [
+      full50.overallR,
+      full50.overallCoverage,
+      full50.perDomainR,
+      full50.perDomainCoverage,
+      sparse20.overallR,
+      sparse20.overallCoverage,
+      sparse20.perDomainR,
+      sparse20.perDomainCoverage,
+    ]) {
+      expect(floor).toBeGreaterThan(0.5);
+      expect(floor).toBeLessThanOrEqual(1);
+    }
+    // sparse-20 runs below nominal, so its floors are no stricter than full-50.
+    expect(sparse20.overallR).toBeLessThanOrEqual(full50.overallR);
+    expect(sparse20.perDomainR).toBeLessThanOrEqual(full50.perDomainR);
+  });
 });

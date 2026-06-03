@@ -46,6 +46,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 
 ARTIFACTS_DIR = PACKAGE_ROOT / "artifacts"
@@ -58,6 +60,7 @@ SPLIT_METADATA_PATH = CANONICAL_DIR / "split_metadata.json"
 FIRST_ITEM_PATH = CANONICAL_DIR / "first_item.json"
 TUNED_PARAMS_PATH = ARTIFACTS_DIR / "tuned_params.json"
 NORMS_PATH = ARTIFACTS_DIR / "ipip_bffm_norms.json"
+REFERENCE_CONFIG_PATH = PACKAGE_ROOT / "configs" / "reference.yaml"
 
 REPO_FACTS_OUT = (
     PACKAGE_ROOT / "web" / "src" / "client" / "learn" / "content" / "repo-facts.generated.ts"
@@ -134,6 +137,28 @@ def _load_json(path: Path) -> dict[str, Any]:
         ) from exc
 
 
+def _load_yaml(path: Path) -> dict[str, Any]:
+    """Load a YAML config source-of-truth (currently configs/reference.yaml).
+
+    The reference variant's ``validation`` block holds the quality-gate floors
+    shown in the docs/web; they are committed config, never hand-typed into a
+    surface. Mirrors ``_load_json``'s actionable, path-naming diagnostics.
+    """
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        rel = path.relative_to(PACKAGE_ROOT) if path.is_relative_to(PACKAGE_ROOT) else path
+        raise FileNotFoundError(
+            f"missing source config: {rel}. The doc generator reads the committed "
+            "variant config for the quality-gate floors."
+        ) from exc
+    data = yaml.safe_load(raw)
+    if not isinstance(data, dict):
+        rel = path.relative_to(PACKAGE_ROOT) if path.is_relative_to(PACKAGE_ROOT) else path
+        raise ValueError(f"expected a YAML mapping at {rel}")
+    return data
+
+
 class Facts:
     """Parsed reference-variant facts pulled from the artifacts.
 
@@ -148,6 +173,7 @@ class Facts:
         self.first_item = _load_json(FIRST_ITEM_PATH)
         self.tuned_params = _load_json(TUNED_PARAMS_PATH)
         self.norms_artifact = _load_json(NORMS_PATH)
+        self.reference_config = _load_yaml(REFERENCE_CONFIG_PATH)
 
         self.rni: dict[str, Any] = self.summary["reference_notes_inputs"]
         self.reference: dict[str, Any] = self.summary["variants"]["reference"]
@@ -174,7 +200,7 @@ class Facts:
 
         ``comparison-table`` labels the fixed-mask K=20 domain-balanced baseline
         (``baselines.k20.domain_balanced.coverage_90``) as the deployed form,
-        while ``coverage-by-regime`` labels the SEM-stopped adaptive simulation
+        while ``coverage-by-regime`` labels the floor-bound adaptive simulation
         (``simulation_results.analysis.overall_metrics.coverage_90``) as the same
         deployed form. They are semantically distinct operating points but both
         carry the "deployed 20-item form" prose. There is no shared constant
@@ -274,6 +300,7 @@ def build_repo_facts(facts: Facts) -> dict[str, Any]:
     db20 = facts.mva("domain_balanced", 20)
     mi20 = facts.mva("mini_ipip", 20)
     selected = facts.first_item_selected
+    gates = facts.reference_config["validation"]
 
     # Cross-check that every domain shares the same mean_items_used before
     # presenting it as a single global per-domain mean (and 5x-ing it for the
@@ -332,6 +359,20 @@ def build_repo_facts(facts: Facts) -> dict[str, Any]:
             "sparse20R": _num(ref["validation"]["sparse_20"]["pearson_r"], 4),
             "sparse20Mae": _num(ref["validation"]["sparse_20"]["mae"], 2),
             "sparse20Coverage": _num(ref["validation"]["sparse_20"]["coverage_90"], 4),
+        },
+        "gates": {
+            "full50": {
+                "overallR": float(gates["min_pearson_r"]),
+                "overallCoverage": float(gates["min_coverage_90"]),
+                "perDomainR": float(gates["per_domain"]["min_pearson_r"]),
+                "perDomainCoverage": float(gates["per_domain"]["min_coverage_90"]),
+            },
+            "sparse20": {
+                "overallR": float(gates["sparse_20"]["min_pearson_r"]),
+                "overallCoverage": float(gates["sparse_20"]["min_coverage_90"]),
+                "perDomainR": float(gates["sparse_20"]["per_domain"]["min_pearson_r"]),
+                "perDomainCoverage": float(gates["sparse_20"]["per_domain"]["min_coverage_90"]),
+            },
         },
         "simulation": {
             "overallR": _num(sim["overall"]["pearson_r"], 4),
@@ -540,8 +581,9 @@ def render_coverage_by_regime(facts: Facts) -> str:
     """Empirical 90%-PI coverage at each evaluation regime (+ paired r).
 
     Sourced so the three regimes can never silently desync:
-    - deployed 20-item form  -> simulation_results (SEM-stopped adaptive sim),
-      which pairs the ~89.5% deployed coverage with its r ~ .93 operating point.
+    - deployed 20-item form  -> simulation_results (adaptive sim that floor-binds
+      to the fixed 20-item form; the SEM stop never actually binds), which pairs
+      the ~89.5% deployed coverage with its r ~ .93 operating point.
     - random balanced 20-item masking -> validation_results.sparse_20 (~89.8%).
     - full 50 items -> validation_results full-50 self-recovery (~92.6%).
     The interval is the raw tau=0.05/0.95 spread; nominal target is 90%.
@@ -551,7 +593,7 @@ def render_coverage_by_regime(facts: Facts) -> str:
     full = facts.rni["validation_results"]["metrics"]["overall"]
     return "\n".join(
         [
-            f"- **Deployed 20-item form (SEM-stopped adaptive sim):** "
+            f"- **Deployed 20-item form (fixed top-4 per domain):** "
             f"{sim['coverage_90'] * 100:.1f}% empirical coverage "
             f"(*r* = {sim['pearson_r']:.2f}) — slightly under the nominal 90% by design.",
             f"- **Random balanced 20-item masking:** "

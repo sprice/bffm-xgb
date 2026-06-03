@@ -84,7 +84,7 @@ Training data comes from the [Open-Source Psychometrics Project](https://openpsy
 All accuracy metrics are computed on the held-out `canonical_v1` test split (the `test` rows in [Data](#data)). "Overall *r*" is a **respondent-pooled** Pearson correlation: the five domains' predicted and true percentile vectors are stacked into a single length-5*N* vector before correlating (numerically ≈ the mean of the per-domain *r*, because every domain is on a common 0--100 percentile scale). Prediction intervals are the raw q05/q95 quantile spreads (no post-hoc width adjustment; every fitted `scale_factor` is 1.0). Empirical coverage and the paired recovery *r* at each operating point are:
 
 <!-- BEGIN GENERATED: coverage-by-regime -->
-- **Deployed 20-item form (SEM-stopped adaptive sim):** 89.5% empirical coverage (*r* = 0.93) — slightly under the nominal 90% by design.
+- **Deployed 20-item form (fixed top-4 per domain):** 89.5% empirical coverage (*r* = 0.93) — slightly under the nominal 90% by design.
 - **Random balanced 20-item masking:** 89.8% empirical coverage (*r* = 0.911).
 - **Full 50 items (self-recovery):** 92.6% empirical coverage (*r* = 0.9997).
 <!-- END GENERATED: coverage-by-regime -->

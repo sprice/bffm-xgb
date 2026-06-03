@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { chapters } from "./content";
-import { officialDocs } from "./content/data";
+import { officialDocs, repoFacts } from "./content/data";
 
 describe("learning course structure", () => {
   it("has a linear 12-chapter course with unique slugs and orders", () => {
@@ -52,6 +52,28 @@ describe("learning course structure", () => {
     for (const chapter of chapters) {
       expect(chapter.content).toContain("data-glossary-term");
       expect(chapter.content).toContain("data-tooltip=");
+    }
+  });
+
+  it("renders stage-07 quality-gate thresholds from repoFacts (not hand-typed literals)", () => {
+    const chapter9 = chapters.find((chapter) => chapter.slug === "09-stage-07-training");
+    expect(chapter9).toBeTruthy();
+    // The gate floors must render from repoFacts.gates (sourced from
+    // configs/reference.yaml by generate_doc_data.py), so a config change can
+    // never leave a stale hand-typed threshold in the chapter — the exact
+    // regression this guards against.
+    const { full50, sparse20 } = repoFacts.gates;
+    for (const floor of [
+      full50.overallR,
+      full50.overallCoverage,
+      full50.perDomainR,
+      full50.perDomainCoverage,
+      sparse20.overallR,
+      sparse20.overallCoverage,
+      sparse20.perDomainR,
+      sparse20.perDomainCoverage,
+    ]) {
+      expect(chapter9!.content).toContain(`≥ ${floor.toFixed(2)}`);
     }
   });
 });

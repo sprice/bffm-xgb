@@ -54,7 +54,7 @@ export const chapter01Orientation: Chapter = {
           },
           {
             value: repoFacts.baselineK20.domainBalancedR.toFixed(4),
-            label: "domain-balanced 20-item baseline r",
+            label: "domain-balanced 20-item recovery r (XGBoost)",
           },
         ])}
         ${callout(

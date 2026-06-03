@@ -40,6 +40,20 @@ export const repoFacts = {
     sparse20Mae: 8.96,
     sparse20Coverage: 0.8977,
   },
+  gates: {
+    full50: {
+      overallR: 0.9,
+      overallCoverage: 0.91,
+      perDomainR: 0.9,
+      perDomainCoverage: 0.9,
+    },
+    sparse20: {
+      overallR: 0.9,
+      overallCoverage: 0.88,
+      perDomainR: 0.85,
+      perDomainCoverage: 0.87,
+    },
+  },
   simulation: {
     overallR: 0.9273,
     overallMae: 8.16,

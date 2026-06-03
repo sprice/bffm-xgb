@@ -1,4 +1,4 @@
-# BFFM-XGB: Big Five From 20 Questions
+# BFFM-XGB: machine learning for shorter Big Five assessments
 
 Open-source pipeline for training XGBoost quantile regression models that predict Big Five personality scores from partial questionnaire responses. Trained on 422k of [~603k respondents](https://openpsychometrics.org/_rawdata) (a seed-locked 70/15/15 split) from the [IPIP-BFFM](https://ipip.ori.org/newBigFive5broadKey.htm) dataset with sparsity augmentation, the 15 exported ONNX models (5 domains x 3 quantiles) produce percentile scores with empirical 90% prediction intervals from as few as 20 items (validated to ~90% coverage at the 20-item operating point; no post-hoc width adjustment is applied).
 
@@ -26,7 +26,7 @@ The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) is the standard short pe
 The BFFM-XGB-20 figures in the table above are the **fixed, pre-specified domain-balanced 20-item form** — the top-4 items per domain — which is the deployed web form, not a post-hoc best-of-grid selection. Evaluated instead under *random* balanced 20-item masking (the random-balanced row below), the model's general partial-response accuracy is lower. Empirical 90%-PI coverage and the paired recovery *r* at each operating point:
 
 <!-- BEGIN GENERATED: coverage-by-regime -->
-- **Deployed 20-item form (SEM-stopped adaptive sim):** 89.5% empirical coverage (*r* = 0.93) — slightly under the nominal 90% by design.
+- **Deployed 20-item form (fixed top-4 per domain):** 89.5% empirical coverage (*r* = 0.93) — slightly under the nominal 90% by design.
 - **Random balanced 20-item masking:** 89.8% empirical coverage (*r* = 0.911).
 - **Full 50 items (self-recovery):** 92.6% empirical coverage (*r* = 0.9997).
 <!-- END GENERATED: coverage-by-regime -->
@@ -45,7 +45,7 @@ Sparse-20 headline metrics are computed on a single fixed balanced mask (RNG see
 | Intellect/Imagination | .65                      | .842          | **.912**        |
 <!-- END GENERATED: per-domain-k20 -->
 
-The Mini-IPIP *α* column reports the published Donnellan et al. (2006) reliabilities, not values computed on this sample — so it is not directly comparable to the same-sample recovery *r* columns (the repo's own OSPP-train Mini-IPIP alpha differ and are in `reliability.json`).
+The Mini-IPIP *α* column reports the published Donnellan et al. (2006) reliabilities, not values computed on this sample — so it is not directly comparable to the same-sample recovery *r* columns (the repo's own OSPP-train Mini-IPIP alpha differ and are in `reliability.json`). The two recovery-*r* columns also use **different item sets**: the Mini-IPIP-*r* column scores the four expert-curated Mini-IPIP items per domain (simple averaging), while the BFFM-XGB-20 column scores the top-4-by-*r* items (XGBoost). So the column-to-column gap reflects *both* scoring method and item selection — not the item set held fixed. The scoring-only vs selection-only decomposition is below.
 
 With only 15 items and XGBoost scoring (3 per domain), BFFM-XGB matches the overall recovery of the 20-item simple-averaging Mini-IPIP (the Mini-IPIP **Overall *r*** in the table above) — fewer items, though the comparison also differs in scoring method and item set. The 15-item figure and the full per-*K* curve are in [NOTES.md](notes/NOTES.md) and `artifacts/variants/reference/ml_vs_averaging_comparison.json`.
 

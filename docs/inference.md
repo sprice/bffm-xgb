@@ -88,7 +88,7 @@ Exported inference dispatches between two coverage-validated regimes by answered
 Empirical coverage of the raw 90% prediction intervals at each validated regime:
 
 <!-- BEGIN GENERATED: coverage-by-regime -->
-- **Deployed 20-item form (SEM-stopped adaptive sim):** 89.5% empirical coverage (*r* = 0.93) — slightly under the nominal 90% by design.
+- **Deployed 20-item form (fixed top-4 per domain):** 89.5% empirical coverage (*r* = 0.93) — slightly under the nominal 90% by design.
 - **Random balanced 20-item masking:** 89.8% empirical coverage (*r* = 0.911).
 - **Full 50 items (self-recovery):** 92.6% empirical coverage (*r* = 0.9997).
 <!-- END GENERATED: coverage-by-regime -->
