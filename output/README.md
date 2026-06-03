@@ -44,6 +44,23 @@ Each variant directory contains:
 - `README.md` -- variant-specific model card with performance tables
 - `provenance.json` -- full audit trail (git hash, data snapshot, training config)
 
+## Intended Use
+
+Research and educational score-recovery of the 50-item IPIP-BFFM from partial responses (as few as 20 items), and reproducible study of sparse short-form scoring. Outputs are population percentiles with empirical 90% prediction intervals.
+
+## Out of Scope
+
+Not validated for clinical diagnosis, employment or other high-stakes selection, or any individual consequential decision. The models recover a self-report questionnaire score, not an external personality trait.
+
+## Limitations
+
+- Norms come from self-selected, anonymous online respondents (OSPP) and may not represent any general population; English-language IPIP items only.
+- No demographic-subgroup or measurement-invariance analysis has been performed; accuracy may vary by gender, age, or region.
+- No external / out-of-distribution validation: every reported number is on a held-out split of the *same* OSPP dataset, so these are score-recovery (recovering the full-scale score from a subset of its own items), not external-trait, metrics. The full-50 *r* ~ 1 is a score-recovery ceiling, not trait validity.
+- The deployed 20-item Emotional Stability subscale is composed entirely of reverse-keyed items, so it is more sensitive to acquiescence and careless responding; the full 50-item assessment is unaffected.
+- Accuracy degrades with fewer items; 20 items is the recommended minimum for reliable scoring.
+- See each variant's `README.md` for per-model performance and the repository `README.md` / `docs/research.md` for the full limitations discussion.
+
 ## Source Code
 
 Training pipeline, evaluation scripts, and inference packages (Python + TypeScript): [github.com/sprice/bffm-xgb](https://github.com/sprice/bffm-xgb)

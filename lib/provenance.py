@@ -199,6 +199,11 @@ _PROVENANCE_PACKAGES = (
     "onnx",
     "onnxmltools",
     "onnxruntime",
+    # The tuner (stage 06 -> tuned_params.json) and the figure renderer
+    # (stage 12) were previously un-versioned in provenance; record them so the
+    # toolchain behind every artifact is fully auditable.
+    "optuna",
+    "matplotlib",
 )
 
 
