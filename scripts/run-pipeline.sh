@@ -17,6 +17,7 @@ NO_GATE="${NO_GATE:-}"
 # ---------------------------------------------------------------------------
 START_STAGE=""
 END_STAGE=""
+RESUME=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -24,6 +25,7 @@ while [[ $# -gt 0 ]]; do
         --end-stage)   END_STAGE="$2";   shift 2 ;;
         --gpu)         GPU=1;            shift   ;;
         --reference-only) REFERENCE_ONLY=1; shift ;;
+        --resume)      RESUME=1;         shift   ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
@@ -44,7 +46,7 @@ END_STAGE="$(canonicalize_stage "$END_STAGE")"
 
 STAGE_ORDER=(
     download load norms norms-check prepare correlations
-    tune train research-eval export notes figures
+    tune train research-eval export notes gen-docs figures
 )
 
 # Validate stage names
@@ -64,7 +66,6 @@ done
 TIMING_LOG="pipeline-timing.log"
 PIPELINE_LOG="pipeline.log"
 CHECKPOINT_DIR=".pipeline-checkpoints"
-CHECKPOINT_STAGES=(norms prepare correlations tune train research-eval figures)
 
 # ---------------------------------------------------------------------------
 # Track the current step so the EXIT trap can record failures
@@ -94,17 +95,6 @@ fmt_duration() {
     printf "%02dh%02dm%02ds" $((secs / 3600)) $(((secs % 3600) / 60)) $((secs % 60))
 }
 
-is_checkpoint_stage() {
-    local stage="$1"
-    local checkpoint
-    for checkpoint in "${CHECKPOINT_STAGES[@]}"; do
-        if [[ "$stage" == "$checkpoint" ]]; then
-            return 0
-        fi
-    done
-    return 1
-}
-
 _STAGE_ACTIVE=0
 [[ -z "$START_STAGE" ]] && _STAGE_ACTIVE=1
 
@@ -122,6 +112,12 @@ run_step() {
         fi
     fi
 
+    # On --resume, skip stages already completed in a prior run (marker present).
+    if [[ -n "$RESUME" && -f "$CHECKPOINT_DIR/$label.done" ]]; then
+        skip_step "$label" "--resume: already complete"
+        return
+    fi
+
     local start_time
     start_time=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
@@ -134,9 +130,7 @@ run_step() {
     local elapsed=$(( $(date +%s) - _STEP_START ))
     echo "$label | started $start_time | $(fmt_duration "$elapsed")" >> "$TIMING_LOG"
     echo "--- $label done ($(fmt_duration "$elapsed"))" | tee -a "$PIPELINE_LOG"
-    if is_checkpoint_stage "$label"; then
-        : > "$CHECKPOINT_DIR/$label.done"
-    fi
+    : > "$CHECKPOINT_DIR/$label.done"
 
     _CURRENT_LABEL=""
 
@@ -180,10 +174,16 @@ if [[ -n "$GPU" ]]; then
     _GPU_FLAG="GPU=1"
 fi
 
-# Reset logs
-> "$TIMING_LOG"
-> "$PIPELINE_LOG"
-rm -rf "$CHECKPOINT_DIR"
+if [[ -n "$RESUME" && -d "$CHECKPOINT_DIR" ]]; then
+    # Resume: keep completed-stage markers and append to the existing logs, so a
+    # crashed multi-day run continues instead of restarting from scratch.
+    echo "=== Resuming; stages with a $CHECKPOINT_DIR/<stage>.done marker are skipped ===" | tee -a "$PIPELINE_LOG"
+else
+    # Fresh run: clear stage markers and truncate the logs.
+    > "$TIMING_LOG"
+    > "$PIPELINE_LOG"
+    rm -rf "$CHECKPOINT_DIR"
+fi
 mkdir -p "$CHECKPOINT_DIR"
 PIPELINE_START=$(date +%s)
 
@@ -221,9 +221,11 @@ run_step "research-eval" "${research_eval_cmd[@]}"
 if [[ -n "$REFERENCE_ONLY" ]]; then
     run_step "export" make export-reference export-repo-readme
     run_step "notes" make notes REFERENCE_ONLY=1
+    run_step "gen-docs" make gen-docs REFERENCE_ONLY=1
 else
     run_step "export" make export-all
     run_step "notes" make notes
+    run_step "gen-docs" make gen-docs
 fi
 run_step "figures" make figures
 

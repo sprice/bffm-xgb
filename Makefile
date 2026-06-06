@@ -79,24 +79,15 @@ _CALLER_PARALLEL_MAKEFLAGS = $(filter -j% -j --jobserver-auth=% --jobserver-fds=
 
 .PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full verify-release pull-reference prepare correlations tune train train-1 train-2 train-3 validate baselines simulate export export-all export-repo-readme export-readme export-reference export-ablation-none export-ablation-focused figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-summary research-summary-strict notes gen-docs check-docs refresh-docs upload-hf upload-hf-reference lint format typecheck test test-lib test-inference test-web fixtures smoke smoke-clean archive clean restore web-setup web-dev web-build deploy-web
 
-# Ordered phases. Each stage is a sub-make so the order holds even under `make -j`
-# (recipe lines run sequentially), while each stage keeps its own internal
-# parallelism (train / research-eval fan-out). This matters now that prepare
-# depends on the stage-03 norms artifact (train-only norms coupling).
+# Full pipeline, delegated to scripts/run-pipeline.sh -- the single source of
+# truth for the stage sequence, so `make all` and the script cannot drift (the
+# bug that once dropped gen-docs from this recipe). The script runs each stage as
+# a sub-make in order (parallelism stays inside train / research-eval) and adds
+# per-stage logging/timing, completed-stage checkpoints, and --resume. For a tuned
+# or partial run (thread counts, --reference-only, --start-stage, --resume), call
+# the script directly with its env vars/flags; plain `make all` is the full run.
 all:
-	$(MAKE) download
-	$(MAKE) load
-	$(MAKE) norms
-	$(MAKE) norms-check
-	$(MAKE) prepare
-	$(MAKE) correlations
-	$(MAKE) tune
-	$(MAKE) train
-	$(MAKE) research-eval
-	$(MAKE) export-all
-	$(MAKE) notes
-	$(MAKE) gen-docs
-	$(MAKE) figures
+	bash scripts/run-pipeline.sh
 
 setup: setup-python setup-typescript setup-web
 
@@ -289,7 +280,6 @@ gen-docs:
 check-docs:
 	$(PY) scripts/generate_doc_data.py all --check \
 		|| { echo "ERROR: generated docs are stale or hand-edited (do not match the artifacts). Run 'make gen-docs' and commit the result." >&2; exit 1; }
-	$(PY) scripts/generate_doc_data.py all
 	@git diff --exit-code HEAD -- web/src/client/learn/content/repo-facts.generated.ts $(MARKDOWN_DOC_TARGETS) \
 		|| { echo "ERROR: generated docs are stale (or the regenerated refactor is uncommitted). Run 'make gen-docs' and commit the result." >&2; exit 1; }
 
