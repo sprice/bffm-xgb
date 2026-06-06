@@ -126,7 +126,7 @@ they correlate moderately with other domains, which inflates their composite
 utility scores; but those cross-domain correlations are too weak to actually
 predict the other domains. The best-served domain achieves near-perfect
 recovery while the worst-served domain falls to weak/moderate prediction
-(*r* ≈ 0.43, driven only by cross-domain inference).
+(*r* ≈ {{GREEDY_WORST_DOMAIN_R}}, driven only by cross-domain inference).
 
 This is not a cold-start problem. A constrained greedy start (one item per
 domain first, then greedy fill) still fell far below domain-balanced and
@@ -137,7 +137,7 @@ allocation.
 ### Finding 2: The Adaptive Dream Collapses to the Static Strategy
 
 We built a full adaptive assessment simulation with SEM-based stopping
-(threshold 0.45, minimum 4 items per domain, held-out respondents from the
+(threshold {{SEM_THRESHOLD}}, minimum {{MIN_ITEMS_PER_DOMAIN}} items per domain, held-out respondents from the
 test split). The result was definitive: every respondent converged to exactly
 20 items in a 4-4-4-4-4 allocation. The adaptive strategy collapsed to the
 static domain-balanced strategy.
@@ -411,7 +411,7 @@ significance.
 ### Simulation Results (20-Item Operating Point)
 
 Held-out respondents from the test split, correlation-ranked selection,
-SEM threshold 0.45, min 4 items per domain. All respondents converge to
+SEM threshold {{SEM_THRESHOLD}}, min {{MIN_ITEMS_PER_DOMAIN}} items per domain. All respondents converge to
 exactly 20 items (4-4-4-4-4).
 
 <!-- BEGIN:simulation -->

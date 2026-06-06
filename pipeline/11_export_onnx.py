@@ -30,9 +30,11 @@ if TYPE_CHECKING:
 
 from lib.constants import (
     DEFAULT_STAGE07_CV_FOLDS,
+    DOMAIN_DISPLAY_LABELS,
     DOMAIN_LABELS,
     DOMAINS,
     ITEM_COLUMNS,
+    ITEMS_PER_DOMAIN,
     MODEL_STEM,
     QUANTILE_NAME_LIST,
     QUANTILES,
@@ -1114,25 +1116,23 @@ def generate_readme(config: dict, artifacts_dir: Path, model_dir: Path, *, varia
 
     norms = config["norms"] if "norms" in config else load_norms()
 
+    # Display labels + item ranges single-sourced from lib.constants so the card
+    # cannot drift from the canonical domain set (previously hardcoded rows that
+    # also diverged from DOMAIN_LABELS' compact internal forms). Byte-identical to
+    # the prior literal rows (locked by tests/test_model_card_consistency.py).
     domain_table = _format_md_table(
         ["Domain", "Code", "Items"],
         [
-            ["Extraversion", "`ext`", "ext1-ext10"],
-            ["Agreeableness", "`agr`", "agr1-agr10"],
-            ["Conscientiousness", "`csn`", "csn1-csn10"],
-            ["Emotional Stability", "`est`", "est1-est10"],
-            ["Intellect/Imagination", "`opn`", "opn1-opn10"],
+            [DOMAIN_DISPLAY_LABELS[d], f"`{d}`", f"{d}1-{d}{ITEMS_PER_DOMAIN}"]
+            for d in DOMAINS
         ],
     )
 
     norms_table = _format_md_table(
         ["Domain", "Mean", "SD"],
         [
-            ["Extraversion", f"{norms['ext']['mean']:.3f}", f"{norms['ext']['sd']:.3f}"],
-            ["Agreeableness", f"{norms['agr']['mean']:.3f}", f"{norms['agr']['sd']:.3f}"],
-            ["Conscientiousness", f"{norms['csn']['mean']:.3f}", f"{norms['csn']['sd']:.3f}"],
-            ["Emotional Stability", f"{norms['est']['mean']:.3f}", f"{norms['est']['sd']:.3f}"],
-            ["Intellect/Imagination", f"{norms['opn']['mean']:.3f}", f"{norms['opn']['sd']:.3f}"],
+            [DOMAIN_DISPLAY_LABELS[d], f"{norms[d]['mean']:.3f}", f"{norms[d]['sd']:.3f}"]
+            for d in DOMAINS
         ],
     )
 

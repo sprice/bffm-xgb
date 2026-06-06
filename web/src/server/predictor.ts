@@ -29,8 +29,18 @@ const SESSION_OPTIONS: ort.InferenceSession.SessionOptions = {
   executionProviders: ["cpu"],
 };
 
-const DOMAINS = ["ext", "agr", "csn", "est", "opn"] as const;
-const QUANTILES = ["q05", "q50", "q95"] as const;
+// Fixed model architecture. These are the canonical lib/constants.py DOMAINS
+// order and QUANTILE_NAME_LIST; the merged ONNX model's outputs are exactly
+// their cross-product (`${domain}_${q}`). They are intentionally inline (not
+// read from config.json) because they are structural invariants of the model
+// family, but predictor-config-parity.test.ts locks them against the deployed
+// config.json so a divergent model fails CI instead of mis-keying outputs.
+export const DOMAINS = ["ext", "agr", "csn", "est", "opn"] as const;
+export const QUANTILES = ["q05", "q50", "q95"] as const;
+
+// Answered-item count at/above which the full-50 calibration regime applies.
+// Must match a key in config.json `calibration` (locked by the parity test).
+export const FULL_REGIME_MIN_ANSWERED = 50;
 
 type Domain = (typeof DOMAINS)[number];
 type Quantile = (typeof QUANTILES)[number];
@@ -67,7 +77,7 @@ export function calibrationRegime(responses: Float32Array): string {
   for (const v of responses) {
     if (!Number.isNaN(v)) nAnswered++;
   }
-  return nAnswered >= 50 ? "full_50" : "sparse_20_balanced";
+  return nAnswered >= FULL_REGIME_MIN_ANSWERED ? "full_50" : "sparse_20_balanced";
 }
 
 export class IPIPBFFMPredictor {

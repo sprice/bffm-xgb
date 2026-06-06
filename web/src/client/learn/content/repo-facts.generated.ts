@@ -107,4 +107,22 @@ export const repoFacts = {
     colsample_bytree: 0.5291846507889049,
     min_child_weight: 4,
   },
+  tuningObjective: {
+    sparse20Weight: 0.8,
+    full50Weight: 0.2,
+    sparse20PenaltyWeight: 2.0,
+    sparse20PenaltyFloor: 0.85,
+    full50PenaltyWeight: 1.0,
+    full50PenaltyFloor: 0.95,
+  },
+  calibration: {
+    coverageLow: 0.85,
+    coverageHigh: 0.95,
+    targetCoverage: 0.9,
+    coverageFloor: 0.5,
+  },
+  adaptiveStop: {
+    semThreshold: 0.45,
+    minItemsPerDomain: 4,
+  },
 } as const;

@@ -103,8 +103,8 @@ export const chapter09Training: Chapter = {
           `After fitting q05, q50, and q95 models, stage 07 checks ${abbr("empirical interval coverage", "The proportion of true values that actually fall inside the predicted interval on held-out data.")}. If the nominal 90% interval is too narrow or too wide, it derives a simple scale factor to adjust reported percentile interval width later.`,
         )}
         ${codeBlock(
-          `if coverage < 0.85: scale = 0.90 / max(coverage, 0.5)
-elif coverage > 0.95: scale = 0.90 / coverage
+          `if coverage < ${repoFacts.calibration.coverageLow.toFixed(2)}: scale = ${repoFacts.calibration.targetCoverage.toFixed(2)} / max(coverage, ${repoFacts.calibration.coverageFloor})
+elif coverage > ${repoFacts.calibration.coverageHigh.toFixed(2)}: scale = ${repoFacts.calibration.targetCoverage.toFixed(2)} / coverage
 else: scale = 1.0`,
           "text",
         )}
@@ -173,7 +173,7 @@ else: scale = 1.0`,
           "note",
           "Full-50 r is a ceiling check",
           paragraph(
-            `The full-50 validation r ≈ 1 is a score-recovery ceiling: the target is a deterministic transform (domain mean -> percentile) of those same 50 items, so r ≈ 1 is expected and just confirms the pipeline works, not external-trait validity. The real operating-point accuracy is the deployed domain-balanced 20-item form at r ≈ 0.93.`,
+            `The full-50 validation r ≈ 1 is a score-recovery ceiling: the target is a deterministic transform (domain mean -> percentile) of those same 50 items, so r ≈ 1 is expected and just confirms the pipeline works, not external-trait validity. The real operating-point accuracy is the deployed domain-balanced 20-item form at r ≈ ${repoFacts.baselineK20.domainBalancedR.toFixed(2)}.`,
           ),
         )}
       `,

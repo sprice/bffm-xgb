@@ -44,6 +44,8 @@ from lib.constants import (
     DEFAULT_PARAMS,
     DOMAINS,
     ITEM_COLUMNS,
+    TUNING_OBJECTIVE,
+    TUNING_OBJECTIVE_FALLBACK,
 )
 from lib.item_info import file_sha256, load_item_info_strict
 from lib.mini_ipip import load_mini_ipip_mapping
@@ -148,6 +150,38 @@ def _safe_pearson(
     if not np.isfinite(r):
         return floor
     return float(r)
+
+
+def deployment_aligned_objective(
+    mean_sparse: float, min_sparse: float, mean_full: float
+) -> float:
+    """Deployment-aligned tuning composite (single-sourced policy weights).
+
+    Single source of truth: ``lib.constants.TUNING_OBJECTIVE``. Rewards mean
+    sparse-20 correlation with a smaller full-50 share, then subtracts hinge
+    penalties when the sparse-20 minimum or full-50 mean fall under their
+    floors. Value-identical to the prior inline literals.
+    """
+    o = TUNING_OBJECTIVE
+    sparse_penalty = o["sparse20_penalty_weight"] * max(
+        0.0, o["sparse20_penalty_floor"] - min_sparse
+    )
+    full_penalty = o["full50_penalty_weight"] * max(
+        0.0, o["full50_penalty_floor"] - mean_full
+    )
+    return (
+        o["sparse20_weight"] * mean_sparse + o["full50_weight"] * mean_full
+    ) - sparse_penalty - full_penalty
+
+
+def full50_fallback_objective(mean_full: float, min_full: float) -> float:
+    """Conservative full-50-only objective when sparse-20 eval is unavailable.
+
+    Single source of truth: ``lib.constants.TUNING_OBJECTIVE_FALLBACK``.
+    Value-identical to the prior inline literals (1.5, 0.90).
+    """
+    f = TUNING_OBJECTIVE_FALLBACK
+    return mean_full - f["penalty_weight"] * max(0.0, f["min_r_floor"] - min_full)
 
 
 # ---------------------------------------------------------------------------
@@ -391,18 +425,14 @@ def _run_optuna_tuning(
             min_sparse = float(min(correlations_sparse))
             mean_full = float(np.mean(correlations_full)) if correlations_full else mean_sparse
 
-            sparse_penalty = 2.0 * max(0.0, 0.85 - min_sparse)
-            full_penalty = 1.0 * max(0.0, 0.95 - mean_full)
-            composite = (0.80 * mean_sparse + 0.20 * mean_full) - sparse_penalty - full_penalty
+            composite = deployment_aligned_objective(mean_sparse, min_sparse, mean_full)
         else:
             if not correlations_full:
                 return float("-inf")
             mean_full = float(np.mean(correlations_full))
             min_full = float(min(correlations_full))
 
-            # Conservative full-50-only fallback objective.
-            full_penalty = 1.5 * max(0.0, 0.90 - min_full)
-            composite = mean_full - full_penalty
+            composite = full50_fallback_objective(mean_full, min_full)
 
         if trial.number % 10 == 0:
             gc.collect()
@@ -415,13 +445,23 @@ def _run_optuna_tuning(
 
     log.info("Starting Optuna optimization with %d trials (parallel=%d)...", n_trials, parallel_trials)
     if sparse20_eval_enabled:
+        _o = TUNING_OBJECTIVE
         log.info(
-            "Objective: 0.80*mean_r_sparse20 + 0.20*mean_r_full "
-            "- 2.0*max(0,0.85-min_r_sparse20) - 1.0*max(0,0.95-mean_r_full)"
+            "Objective: %g*mean_r_sparse20 + %g*mean_r_full "
+            "- %g*max(0,%g-min_r_sparse20) - %g*max(0,%g-mean_r_full)",
+            _o["sparse20_weight"],
+            _o["full50_weight"],
+            _o["sparse20_penalty_weight"],
+            _o["sparse20_penalty_floor"],
+            _o["full50_penalty_weight"],
+            _o["full50_penalty_floor"],
         )
     else:
+        _f = TUNING_OBJECTIVE_FALLBACK
         log.info(
-            "Objective (full-50 fallback): mean_r_full - 1.5*max(0,0.90-min_r_full)"
+            "Objective (full-50 fallback): mean_r_full - %g*max(0,%g-min_r_full)",
+            _f["penalty_weight"],
+            _f["min_r_floor"],
         )
     t0 = time.time()
     study.optimize(objective, n_trials=n_trials, n_jobs=parallel_trials, show_progress_bar=True)

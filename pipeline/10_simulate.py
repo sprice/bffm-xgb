@@ -38,7 +38,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from lib.constants import DOMAIN_LABELS, DOMAINS, ITEM_COLUMNS, MODEL_STEM
+from lib.constants import ADAPTIVE_STOP, DOMAIN_LABELS, DOMAINS, ITEM_COLUMNS, MODEL_STEM
 from lib.item_info import (
     load_item_info_for_model,
 )
@@ -107,11 +107,12 @@ class AdaptiveConfig:
     min_items: int = 8
     max_items: int = 50
     ci_width_target: float = 0.5  # Target 90% CI width in RAW SCORE units (1-5 scale)
-    min_items_per_domain: int = 4  # At least 4 items per domain before stopping
+    # At least N items per domain before stopping (single-sourced policy).
+    min_items_per_domain: int = ADAPTIVE_STOP["min_items_per_domain"]
     target_items_per_domain: dict[str, int] | int = 1
     use_ci_stopping: bool = False
     use_sem_stopping: bool = True
-    sem_threshold: float = 0.45
+    sem_threshold: float = ADAPTIVE_STOP["sem_threshold"]  # single-sourced policy
     selection_weights: SelectionWeights = field(default_factory=SelectionWeights)
     selection_strategy: str = "correlation_ranked"
 

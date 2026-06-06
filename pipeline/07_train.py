@@ -40,6 +40,7 @@ from sklearn.model_selection import KFold, train_test_split
 
 from lib.config import load_config_with_base
 from lib.constants import (
+    CALIBRATION_POLICY,
     DEFAULT_EARLY_STOPPING_ROUNDS,
     DEFAULT_LOCAL_CV_PARALLEL_FOLDS,
     DEFAULT_PARAMS,
@@ -711,19 +712,32 @@ def _evaluate_domain_models(
     return metrics
 
 
+def scale_for_coverage(coverage: float) -> float:
+    """Scale a 90% PI toward nominal coverage per the single-sourced policy.
+
+    Single source of truth: ``lib.constants.CALIBRATION_POLICY``. Below
+    ``coverage_low`` the interval is widened toward ``target_coverage`` (the
+    ``coverage_floor`` clamps the denominator so a tiny observed coverage can't
+    explode the scale); above ``coverage_high`` it is narrowed; in band it is
+    left unscaled. Value-identical to the prior inline literals.
+    """
+    low = CALIBRATION_POLICY["coverage_low"]
+    high = CALIBRATION_POLICY["coverage_high"]
+    target = CALIBRATION_POLICY["target_coverage"]
+    floor = CALIBRATION_POLICY["coverage_floor"]
+    if coverage < low:
+        return target / max(coverage, floor)
+    if coverage > high:
+        return target / coverage
+    return 1.0
+
+
 def _compute_calibration_params(
     domain_models: dict[str, dict[str, Any]],
     X_val: pd.DataFrame,
     y_val: pd.DataFrame,
 ) -> dict[str, dict[str, float]]:
     """Compute calibration parameters (observed coverage + scale factor) per domain."""
-    def _scale_for_coverage(coverage: float) -> float:
-        if coverage < 0.85:
-            return 0.90 / max(coverage, 0.5)
-        if coverage > 0.95:
-            return 0.90 / coverage
-        return 1.0
-
     calibration: dict[str, dict[str, float]] = {}
 
     missing_pct_cols = [f"{d}_percentile" for d in DOMAINS if f"{d}_percentile" not in y_val.columns]
@@ -750,7 +764,7 @@ def _compute_calibration_params(
         q_lower_pred, q50_pred, q_upper_pred = stacked[0], stacked[1], stacked[2]
 
         coverage = float(np.mean((y_true >= q_lower_pred) & (y_true <= q_upper_pred)))
-        scale = _scale_for_coverage(coverage)
+        scale = scale_for_coverage(coverage)
 
         calibration[domain] = {
             "observed_coverage": coverage,
@@ -776,12 +790,7 @@ def _calibration_from_metrics(
         coverage = float(coverage_raw)
         if not np.isfinite(coverage):
             continue
-        if coverage < 0.85:
-            scale = 0.90 / max(coverage, 0.5)
-        elif coverage > 0.95:
-            scale = 0.90 / coverage
-        else:
-            scale = 1.0
+        scale = scale_for_coverage(coverage)
         calibration[domain] = {
             "observed_coverage": coverage,
             "scale_factor": float(scale),

@@ -25,7 +25,9 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 
 from lib.config import load_config_with_base
 from lib.constants import (
+    ADAPTIVE_STOP,
     DEFAULT_STAGE07_CV_FOLDS,
+    DOMAIN_DISPLAY_LABELS,
     DOMAINS,
     QUANTILE_NAME_LIST,
     REFERENCE_VARIANT,
@@ -38,13 +40,9 @@ NOTES_PATH = PACKAGE_ROOT / "notes" / "NOTES.md"
 RESEARCH_SUMMARY_PATH = ARTIFACTS_DIR / "research_summary.json"
 
 DOMAIN_ORDER = ["ext", "agr", "csn", "est", "opn"]
-DOMAIN_LABELS = {
-    "ext": "Extraversion",
-    "agr": "Agreeableness",
-    "csn": "Conscientiousness",
-    "est": "Emotional Stability",
-    "opn": "Intellect/Imagination",
-}
+# Display labels single-sourced in lib.constants.DOMAIN_DISPLAY_LABELS (shared
+# with the doc generator and the model-card template) so they cannot drift.
+DOMAIN_LABELS = DOMAIN_DISPLAY_LABELS
 DOMAIN_KEYS_BASELINE = {
     "ext": "Extraversion",
     "agr": "Agreeableness",
@@ -1314,7 +1312,9 @@ SECTION_GENERATORS = {
 }
 
 
-def update_notes(dry_run: bool = False, reference_only: bool = False) -> None:
+def update_notes(
+    dry_run: bool = False, reference_only: bool = False, check: bool = False
+) -> None:
     if not NOTES_TEMPLATE_PATH.exists():
         print(f"ERROR: Template not found: {NOTES_TEMPLATE_PATH}")
         sys.exit(1)
@@ -1352,9 +1352,46 @@ def update_notes(dry_run: bool = False, reference_only: bool = False) -> None:
             print(f"\nWARNING: {failed} sections failed to generate — file not written")
             sys.exit(1)
 
-        if not dry_run:
+        # Inline placeholders for hand-authored narrative that cites single-sourced
+        # policy constants (lib.constants.ADAPTIVE_STOP) or a derived metric, so the
+        # prose can't drift. Architecture form-size mentions ("4 items per domain"
+        # for the domain-balanced form) intentionally stay inline as literals.
+        topk20 = load_reference_notes_inputs()["baseline_comparison_results"][
+            "per_domain"
+        ]["20"]["adaptive_topk"]
+        worst_greedy_r = min(float(topk20[d]["pearson_r"]) for d in DOMAIN_ORDER)
+        placeholders = {
+            "{{SEM_THRESHOLD}}": f"{ADAPTIVE_STOP['sem_threshold']:g}",
+            "{{MIN_ITEMS_PER_DOMAIN}}": str(ADAPTIVE_STOP["min_items_per_domain"]),
+            "{{GREEDY_WORST_DOMAIN_R}}": f"{worst_greedy_r:.2f}",
+        }
+        for token, value in placeholders.items():
+            text = text.replace(token, value)
+        # Any {{...}} token surviving substitution is a template placeholder with
+        # no matching entry above (e.g. a rename/typo): str.replace() would silently
+        # leave it, letting a hardcoded literal drift back in undetected. Fail loudly.
+        # (A template that simply doesn't use a given placeholder is fine.)
+        leftover = re.findall(r"\{\{[A-Za-z0-9_]+\}\}", text)
+        if leftover:
+            print(f"  FAIL  unresolved placeholders: {sorted(set(leftover))}", file=sys.stderr)
+            sys.exit(1)
+
+        rel = NOTES_PATH.relative_to(PACKAGE_ROOT)
+        if check:
+            # Non-destructive staleness gate (mirrors generate_doc_data --check):
+            # regenerate from the tracked research_summary.json and compare to the
+            # committed file WITHOUT writing, so check-docs catches a retrain that
+            # never re-ran `make notes` (and hand-edits to the generated file).
+            if not NOTES_PATH.exists():
+                print(f"MISSING: {rel}", file=sys.stderr)
+                sys.exit(1)
+            if NOTES_PATH.read_text() != text:
+                print(f"STALE: {rel} is out of date; run `make notes`.", file=sys.stderr)
+                sys.exit(1)
+            print(f"ok: {rel}")
+        elif not dry_run:
             NOTES_PATH.write_text(text)
-            print(f"\nUpdated {updated} sections in {NOTES_PATH.relative_to(PACKAGE_ROOT)}")
+            print(f"\nUpdated {updated} sections in {rel}")
         else:
             print(f"\nDry run: {updated} sections would be updated")
     finally:
@@ -1375,8 +1412,18 @@ def main() -> None:
             "run), instead of failing on absent ablation bundles."
         ),
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "Verify the committed notes/NOTES.md is up to date with the tracked "
+            "artifacts without writing (non-zero exit if stale). Used by check-docs."
+        ),
+    )
     args = parser.parse_args()
-    update_notes(dry_run=args.dry_run, reference_only=args.reference_only)
+    update_notes(
+        dry_run=args.dry_run, reference_only=args.reference_only, check=args.check
+    )
 
 
 if __name__ == "__main__":

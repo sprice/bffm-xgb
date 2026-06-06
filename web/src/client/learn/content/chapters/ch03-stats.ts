@@ -122,7 +122,7 @@ export const chapter03Stats: Chapter = {
           "note",
           "Reading the top of the scale",
           paragraph(
-            `The full-50 r ≈ 1 is a score-recovery ceiling, not external-trait validity: the target is a deterministic transform (domain mean -> percentile) of those same 50 items, so r ≈ 1 is expected. The real operating-point accuracy is the K = 20 short form at r ≈ 0.93.`,
+            `The full-50 r ≈ 1 is a score-recovery ceiling, not external-trait validity: the target is a deterministic transform (domain mean -> percentile) of those same 50 items, so r ≈ 1 is expected. The real operating-point accuracy is the K = 20 short form at r ≈ ${repoFacts.baselineK20.domainBalancedR.toFixed(2)}.`,
           ),
         )}
       `,

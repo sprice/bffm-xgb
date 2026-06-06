@@ -2743,10 +2743,15 @@ def test_run_pipeline_writes_checkpoint_markers_for_major_stages(tmp_path) -> No
     assert result.returncode == 0
 
     checkpoint_dir = tmp_path / ".pipeline-checkpoints"
+    # Every stage that actually RUNS drops a marker (run-pipeline.sh marks every
+    # stage so --resume can skip any completed stage, incl. the expensive download
+    # — see the "marking every stage" change in commit 106db88, which replaced the
+    # old CHECKPOINT_STAGES allowlist). With --end-stage correlations, download
+    # through correlations run; tune (and everything after) does not.
+    assert (checkpoint_dir / "download.done").exists()
     assert (checkpoint_dir / "norms.done").exists()
     assert (checkpoint_dir / "prepare.done").exists()
     assert (checkpoint_dir / "correlations.done").exists()
-    assert not (checkpoint_dir / "download.done").exists()
     assert not (checkpoint_dir / "tune.done").exists()
 
 

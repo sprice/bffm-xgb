@@ -15,6 +15,18 @@ import {
 import type { Chapter } from "../../types";
 import { mountSemWidget } from "../../widgets";
 
+// Worked-example SEM: alpha_k = (k·r̄)/(1+(k-1)·r̄); SEM = SD·sqrt(1-alpha_k).
+// Computed at render from the current Extraversion norms in repoFacts so the
+// printed numbers can never drift from the artifacts (no hardcoded alpha/SEM).
+const semFor = (k: number, rBar: number, sd: number) => {
+  const alpha = (k * rBar) / (1 + (k - 1) * rBar);
+  return { alpha, sem: sd * Math.sqrt(1 - alpha) };
+};
+const exemplarRBar = repoFacts.interItemRBar.ext;
+const exemplarSd = repoFacts.norms.ext.sd;
+const sem3 = semFor(3, exemplarRBar, exemplarSd);
+const sem4 = semFor(4, exemplarRBar, exemplarSd);
+
 export const chapter10Evaluation: Chapter = {
   slug: "10-stages-08-to-10",
   order: 10,
@@ -43,7 +55,7 @@ export const chapter10Evaluation: Chapter = {
           "note",
           "Ceiling check, not validity",
           paragraph(
-            `The full-50 r ≈ 1 is a score-recovery ceiling: the target is a deterministic transform (domain mean -> percentile) of those same 50 items, so r ≈ 1 is expected and confirms the pipeline works rather than external-trait validity. The real operating-point accuracy is the deployed domain-balanced 20-item form at r ≈ 0.93.`,
+            `The full-50 r ≈ 1 is a score-recovery ceiling: the target is a deterministic transform (domain mean -> percentile) of those same 50 items, so r ≈ 1 is expected and confirms the pipeline works rather than external-trait validity. The real operating-point accuracy is the deployed domain-balanced 20-item form at r ≈ ${repoFacts.baselineK20.domainBalancedR.toFixed(2)}.`,
           ),
         )}
       `,
@@ -116,7 +128,7 @@ SEM = SD_domain * sqrt(1 - alpha_k)`,
           "text",
         )}
         ${paragraph(
-          "Earlier work experimented with other SEM thresholds during exploration. Currently the canonical operating point uses a 0.45 threshold plus a minimum of 4 items per domain; in practice that produces a fixed 20-item pattern in the reference simulation.",
+          `Earlier work experimented with other SEM thresholds during exploration. Currently the canonical operating point uses a ${repoFacts.adaptiveStop.semThreshold} threshold plus a minimum of ${repoFacts.adaptiveStop.minItemsPerDomain} items per domain; in practice that produces a fixed 20-item pattern in the reference simulation.`,
         )}
         ${callout(
           "note",
@@ -138,12 +150,12 @@ SEM = SD_domain * sqrt(1 - alpha_k)`,
           `Using current Extraversion values, r̄ ≈ ${repoFacts.interItemRBar.ext.toFixed(4)} and SD ≈ ${repoFacts.norms.ext.sd.toFixed(4)}.`,
         )}
         ${codeBlock(
-          `k = 3  -> alpha ≈ 0.726, SEM ≈ 0.477
-k = 4  -> alpha ≈ 0.779, SEM ≈ 0.428`,
+          `k = 3  -> alpha ≈ ${sem3.alpha.toFixed(3)}, SEM ≈ ${sem3.sem.toFixed(3)}
+k = 4  -> alpha ≈ ${sem4.alpha.toFixed(3)}, SEM ≈ ${sem4.sem.toFixed(3)}`,
           "text",
         )}
         ${paragraph(
-          `So moving from 3 to 4 Extraversion items pushes SEM below a 0.45 target. Stopping is framed in terms of ${abbr("measurement precision", "How narrowly and reliably a score estimates the trait rather than fluctuating because of measurement error.")}; the item count follows from the precision requirement.`,
+          `So moving from 3 to 4 Extraversion items pushes SEM below a ${repoFacts.adaptiveStop.semThreshold} target. Stopping is framed in terms of ${abbr("measurement precision", "How narrowly and reliably a score estimates the trait rather than fluctuating because of measurement error.")}; the item count follows from the precision requirement.`,
         )}
       `,
     )}
