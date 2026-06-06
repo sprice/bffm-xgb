@@ -1,9 +1,9 @@
 {
   "provenance": {
     "data_snapshot_id": "norms_sha256:a8c7c1a0dac762bc47b5a36094ffb101696fcda45aae6a8c4f46c14fb2502bf5",
-    "preprocessing_version": "f1463f53c2f4676f92b944220997bc5827fa2229",
+    "preprocessing_version": "2c59dcc34f0989ba8d647714ced9e54c9e9e12fc",
     "script": "04_prepare_data.py",
-    "git_hash": "f1463f53c2f4676f92b944220997bc5827fa2229",
+    "git_hash": "2c59dcc34f0989ba8d647714ced9e54c9e9e12fc",
     "rng_seed": 42,
     "environment": {
       "python_version": "3.14.3",
@@ -17,7 +17,9 @@
         "pandas": "3.0.0",
         "onnx": "1.20.0",
         "onnxmltools": "1.14.0",
-        "onnxruntime": "1.24.1"
+        "onnxruntime": "1.24.1",
+        "optuna": "4.3.0",
+        "matplotlib": "3.10.8"
       }
     },
     "db_path": "data/processed/ipip_bffm.db",

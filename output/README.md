@@ -32,9 +32,11 @@ Each model takes up to 50 item responses (Likert 1--5) and predicts Big Five dom
 
 ## Variants
 
-| Variant     | Description             |
-|-------------|-------------------------|
-| `reference` | Primary published model |
+| Variant            | Description               |
+|--------------------|---------------------------|
+| `ablation_focused` | Research ablation variant |
+| `ablation_none`    | Research ablation variant |
+| `reference`        | Primary published model   |
 
 The primary model is **`reference`**. Other variants are research ablations that isolate the contribution of each sparsity augmentation strategy.
 

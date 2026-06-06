@@ -206,10 +206,11 @@ Auto-generated from `artifacts/research_summary.json`, which aggregates
 `models/*/training_report.json` and per-variant evaluation artifacts.
 
 <!-- BEGIN:ablation_overview -->
-> Ablation variants (no-sparsity, focused-only) were not run in this reference-only build; only the reference run is shown below.
-| Variant   | Data Regime  | Train Val r (full-50) | Validate r (full-50) | Validate r (sparse-20) | Baselines K20 r (domain-balanced) | Simulation r | Complete |
-|-----------|--------------|-----------------------|----------------------|------------------------|-----------------------------------|--------------|----------|
-| Reference | canonical_v1 | 0.9997                | 0.9997               | 0.9107                 | 0.9277                            | 0.9273       | yes      |
+| Variant                | Data Regime  | Train Val r (full-50) | Validate r (full-50) | Validate r (sparse-20) | Baselines K20 r (domain-balanced) | Simulation r | Complete |
+|------------------------|--------------|-----------------------|----------------------|------------------------|-----------------------------------|--------------|----------|
+| Reference              | canonical_v1 | 0.9997                | 0.9997               | 0.9107                 | 0.9277                            | 0.9273       | yes      |
+| Ablation: No Sparsity  | canonical_v1 | 1.0000                | 1.0000               | 0.7418                 | 0.7792                            | 0.7772       | yes      |
+| Ablation: Focused Only | canonical_v1 | 0.9997                | 0.9997               | 0.9105                 | 0.9277                            | 0.9273       | yes      |
 <!-- END:ablation_overview -->
 
 ### Cross-Variant Provenance Locks
@@ -218,10 +219,11 @@ Short-hash provenance view used to confirm all reported numbers are tied to
 their exact split and hyperparameter locks.
 
 <!-- BEGIN:ablation_provenance -->
-> Ablation variants (no-sparsity, focused-only) were not run in this reference-only build; only the reference run is shown below.
-| Variant   | Split Signature | Train SHA256 | Hyperparams SHA256 | Git Hash     | Errors |
-|-----------|-----------------|--------------|--------------------|--------------|--------|
-| Reference | f688d5f439e8    | 858fd9123edd | eb1fc341bc5c       | d8b79fd23cd0 | none   |
+| Variant                | Split Signature | Train SHA256 | Hyperparams SHA256 | Git Hash     | Errors |
+|------------------------|-----------------|--------------|--------------------|--------------|--------|
+| Reference              | f688d5f439e8    | 858fd9123edd | eb1fc341bc5c       | 2c59dcc34f09 | none   |
+| Ablation: No Sparsity  | f688d5f439e8    | 858fd9123edd | eb1fc341bc5c       | 2c59dcc34f09 | none   |
+| Ablation: Focused Only | f688d5f439e8    | 858fd9123edd | eb1fc341bc5c       | 2c59dcc34f09 | none   |
 <!-- END:ablation_provenance -->
 
 ### Cross-Variant Detailed Validation (All Runs)
@@ -229,9 +231,6 @@ their exact split and hyperparameter locks.
 Full-50 and sparse-20 validation tables for each trained variant.
 
 <!-- BEGIN:ablation_validation_details -->
-> Ablation variants (no-sparsity, focused-only) were not run in this reference-only build; only the reference run is shown below.
-
-
 #### Reference
 
 
@@ -264,6 +263,72 @@ The deployed domain-balanced 20-item form shows the same under-coverage at the s
 
 > Sparse-20 headline metrics are computed on a single fixed balanced mask (RNG seed 42); the reported bootstrap CI reflects respondent-sampling variance only and does not include mask-selection variance (stage-07 training averages over multiple masks).
 
+
+#### Ablation: No Sparsity
+
+
+**Full-50 validation:**
+
+
+| Domain                | r          | MAE      | RMSE     | Within-5   | 90% Coverage | Central Cov (20-80) | Tail Cov (<20,>80) | Raw Crossing Rate |
+|-----------------------|------------|----------|----------|------------|--------------|---------------------|--------------------|-------------------|
+| Extraversion          | 1.0000     | 0.13     | 0.19     | 100.0%     | 94.6%        | 94.5%               | 94.8%              | 37.4%             |
+| Agreeableness         | 1.0000     | 0.15     | 0.23     | 100.0%     | 94.9%        | 94.9%               | 95.0%              | 38.6%             |
+| Conscientiousness     | 1.0000     | 0.15     | 0.22     | 100.0%     | 94.7%        | 94.6%               | 94.9%              | 41.6%             |
+| Emotional Stability   | 1.0000     | 0.14     | 0.21     | 100.0%     | 95.0%        | 94.9%               | 95.1%              | 39.8%             |
+| Intellect/Imagination | 1.0000     | 0.14     | 0.22     | 100.0%     | 88.4%        | 84.6%               | 93.2%              | 41.4%             |
+| **Overall**           | **1.0000** | **0.14** | **0.21** | **100.0%** | **93.5%**    | **92.7%**           | **94.6%**          | **39.7%**         |
+
+
+**Sparse-20 validation:**
+
+
+| Domain                | r          | MAE       | RMSE      | Within-5  | 90% Coverage | Central Cov (20-80) | Tail Cov (<20,>80) |
+|-----------------------|------------|-----------|-----------|-----------|--------------|---------------------|--------------------|
+| Extraversion          | 0.8703     | 39.93     | 46.47     | 9.0%      | 1.0%         | 0.0%                | 2.2%               |
+| Agreeableness         | 0.8366     | 30.54     | 36.41     | 12.1%     | 3.9%         | 0.1%                | 9.0%               |
+| Conscientiousness     | 0.7978     | 38.75     | 45.15     | 8.6%      | 1.4%         | 0.0%                | 3.3%               |
+| Emotional Stability   | 0.8515     | 40.90     | 47.50     | 8.5%      | 0.9%         | 0.0%                | 2.2%               |
+| Intellect/Imagination | 0.8057     | 31.26     | 37.53     | 13.8%     | 5.2%         | 0.3%                | 11.4%              |
+| **Overall**           | **0.7418** | **36.28** | **42.87** | **10.4%** | **2.5%**     | **0.1%**            | **5.6%**           |
+
+The deployed domain-balanced 20-item form shows the same under-coverage at the score extremes as the full-50 ceiling: aggregate 90% coverage is near nominal, but the tail band (below the 20th / above the 80th percentile) under-covers relative to the central band — compare the Central and Tail columns above. Treat the 90% prediction interval as well-calibrated mainly in the central score range.
+
+> Sparse-20 headline metrics are computed on a single fixed balanced mask (RNG seed 42); the reported bootstrap CI reflects respondent-sampling variance only and does not include mask-selection variance (stage-07 training averages over multiple masks).
+
+
+#### Ablation: Focused Only
+
+
+**Full-50 validation:**
+
+
+| Domain                | r          | MAE      | RMSE     | Within-5   | 90% Coverage | Central Cov (20-80) | Tail Cov (<20,>80) | Raw Crossing Rate |
+|-----------------------|------------|----------|----------|------------|--------------|---------------------|--------------------|-------------------|
+| Extraversion          | 0.9999     | 0.34     | 0.49     | 100.0%     | 92.5%        | 94.1%               | 90.6%              | 27.5%             |
+| Agreeableness         | 0.9997     | 0.52     | 0.74     | 100.0%     | 91.8%        | 94.5%               | 88.2%              | 25.0%             |
+| Conscientiousness     | 0.9996     | 0.57     | 0.80     | 100.0%     | 93.5%        | 96.4%               | 89.8%              | 19.8%             |
+| Emotional Stability   | 0.9998     | 0.46     | 0.65     | 100.0%     | 91.6%        | 94.0%               | 88.3%              | 26.3%             |
+| Intellect/Imagination | 0.9994     | 0.70     | 0.98     | 100.0%     | 93.8%        | 97.2%               | 89.5%              | 21.2%             |
+| **Overall**           | **0.9997** | **0.52** | **0.75** | **100.0%** | **92.6%**    | **95.2%**           | **89.3%**          | **24.0%**         |
+
+
+**Sparse-20 validation:**
+
+
+| Domain                | r          | MAE      | RMSE      | Within-5  | 90% Coverage | Central Cov (20-80) | Tail Cov (<20,>80) |
+|-----------------------|------------|----------|-----------|-----------|--------------|---------------------|--------------------|
+| Extraversion          | 0.9357     | 7.72     | 10.68     | 47.0%     | 90.6%        | 91.0%               | 90.1%              |
+| Agreeableness         | 0.9088     | 8.88     | 12.21     | 41.9%     | 90.1%        | 90.9%               | 89.1%              |
+| Conscientiousness     | 0.8943     | 9.84     | 13.40     | 38.4%     | 90.0%        | 91.4%               | 88.3%              |
+| Emotional Stability   | 0.9243     | 8.32     | 11.51     | 44.4%     | 90.2%        | 90.4%               | 90.0%              |
+| Intellect/Imagination | 0.8876     | 10.04    | 13.79     | 38.5%     | 89.7%        | 90.8%               | 88.2%              |
+| **Overall**           | **0.9105** | **8.96** | **12.37** | **42.0%** | **90.1%**    | **90.9%**           | **89.1%**          |
+
+The deployed domain-balanced 20-item form shows the same under-coverage at the score extremes as the full-50 ceiling: aggregate 90% coverage is near nominal, but the tail band (below the 20th / above the 80th percentile) under-covers relative to the central band — compare the Central and Tail columns above. Treat the 90% prediction interval as well-calibrated mainly in the central score range.
+
+> Sparse-20 headline metrics are computed on a single fixed balanced mask (RNG seed 42); the reported bootstrap CI reflects respondent-sampling variance only and does not include mask-selection variance (stage-07 training averages over multiple masks).
+
 <!-- END:ablation_validation_details -->
 
 ### Cross-Variant Baseline Curves (All Runs)
@@ -271,9 +336,6 @@ The deployed domain-balanced 20-item form shows the same under-coverage at the s
 Item-selection baseline curves (K=5..50) for each trained variant.
 
 <!-- BEGIN:ablation_baselines_details -->
-> Ablation variants (no-sparsity, focused-only) were not run in this reference-only build; only the reference run is shown below.
-
-
 #### Reference
 
 
@@ -287,6 +349,34 @@ Item-selection baseline curves (K=5..50) for each trained variant.
 | 30 | 0.961 [0.961, 0.961]     | 0.952 [0.952, 0.953]    | ---                      | 0.957 [0.957, 0.957]    | 0.952 [0.952, 0.952]    | 0.929 [0.928, 0.929]    | 0.929 [0.928, 0.929]    | 0.929 [0.929, 0.930]    |
 | 40 | 0.983 [0.983, 0.983]     | 0.980 [0.980, 0.980]    | ---                      | 0.984 [0.984, 0.984]    | 0.982 [0.982, 0.982]    | 0.968 [0.968, 0.968]    | 0.968 [0.968, 0.968]    | 0.978 [0.977, 0.978]    |
 | 50 | 0.9997 [0.9997, 0.9997]  | 0.9997 [0.9997, 0.9997] | ---                      | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] |
+
+#### Ablation: No Sparsity
+
+
+| K  | Domain-Balanced          | Constrained-Adaptive    | Mini-IPIP                | First-N                 | Random                  | Adaptive Top-K          | Greedy-Balanced         | Worst-K                 |
+|----|--------------------------|-------------------------|--------------------------|-------------------------|-------------------------|-------------------------|-------------------------|-------------------------|
+| 5  | 0.335 [0.332, 0.337]     | 0.273 [0.270, 0.275]    | ---                      | 0.289 [0.287, 0.292]    | 0.287 [0.286, 0.289]    | 0.308 [0.306, 0.310]    | 0.239 [0.236, 0.241]    | 0.210 [0.207, 0.213]    |
+| 10 | 0.547 [0.546, 0.549]     | 0.462 [0.460, 0.464]    | ---                      | 0.520 [0.518, 0.521]    | 0.428 [0.426, 0.429]    | 0.378 [0.377, 0.380]    | 0.428 [0.426, 0.430]    | 0.302 [0.300, 0.304]    |
+| 15 | 0.708 [0.708, 0.710]     | 0.615 [0.614, 0.616]    | ---                      | 0.649 [0.648, 0.650]    | 0.522 [0.521, 0.523]    | 0.497 [0.495, 0.498]    | 0.555 [0.553, 0.556]    | 0.398 [0.396, 0.400]    |
+| 20 | **0.779 [0.778, 0.780]** | 0.739 [0.738, 0.740]    | **0.907 [0.906, 0.907]** | 0.760 [0.759, 0.761]    | 0.648 [0.647, 0.648]    | 0.506 [0.504, 0.508]    | 0.552 [0.550, 0.553]    | 0.413 [0.412, 0.415]    |
+| 25 | 0.852 [0.852, 0.853]     | 0.828 [0.827, 0.828]    | ---                      | 0.839 [0.838, 0.840]    | 0.700 [0.699, 0.701]    | 0.646 [0.644, 0.647]    | 0.646 [0.644, 0.647]    | 0.505 [0.503, 0.507]    |
+| 30 | 0.900 [0.899, 0.900]     | 0.882 [0.881, 0.882]    | ---                      | 0.882 [0.882, 0.883]    | 0.795 [0.795, 0.796]    | 0.747 [0.746, 0.749]    | 0.747 [0.746, 0.749]    | 0.588 [0.586, 0.590]    |
+| 40 | 0.967 [0.967, 0.967]     | 0.961 [0.960, 0.961]    | ---                      | 0.965 [0.964, 0.965]    | 0.912 [0.912, 0.913]    | 0.854 [0.853, 0.855]    | 0.854 [0.853, 0.855]    | 0.763 [0.762, 0.764]    |
+| 50 | 1.0000 [1.0000, 1.0000]  | 1.0000 [1.0000, 1.0000] | ---                      | 1.0000 [1.0000, 1.0000] | 1.0000 [1.0000, 1.0000] | 1.0000 [1.0000, 1.0000] | 1.0000 [1.0000, 1.0000] | 1.0000 [1.0000, 1.0000] |
+
+#### Ablation: Focused Only
+
+
+| K  | Domain-Balanced          | Constrained-Adaptive    | Mini-IPIP                | First-N                 | Random                  | Adaptive Top-K          | Greedy-Balanced         | Worst-K                 |
+|----|--------------------------|-------------------------|--------------------------|-------------------------|-------------------------|-------------------------|-------------------------|-------------------------|
+| 5  | 0.747 [0.745, 0.748]     | 0.691 [0.689, 0.693]    | ---                      | 0.698 [0.696, 0.699]    | 0.601 [0.600, 0.601]    | 0.573 [0.571, 0.575]    | 0.661 [0.659, 0.663]    | 0.463 [0.461, 0.465]    |
+| 10 | 0.853 [0.852, 0.854]     | 0.795 [0.793, 0.796]    | ---                      | 0.821 [0.820, 0.822]    | 0.764 [0.764, 0.765]    | 0.703 [0.701, 0.704]    | 0.763 [0.762, 0.765]    | 0.642 [0.640, 0.643]    |
+| 15 | 0.909 [0.909, 0.910]     | 0.848 [0.847, 0.849]    | ---                      | 0.873 [0.872, 0.874]    | 0.846 [0.845, 0.847]    | 0.789 [0.788, 0.790]    | 0.823 [0.822, 0.824]    | 0.757 [0.756, 0.758]    |
+| 20 | **0.928 [0.927, 0.928]** | 0.906 [0.906, 0.907]    | **0.907 [0.906, 0.907]** | 0.911 [0.910, 0.911]    | 0.895 [0.894, 0.895]    | 0.819 [0.819, 0.820]    | 0.849 [0.848, 0.850]    | 0.802 [0.802, 0.803]    |
+| 25 | 0.945 [0.945, 0.946]     | 0.939 [0.939, 0.940]    | ---                      | 0.939 [0.938, 0.939]    | 0.933 [0.933, 0.934]    | 0.899 [0.898, 0.899]    | 0.899 [0.898, 0.899]    | 0.884 [0.883, 0.885]    |
+| 30 | 0.961 [0.960, 0.961]     | 0.952 [0.952, 0.952]    | ---                      | 0.957 [0.957, 0.957]    | 0.952 [0.952, 0.952]    | 0.929 [0.929, 0.930]    | 0.929 [0.929, 0.930]    | 0.928 [0.927, 0.928]    |
+| 40 | 0.983 [0.983, 0.983]     | 0.980 [0.980, 0.980]    | ---                      | 0.984 [0.984, 0.984]    | 0.982 [0.982, 0.982]    | 0.968 [0.968, 0.968]    | 0.968 [0.968, 0.968]    | 0.978 [0.978, 0.978]    |
+| 50 | 0.9997 [0.9997, 0.9997]  | 0.9997 [0.9997, 0.9997] | ---                      | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] | 0.9997 [0.9997, 0.9997] |
 <!-- END:ablation_baselines_details -->
 
 ### Cross-Variant Per-Domain K=20 (All Runs)
@@ -294,9 +384,6 @@ Item-selection baseline curves (K=5..50) for each trained variant.
 Per-domain K=20 breakdown (domain-balanced, Mini-IPIP, first-N) for each variant.
 
 <!-- BEGIN:ablation_per_domain_k20_details -->
-> Ablation variants (no-sparsity, focused-only) were not run in this reference-only build; only the reference run is shown below.
-
-
 #### Reference
 
 
@@ -329,6 +416,72 @@ Per-domain K=20 breakdown (domain-balanced, Mini-IPIP, first-N) for each variant
 | Conscientiousness     | 0.8963 | 4     | 0.8948   | 0.8976   |
 | Emotional Stability   | 0.8781 | 4     | 0.8764   | 0.8798   |
 | Intellect/Imagination | 0.9121 | 4     | 0.9109   | 0.9134   |
+
+#### Ablation: No Sparsity
+
+
+**Domain-Balanced (4 items per domain):**
+
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.8973 | 4     | 0.8963   | 0.8982   |
+| Agreeableness         | 0.8479 | 4     | 0.8465   | 0.8493   |
+| Conscientiousness     | 0.8620 | 4     | 0.8606   | 0.8633   |
+| Emotional Stability   | 0.8683 | 4     | 0.8671   | 0.8695   |
+| Intellect/Imagination | 0.8432 | 4     | 0.8414   | 0.8449   |
+
+**Mini-IPIP (4 items per domain):**
+
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9376 | 4     | 0.9367   | 0.9385   |
+| Agreeableness         | 0.9118 | 4     | 0.9105   | 0.9131   |
+| Conscientiousness     | 0.9099 | 4     | 0.9086   | 0.9113   |
+| Emotional Stability   | 0.9298 | 4     | 0.9288   | 0.9308   |
+| Intellect/Imagination | 0.8422 | 4     | 0.8400   | 0.8442   |
+
+**First-N (4 items per domain):**
+
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.8890 | 4     | 0.8879   | 0.8900   |
+| Agreeableness         | 0.8416 | 4     | 0.8399   | 0.8434   |
+| Conscientiousness     | 0.8203 | 4     | 0.8185   | 0.8220   |
+| Emotional Stability   | 0.8204 | 4     | 0.8184   | 0.8224   |
+| Intellect/Imagination | 0.8335 | 4     | 0.8318   | 0.8353   |
+
+#### Ablation: Focused Only
+
+
+**Domain-Balanced (4 items per domain):**
+
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9471 | 4     | 0.9464   | 0.9478   |
+| Agreeableness         | 0.9203 | 4     | 0.9191   | 0.9214   |
+| Conscientiousness     | 0.9204 | 4     | 0.9192   | 0.9216   |
+| Emotional Stability   | 0.9378 | 4     | 0.9369   | 0.9388   |
+| Intellect/Imagination | 0.9122 | 4     | 0.9110   | 0.9135   |
+
+**Mini-IPIP (4 items per domain):**
+
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9376 | 4     | 0.9367   | 0.9385   |
+| Agreeableness         | 0.9118 | 4     | 0.9105   | 0.9131   |
+| Conscientiousness     | 0.9099 | 4     | 0.9086   | 0.9113   |
+| Emotional Stability   | 0.9298 | 4     | 0.9288   | 0.9308   |
+| Intellect/Imagination | 0.8422 | 4     | 0.8400   | 0.8442   |
+
+**First-N (4 items per domain):**
+
+| Domain                | r      | Items | CI Lower | CI Upper |
+|-----------------------|--------|-------|----------|----------|
+| Extraversion          | 0.9398 | 4     | 0.9389   | 0.9407   |
+| Agreeableness         | 0.9272 | 4     | 0.9260   | 0.9284   |
+| Conscientiousness     | 0.8963 | 4     | 0.8948   | 0.8977   |
+| Emotional Stability   | 0.8773 | 4     | 0.8756   | 0.8790   |
+| Intellect/Imagination | 0.9118 | 4     | 0.9106   | 0.9131   |
 <!-- END:ablation_per_domain_k20_details -->
 
 ### Cross-Variant Domain Starvation at K=20 (All Runs)
@@ -336,9 +489,6 @@ Per-domain K=20 breakdown (domain-balanced, Mini-IPIP, first-N) for each variant
 Adaptive top-K domain allocation and resulting per-domain accuracy for each variant.
 
 <!-- BEGIN:ablation_domain_starvation_details -->
-> Ablation variants (no-sparsity, focused-only) were not run in this reference-only build; only the reference run is shown below.
-
-
 #### Reference
 
 
@@ -349,6 +499,28 @@ Adaptive top-K domain allocation and resulting per-domain accuracy for each vari
 | Agreeableness         | 3     | 15%   | 0.8250 | 0.8226   | 0.8274   |
 | Conscientiousness     | 2     | 10%   | 0.7613 | 0.7582   | 0.7641   |
 | Intellect/Imagination | 0     | 0%    | 0.4258 | 0.4206   | 0.4312   |
+
+#### Ablation: No Sparsity
+
+
+| Domain                | Items | Share | r       | CI Lower | CI Upper |
+|-----------------------|-------|-------|---------|----------|----------|
+| Extraversion          | 9     | 45%   | 0.9887  | 0.9886   | 0.9888   |
+| Emotional Stability   | 6     | 30%   | 0.9114  | 0.9108   | 0.9122   |
+| Agreeableness         | 3     | 15%   | 0.7560  | 0.7534   | 0.7587   |
+| Conscientiousness     | 2     | 10%   | 0.6985  | 0.6954   | 0.7014   |
+| Intellect/Imagination | 0     | 0%    | -0.0915 | -0.0978  | -0.0846  |
+
+#### Ablation: Focused Only
+
+
+| Domain                | Items | Share | r      | CI Lower | CI Upper |
+|-----------------------|-------|-------|--------|----------|----------|
+| Extraversion          | 9     | 45%   | 0.9940 | 0.9939   | 0.9941   |
+| Emotional Stability   | 6     | 30%   | 0.9698 | 0.9694   | 0.9703   |
+| Agreeableness         | 3     | 15%   | 0.8221 | 0.8198   | 0.8245   |
+| Conscientiousness     | 2     | 10%   | 0.7589 | 0.7559   | 0.7617   |
+| Intellect/Imagination | 0     | 0%    | 0.4139 | 0.4087   | 0.4193   |
 <!-- END:ablation_domain_starvation_details -->
 
 ### Cross-Variant ML vs Averaging (All Runs)
@@ -356,9 +528,6 @@ Adaptive top-K domain allocation and resulting per-domain accuracy for each vari
 ML-vs-averaging deltas for matched item sets across each variant.
 
 <!-- BEGIN:ablation_ml_vs_averaging_details -->
-> Ablation variants (no-sparsity, focused-only) were not run in this reference-only build; only the reference run is shown below.
-
-
 #### Reference
 
 
@@ -371,6 +540,32 @@ ML-vs-averaging deltas for matched item sets across each variant.
 | Domain-balanced | 25 | 0.9452         | 0.9395            | +0.0057 | [+0.0056, +0.0059] | 7.10             | 7.47                | -0.37     | [-0.38, -0.36]   |
 
 Paired (same-respondent) headline contrast at K=20 — domain-balanced (XGBoost) vs Mini-IPIP (averaging): Δr = +0.0210 [+0.0204, +0.0215], ΔMAE = -1.04 pp [-1.06, -1.01] (bootstrap 95% CI, paired differences).
+
+#### Ablation: No Sparsity
+
+
+| Strategy        | K  | ML r (XGBoost) | Avg r (averaging) | Delta r | Delta r 95% CI     | ML MAE (XGBoost) | Avg MAE (averaging) | Delta MAE | Delta MAE 95% CI |
+|-----------------|----|----------------|-------------------|---------|--------------------|------------------|---------------------|-----------|------------------|
+| Domain-balanced | 10 | 0.5473         | 0.8428            | -0.2955 | [-0.2969, -0.2941] | 43.64            | 12.09               | +31.56    | [+31.45, +31.66] |
+| Domain-balanced | 15 | 0.7085         | 0.9026            | -0.1941 | [-0.1950, -0.1931] | 40.02            | 9.49                | +30.53    | [+30.43, +30.62] |
+| Domain-balanced | 20 | 0.7792         | 0.9214            | -0.1422 | [-0.1430, -0.1415] | 35.66            | 8.52                | +27.15    | [+27.06, +27.23] |
+| Mini-IPIP       | 20 | 0.7581         | 0.9068            | -0.1487 | [-0.1496, -0.1478] | 36.30            | 9.17                | +27.13    | [+27.05, +27.22] |
+| Domain-balanced | 25 | 0.8523         | 0.9395            | -0.0872 | [-0.0877, -0.0866] | 30.22            | 7.47                | +22.74    | [+22.68, +22.81] |
+
+Paired (same-respondent) headline contrast at K=20 — domain-balanced (XGBoost) vs Mini-IPIP (averaging): Δr = -0.1276 [-0.1285, -0.1267], ΔMAE = +26.50 pp [+26.42, +26.58] (bootstrap 95% CI, paired differences).
+
+#### Ablation: Focused Only
+
+
+| Strategy        | K  | ML r (XGBoost) | Avg r (averaging) | Delta r | Delta r 95% CI     | ML MAE (XGBoost) | Avg MAE (averaging) | Delta MAE | Delta MAE 95% CI |
+|-----------------|----|----------------|-------------------|---------|--------------------|------------------|---------------------|-----------|------------------|
+| Domain-balanced | 10 | 0.8530         | 0.8428            | +0.0101 | [+0.0099, +0.0104] | 11.64            | 12.09               | -0.45     | [-0.46, -0.43]   |
+| Domain-balanced | 15 | 0.9091         | 0.9026            | +0.0065 | [+0.0063, +0.0067] | 9.10             | 9.49                | -0.39     | [-0.40, -0.38]   |
+| Domain-balanced | 20 | 0.9277         | 0.9214            | +0.0063 | [+0.0062, +0.0065] | 8.13             | 8.52                | -0.39     | [-0.40, -0.38]   |
+| Mini-IPIP       | 20 | 0.9180         | 0.9068            | +0.0112 | [+0.0110, +0.0115] | 8.57             | 9.17                | -0.60     | [-0.61, -0.58]   |
+| Domain-balanced | 25 | 0.9452         | 0.9395            | +0.0058 | [+0.0056, +0.0059] | 7.11             | 7.47                | -0.36     | [-0.37, -0.35]   |
+
+Paired (same-respondent) headline contrast at K=20 — domain-balanced (XGBoost) vs Mini-IPIP (averaging): Δr = +0.0210 [+0.0205, +0.0215], ΔMAE = -1.04 pp [-1.06, -1.01] (bootstrap 95% CI, paired differences).
 <!-- END:ablation_ml_vs_averaging_details -->
 
 ### Cross-Variant Simulation Results (All Runs)
@@ -378,9 +573,6 @@ Paired (same-respondent) headline contrast at K=20 — domain-balanced (XGBoost)
 Adaptive simulation outcomes for each variant at the operating point.
 
 <!-- BEGIN:ablation_simulation_details -->
-> Ablation variants (no-sparsity, focused-only) were not run in this reference-only build; only the reference run is shown below.
-
-
 #### Reference
 
 
@@ -394,6 +586,34 @@ Simulated on a random 5,000-respondent subsample of the held-out test split (the
 | Emotional Stability   | 0.9390     | 7.63     | 10.37     | 46.2%     | 88.7%        |
 | Intellect/Imagination | 0.9135     | 8.84     | 12.18     | 41.7%     | 89.2%        |
 | **Overall**           | **0.9273** | **8.16** | **11.20** | **44.4%** | **89.5%**    |
+
+#### Ablation: No Sparsity
+
+
+Simulated on a random 5,000-respondent subsample of the held-out test split (the baseline and validation tables use the full *N* = 90,498), so these estimates carry wider confidence intervals and are not co-powered with the headline numbers.
+
+| Domain                | r          | MAE       | RMSE      | Within-5 | 90% Coverage |
+|-----------------------|------------|-----------|-----------|----------|--------------|
+| Extraversion          | 0.8812     | 40.70     | 47.04     | 8.2%     | 0.8%         |
+| Agreeableness         | 0.8504     | 30.41     | 35.92     | 10.7%    | 2.7%         |
+| Conscientiousness     | 0.8627     | 35.56     | 41.34     | 9.2%     | 1.5%         |
+| Emotional Stability   | 0.8673     | 40.55     | 46.83     | 7.7%     | 0.7%         |
+| Intellect/Imagination | 0.8440     | 30.50     | 36.30     | 13.7%    | 4.9%         |
+| **Overall**           | **0.7772** | **35.54** | **41.77** | **9.9%** | **2.1%**     |
+
+#### Ablation: Focused Only
+
+
+Simulated on a random 5,000-respondent subsample of the held-out test split (the baseline and validation tables use the full *N* = 90,498), so these estimates carry wider confidence intervals and are not co-powered with the headline numbers.
+
+| Domain                | r          | MAE      | RMSE      | Within-5  | 90% Coverage |
+|-----------------------|------------|----------|-----------|-----------|--------------|
+| Extraversion          | 0.9383     | 7.56     | 10.42     | 47.4%     | 91.5%        |
+| Agreeableness         | 0.9215     | 8.32     | 11.41     | 43.4%     | 88.6%        |
+| Conscientiousness     | 0.9232     | 8.45     | 11.55     | 43.3%     | 90.7%        |
+| Emotional Stability   | 0.9389     | 7.62     | 10.34     | 46.4%     | 89.1%        |
+| Intellect/Imagination | 0.9138     | 8.83     | 12.18     | 42.7%     | 89.9%        |
+| **Overall**           | **0.9273** | **8.16** | **11.20** | **44.6%** | **89.9%**    |
 <!-- END:ablation_simulation_details -->
 
 ### Dataset

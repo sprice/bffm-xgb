@@ -202,8 +202,8 @@
   "provenance": {
     "source": "ipip-bffm-sparse-quantile-v1-reference",
     "training_script": "07_train.py",
-    "git_hash": "d8b79fd23cd033214e439fb3b88d7fe93c961b7b",
-    "preprocessing_version": "d8b79fd23cd033214e439fb3b88d7fe93c961b7b",
+    "git_hash": "2c59dcc34f0989ba8d647714ced9e54c9e9e12fc",
+    "preprocessing_version": "2c59dcc34f0989ba8d647714ced9e54c9e9e12fc",
     "data_snapshot_id": "norms_sha256:a8c7c1a0dac762bc47b5a36094ffb101696fcda45aae6a8c4f46c14fb2502bf5",
     "rng_seed": 42,
     "model_dir": "models/reference",
@@ -214,7 +214,7 @@
     "val_sha256": "d4d2583ed1088a3bd5cb040d7fb1189b9b1e36d1b8e5267e2aa44d9d9cc158f5",
     "test_sha256": "81daefb09ffaf94e981f6f67b37d563ee88d265bafed560892853ea17c0b4701",
     "split_signature": "f688d5f439e89d28f2a886ab113f7011b33ffeb94440da269a4173c0cf7c23dc",
-    "split_metadata_sha256": "cb4c81ebb2c0b6ee8539667f45745be779e7514427e9cb53c8b3f2af31fa862c"
+    "split_metadata_sha256": "ed7f5c3c13f5caaeee0ca3e2e9d2e2e37d38a17d1956f121f65225fe46c03257"
   },
   "variant": "reference"
 }

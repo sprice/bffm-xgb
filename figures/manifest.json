@@ -2,9 +2,9 @@
   "schema_version": 1,
   "provenance": {
     "data_snapshot_id": "norms_sha256:a8c7c1a0dac762bc47b5a36094ffb101696fcda45aae6a8c4f46c14fb2502bf5",
-    "preprocessing_version": "f1463f53c2f4676f92b944220997bc5827fa2229",
+    "preprocessing_version": "2c59dcc34f0989ba8d647714ced9e54c9e9e12fc",
     "script": "12_generate_figures.py",
-    "git_hash": "f1463f53c2f4676f92b944220997bc5827fa2229",
+    "git_hash": "2c59dcc34f0989ba8d647714ced9e54c9e9e12fc",
     "environment": {
       "python_version": "3.14.3",
       "python_implementation": "CPython",
@@ -17,7 +17,9 @@
         "pandas": "3.0.0",
         "onnx": "1.20.0",
         "onnxmltools": "1.14.0",
-        "onnxruntime": "1.24.1"
+        "onnxruntime": "1.24.1",
+        "optuna": "4.3.0",
+        "matplotlib": "3.10.8"
       }
     }
   },
@@ -25,7 +27,7 @@
   "source_artifacts": {
     "baseline_comparison_results": {
       "path": "artifacts/variants/reference/baseline_comparison_results.json",
-      "sha256": "7cbe899ba4acab88e40e64fc5bd165b971ee9708d57628c37cad0ba6170fa5c3"
+      "sha256": "9205b66adacb603914924cf2835e53a8b13711bd58fa7544341af181017dae05"
     },
     "baseline_comparison_per_domain_csv": {
       "path": "artifacts/variants/reference/baseline_comparison_per_domain.csv",
@@ -33,11 +35,11 @@
     },
     "baseline_comparison_per_domain_meta": {
       "path": "artifacts/variants/reference/baseline_comparison_per_domain.meta.json",
-      "sha256": "69752d2c5bdb7b0fb79fbaec458de6cb38b5d6529fd2ae6d10aa29ce99ccdfec"
+      "sha256": "0e48af23aa828d6a87ffb1023e0e9c56a3099ef15e50838e6e7bf1cbc335b118"
     },
     "ml_vs_averaging_comparison": {
       "path": "artifacts/variants/reference/ml_vs_averaging_comparison.json",
-      "sha256": "8b79f8843e6bbfc40b533acb5040adfbfa211c8231671c9e59590ea6d7b17ece"
+      "sha256": "7c652c4a06fe6c01c8d74e226992a1787e995e3393ae8b814dcd7b4b3d49889e"
     }
   },
   "figures": [
@@ -52,7 +54,7 @@
       ],
       "sha256": {
         "png": "72a083dc5e90895882302ca44702e5199a65f13361f9f2284e077ba50b7b891c",
-        "pdf": "13a5e37f65abdddf9b62f80f8ed1be5792f7a4abfbc3a1a434f1022c1c7f584d"
+        "pdf": "7c8fafe6c339accdf218af5ee35d5dd180bb4cb8a9fa417c159f50eed743f97a"
       }
     },
     {
@@ -66,7 +68,7 @@
       ],
       "sha256": {
         "png": "40309c76439cb766f342ac453d57003baa25ef106eb9beedad1fbf9ee0c9a0c5",
-        "pdf": "a0860b7abb60ae2ab0c0b7f76aec26906a1c8b45049df3b85b0b2c2b5cf0d6cd"
+        "pdf": "444d8135c83694d2c744f34db7c2fe77a05a6f23558db374383f6776b29f06b7"
       }
     },
     {
@@ -80,7 +82,7 @@
       ],
       "sha256": {
         "png": "ffb1a1cf4a69deed9590cd9648968571bac917a6bc89dc6f6f04dd6f94965dd4",
-        "pdf": "8925aa95d587f5c7bc8fa2f807c100a8d3e5f5c9598b6e117fe48b0b6471eb33"
+        "pdf": "ff6e6d6b5737edc1331aa6dab1a100a23f2f26bcf82a69d448c5681e9bcb7209"
       }
     },
     {
@@ -99,7 +101,7 @@
       },
       "sha256": {
         "png": "9efbca2c15c3a058b01ba9107511896224c0a8835e696b70f12479e82876ce5a",
-        "pdf": "de139236acaa82f0e734a54d1699c06369e7e20570338b10a4a6ff2e53062013"
+        "pdf": "c7aab50ee6589370f44ab13a92b4262c936e47558791cc7ceff6736bdf778bcb"
       }
     }
   ]
