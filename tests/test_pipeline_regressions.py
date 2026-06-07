@@ -4147,10 +4147,17 @@ def test_upload_main_resolves_relative_output_dir_to_package_root(tmp_path, monk
             captured["repo"] = kwargs.get("repo_id")
 
         def upload_file(self, **_kwargs) -> None:  # type: ignore[no-untyped-def]
-            raise AssertionError("No files should be uploaded in this unit test")
+            raise AssertionError("multi-variant upload must use create_commit, not upload_file")
+
+        def list_repo_files(self, **_kwargs) -> list[str]:  # type: ignore[no-untyped-def]
+            return []
+
+        def create_commit(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            captured["n_ops"] = len(kwargs.get("operations", []))
 
     monkeypatch.setitem(sys.modules, "huggingface_hub", types.SimpleNamespace(
-        HfApi=_FakeApi, CommitOperationAdd=None, CommitOperationDelete=None,
+        HfApi=_FakeApi, CommitOperationAdd=types.SimpleNamespace,
+        CommitOperationDelete=types.SimpleNamespace,
     ))
     def _fake_validate_output_bundle(output_dir):  # type: ignore[no-untyped-def]
         captured["output_dir"] = output_dir
@@ -4227,6 +4234,142 @@ def test_upload_revision_creates_branch_and_scopes_commit(tmp_path, monkeypatch)
     assert captured.get("list_revision") == "next"
     assert captured.get("commit_revision") == "next"
     assert captured.get("n_ops") == 1
+
+
+def test_upload_multivariant_prunes_stale_files(tmp_path, monkeypatch) -> None:
+    """`make upload-hf` (multi-variant) mirrors the local bundle in ONE atomic
+    create_commit: it adds the current variants AND deletes stale paths (a removed
+    variant, or a leftover single-variant root layout), preserving .gitattributes.
+    Regression guard for the additive-only upload that stranded old files on HF."""
+    import types
+
+    upload = _load_pipeline_module("13_upload_hf.py")
+    monkeypatch.setattr(upload, "PACKAGE_ROOT", tmp_path)
+    monkeypatch.setenv("HF_TOKEN", "test-token")
+
+    output_dir = tmp_path / "output"
+    (output_dir / "reference").mkdir(parents=True)
+    (output_dir / "ablation_none").mkdir(parents=True)
+    (output_dir / "reference" / "model.onnx").write_text("ref-onnx")
+    (output_dir / "ablation_none" / "model.onnx").write_text("none-onnx")
+    (output_dir / "README.md").write_text("index", encoding="utf-8")
+
+    captured: dict[str, Any] = {}
+
+    class _Add:
+        def __init__(self, **kw) -> None:  # type: ignore[no-untyped-def]
+            self.__dict__.update(kw)
+
+    class _Del:
+        def __init__(self, **kw) -> None:  # type: ignore[no-untyped-def]
+            self.__dict__.update(kw)
+
+    class _FakeApi:
+        def __init__(self, token: str) -> None:
+            pass
+
+        def create_repo(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            pass
+
+        def list_repo_files(self, **_kwargs) -> list[str]:  # type: ignore[no-untyped-def]
+            # current bundle + stale (removed variant + old root layout) + repo config
+            return [
+                "reference/model.onnx",
+                "ablation_none/model.onnx",
+                "README.md",
+                "ablation_stratified/model.onnx",
+                "config.json",
+                "model.onnx",
+                ".gitattributes",
+            ]
+
+        def upload_file(self, **_kwargs) -> None:  # type: ignore[no-untyped-def]
+            raise AssertionError("multi-variant upload must use create_commit, not upload_file")
+
+        def create_commit(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            captured["operations"] = kwargs.get("operations", [])
+
+    monkeypatch.setitem(sys.modules, "huggingface_hub", types.SimpleNamespace(
+        HfApi=_FakeApi, CommitOperationAdd=_Add, CommitOperationDelete=_Del,
+    ))
+    monkeypatch.setattr(
+        upload,
+        "_discover_variants",
+        lambda _p: [
+            ("reference", output_dir / "reference"),
+            ("ablation_none", output_dir / "ablation_none"),
+        ],
+    )
+    monkeypatch.setattr(upload, "_validate_output_bundle", lambda p: [p / "model.onnx"])
+    monkeypatch.setattr(sys, "argv", ["13_upload_hf.py", "--repo-id", "org/repo"])
+
+    upload.main()
+
+    ops = captured["operations"]
+    added = {op.path_in_repo for op in ops if isinstance(op, _Add)}
+    deleted = {op.path_in_repo for op in ops if isinstance(op, _Del)}
+
+    assert added == {"reference/model.onnx", "ablation_none/model.onnx", "README.md"}
+    # stale removed-variant + old root config.json/model.onnx are pruned ...
+    assert deleted == {"ablation_stratified/model.onnx", "config.json", "model.onnx"}
+    # ... while repo config is preserved and current files are never deleted.
+    assert ".gitattributes" not in deleted
+    assert not (added & deleted)
+
+
+def test_upload_multivariant_never_prunes_repo_readme(tmp_path, monkeypatch) -> None:
+    """Regression: when the local index README is absent, the upload must NOT delete
+    the repo's README.md (model card). Only .gitattributes and README.md are spared
+    from the stale-cleanup; other non-bundle files still mirror to deletion."""
+    import types
+
+    upload = _load_pipeline_module("13_upload_hf.py")
+    monkeypatch.setattr(upload, "PACKAGE_ROOT", tmp_path)
+    monkeypatch.setenv("HF_TOKEN", "test-token")
+
+    output_dir = tmp_path / "output"
+    (output_dir / "reference").mkdir(parents=True)
+    (output_dir / "reference" / "model.onnx").write_text("ref-onnx")
+    # deliberately NO output/README.md (index card not generated this run)
+
+    captured: dict[str, Any] = {}
+
+    class _Add:
+        def __init__(self, **kw) -> None:  # type: ignore[no-untyped-def]
+            self.__dict__.update(kw)
+
+    class _Del:
+        def __init__(self, **kw) -> None:  # type: ignore[no-untyped-def]
+            self.__dict__.update(kw)
+
+    class _FakeApi:
+        def __init__(self, token: str) -> None:
+            pass
+
+        def create_repo(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            pass
+
+        def list_repo_files(self, **_kwargs) -> list[str]:  # type: ignore[no-untyped-def]
+            return ["reference/model.onnx", "README.md", "stale.txt", ".gitattributes"]
+
+        def create_commit(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            captured["operations"] = kwargs.get("operations", [])
+
+    monkeypatch.setitem(sys.modules, "huggingface_hub", types.SimpleNamespace(
+        HfApi=_FakeApi, CommitOperationAdd=_Add, CommitOperationDelete=_Del,
+    ))
+    monkeypatch.setattr(
+        upload, "_discover_variants", lambda _p: [("reference", output_dir / "reference")]
+    )
+    monkeypatch.setattr(upload, "_validate_output_bundle", lambda p: [p / "model.onnx"])
+    monkeypatch.setattr(sys, "argv", ["13_upload_hf.py", "--repo-id", "org/repo"])
+
+    upload.main()
+
+    deleted = {op.path_in_repo for op in captured["operations"] if isinstance(op, _Del)}
+    assert "README.md" not in deleted       # model card preserved
+    assert ".gitattributes" not in deleted  # repo config preserved
+    assert "stale.txt" in deleted           # genuine stale file still pruned
 
 
 def _write_responses_sqlite(db_path: Path, df: pd.DataFrame) -> None:
@@ -6267,8 +6410,17 @@ def test_upload_main_multi_variant_flow(tmp_path, monkeypatch) -> None:
             model_dir=f"models/{name}",
         )
 
-    # Mock HfApi to capture upload calls
-    uploaded = []
+    # Mock HfApi to capture the single atomic commit's operations
+    committed: dict[str, Any] = {}
+
+    class FakeCommitOperationAdd:
+        def __init__(self, *, path_in_repo, path_or_fileobj):
+            self.path_in_repo = path_in_repo
+            self.path_or_fileobj = path_or_fileobj
+
+    class FakeCommitOperationDelete:
+        def __init__(self, *, path_in_repo):
+            self.path_in_repo = path_in_repo
 
     class FakeHfApi:
         def __init__(self, token=None):
@@ -6277,8 +6429,14 @@ def test_upload_main_multi_variant_flow(tmp_path, monkeypatch) -> None:
         def create_repo(self, **kwargs):
             pass
 
-        def upload_file(self, *, path_or_fileobj, path_in_repo, repo_id, revision=None):
-            uploaded.append(path_in_repo)
+        def list_repo_files(self, *, repo_id, revision=None):
+            return []
+
+        def upload_file(self, **kwargs):
+            raise AssertionError("multi-variant upload must use create_commit, not upload_file")
+
+        def create_commit(self, *, repo_id, operations, commit_message, revision=None):
+            committed["operations"] = operations
 
     # Monkeypatch to inject FakeHfApi and skip .env / token checks
     monkeypatch.setattr("sys.argv", [
@@ -6292,8 +6450,8 @@ def test_upload_main_multi_variant_flow(tmp_path, monkeypatch) -> None:
     import types
     fake_hf_module = types.ModuleType("huggingface_hub")
     fake_hf_module.HfApi = FakeHfApi
-    fake_hf_module.CommitOperationAdd = None
-    fake_hf_module.CommitOperationDelete = None
+    fake_hf_module.CommitOperationAdd = FakeCommitOperationAdd
+    fake_hf_module.CommitOperationDelete = FakeCommitOperationDelete
     monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf_module)
 
     # Create repo-level README (normally generated by `make export-repo-readme`)
@@ -6301,15 +6459,20 @@ def test_upload_main_multi_variant_flow(tmp_path, monkeypatch) -> None:
 
     upload.main()
 
-    # Verify variant-prefixed paths
-    assert "reference/config.json" in uploaded
-    assert "reference/model.onnx" in uploaded
-    assert "reference/README.md" in uploaded
-    assert "reference/provenance.json" in uploaded
-    assert "ablation_none/config.json" in uploaded
-    assert "ablation_none/model.onnx" in uploaded
-    # Verify top-level repo README was uploaded
-    assert "README.md" in uploaded
+    # All files land in ONE atomic create_commit, with variant-prefixed paths
+    added = {
+        op.path_in_repo
+        for op in committed["operations"]
+        if isinstance(op, FakeCommitOperationAdd)
+    }
+    assert "reference/config.json" in added
+    assert "reference/model.onnx" in added
+    assert "reference/README.md" in added
+    assert "reference/provenance.json" in added
+    assert "ablation_none/config.json" in added
+    assert "ablation_none/model.onnx" in added
+    # Top-level repo README (index) is included
+    assert "README.md" in added
 
 
 def test_upload_main_single_variant_flow(tmp_path, monkeypatch) -> None:
@@ -6526,7 +6689,16 @@ def test_upload_main_reset_multi_variant(tmp_path, monkeypatch) -> None:
         )
 
     calls: list[str] = []
-    uploaded: list[str] = []
+    committed: dict[str, Any] = {}
+
+    class FakeCommitOperationAdd:
+        def __init__(self, *, path_in_repo, path_or_fileobj):
+            self.path_in_repo = path_in_repo
+            self.path_or_fileobj = path_or_fileobj
+
+    class FakeCommitOperationDelete:
+        def __init__(self, *, path_in_repo):
+            self.path_in_repo = path_in_repo
 
     class FakeHfApi:
         def __init__(self, token=None):
@@ -6538,8 +6710,11 @@ def test_upload_main_reset_multi_variant(tmp_path, monkeypatch) -> None:
         def create_repo(self, **kwargs):
             calls.append(f"create_repo:{kwargs.get('repo_id')}")
 
-        def upload_file(self, *, path_or_fileobj, path_in_repo, repo_id, revision=None):
-            uploaded.append(path_in_repo)
+        def list_repo_files(self, *, repo_id, revision=None):
+            return []
+
+        def create_commit(self, *, repo_id, operations, commit_message, revision=None):
+            committed["operations"] = operations
 
     monkeypatch.setattr("sys.argv", [
         "13_upload_hf.py",
@@ -6552,8 +6727,8 @@ def test_upload_main_reset_multi_variant(tmp_path, monkeypatch) -> None:
     import types
     fake_hf_module = types.ModuleType("huggingface_hub")
     fake_hf_module.HfApi = FakeHfApi
-    fake_hf_module.CommitOperationAdd = None
-    fake_hf_module.CommitOperationDelete = None
+    fake_hf_module.CommitOperationAdd = FakeCommitOperationAdd
+    fake_hf_module.CommitOperationDelete = FakeCommitOperationDelete
     monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf_module)
 
     upload.main()
@@ -6561,9 +6736,14 @@ def test_upload_main_reset_multi_variant(tmp_path, monkeypatch) -> None:
     # delete_repo must be called before create_repo
     assert calls == ["delete_repo:test/repo", "create_repo:test/repo"]
 
-    # Multi-variant files should still be uploaded with prefixes
-    assert "reference/config.json" in uploaded
-    assert "ablation_none/config.json" in uploaded
+    # Multi-variant files committed with prefixes in the atomic commit
+    added = {
+        op.path_in_repo
+        for op in committed["operations"]
+        if isinstance(op, FakeCommitOperationAdd)
+    }
+    assert "reference/config.json" in added
+    assert "ablation_none/config.json" in added
 
 
 def test_upload_main_reset_delete_repo_failure_logs(tmp_path, monkeypatch, caplog) -> None:

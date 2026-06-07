@@ -268,6 +268,7 @@ def main():
         upload_manifest = [
             (file_path, file_path.name) for file_path in files
         ]
+        commit_message = f"Upload variant {args.variant}"
         log.info("Uploading %d files from variant %r (to repo root)", len(upload_manifest), args.variant)
     else:
         # Multi-variant mode: upload all variants in subdirectories
@@ -296,49 +297,51 @@ def main():
         if repo_readme_path.is_file():
             upload_manifest.append((repo_readme_path, "README.md"))
 
-        log.info("Uploading %d files from %d variant(s)", len(upload_manifest), len(variants))
-    if args.variant:
-        # Single-variant mode: atomic commit with stale-file cleanup
-        operations: list[CommitOperationAdd | CommitOperationDelete] = []
-        for local_path, path_in_repo in sorted(upload_manifest, key=lambda x: x[1]):
-            log.info("  %s (%s bytes)", path_in_repo, f"{local_path.stat().st_size:,}")
-            operations.append(
-                CommitOperationAdd(
-                    path_in_repo=path_in_repo,
-                    path_or_fileobj=str(local_path),
-                )
-            )
-
-        # Delete stale files that are not in the upload manifest
-        new_files = {op.path_in_repo for op in operations if isinstance(op, CommitOperationAdd)}
-        preserve = {".gitattributes"}
-        try:
-            existing = set(api.list_repo_files(repo_id=args.repo_id, revision=args.revision))
-            stale = existing - new_files - preserve
-            if stale:
-                log.info("Deleting %d stale file(s) from repo", len(stale))
-                for path in sorted(stale):
-                    log.info("  (delete) %s", path)
-                    operations.append(CommitOperationDelete(path_in_repo=path))
-        except Exception as exc:
-            log.warning("Could not list existing repo files, skipping cleanup: %s", exc)
-
-        api.create_commit(
-            repo_id=args.repo_id,
-            operations=operations,
-            commit_message=f"Upload variant {args.variant}",
-            revision=args.revision,
+        commit_message = (
+            f"Upload {len(variants)} variant bundle(s): "
+            + ", ".join(name for name, _ in variants)
         )
-    else:
-        # Multi-variant mode: individual file uploads
-        for local_path, path_in_repo in sorted(upload_manifest, key=lambda x: x[1]):
-            log.info("  %s (%s bytes)", path_in_repo, f"{local_path.stat().st_size:,}")
-            api.upload_file(
-                path_or_fileobj=str(local_path),
+        log.info("Uploading %d files from %d variant(s)", len(upload_manifest), len(variants))
+    # Atomic commit (both modes): add the bundle's files AND delete anything
+    # stale, so the repo mirrors the local output bundle exactly. Without the
+    # delete pass a removed variant (e.g. an old ablation) or a previous
+    # single-variant root layout (config.json/model.onnx at the repo root) would
+    # linger forever. A single create_commit also avoids the one-commit-per-file
+    # history the old multi-variant upload_file loop produced.
+    operations: list[CommitOperationAdd | CommitOperationDelete] = []
+    for local_path, path_in_repo in sorted(upload_manifest, key=lambda x: x[1]):
+        log.info("  %s (%s bytes)", path_in_repo, f"{local_path.stat().st_size:,}")
+        operations.append(
+            CommitOperationAdd(
                 path_in_repo=path_in_repo,
-                repo_id=args.repo_id,
-                revision=args.revision,
+                path_or_fileobj=str(local_path),
             )
+        )
+
+    # Delete stale files not in the upload manifest. Preserve repo config
+    # (.gitattributes) AND the repo card (README.md): the index README is only in
+    # the manifest when output/README.md exists, so without sparing it a run that
+    # is missing that file would wipe the model card. When it IS present it is
+    # re-added (overwritten) above regardless, so sparing it never strands a stale card.
+    new_files = {op.path_in_repo for op in operations if isinstance(op, CommitOperationAdd)}
+    preserve = {".gitattributes", "README.md"}
+    try:
+        existing = set(api.list_repo_files(repo_id=args.repo_id, revision=args.revision))
+        stale = existing - new_files - preserve
+        if stale:
+            log.info("Deleting %d stale file(s) from repo", len(stale))
+            for path in sorted(stale):
+                log.info("  (delete) %s", path)
+                operations.append(CommitOperationDelete(path_in_repo=path))
+    except Exception as exc:
+        log.warning("Could not list existing repo files, skipping cleanup: %s", exc)
+
+    api.create_commit(
+        repo_id=args.repo_id,
+        operations=operations,
+        commit_message=commit_message,
+        revision=args.revision,
+    )
 
     log.info("Upload complete: https://huggingface.co/%s", args.repo_id)
 
