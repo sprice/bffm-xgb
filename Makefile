@@ -281,11 +281,11 @@ gen-docs:
 #      staged-but-stale output is caught locally; in CI the index equals HEAD.
 # MARKDOWN_DOC_TARGETS MUST list every injected .md.
 check-docs:
-	$(PY) scripts/generate_doc_data.py all --check \
+	@$(PY) scripts/generate_doc_data.py all --check \
 		|| { echo "ERROR: generated docs are stale or hand-edited (do not match the artifacts). Run 'make gen-docs' and commit the result." >&2; exit 1; }
-	$(PY) scripts/generate_notes_data.py --check \
+	@$(PY) scripts/generate_notes_data.py --check \
 		|| { echo "ERROR: notes/NOTES.md is stale or hand-edited (does not match the artifacts). Run 'make notes' and commit the result." >&2; exit 1; }
-	$(PY) -m pytest tests/test_model_card_consistency.py -q \
+	@$(PY) -m pytest tests/test_model_card_consistency.py -q \
 		|| { echo "ERROR: committed model cards (output/reference/README.md, output/README.md) disagree with the tracked artifacts. Run 'make refresh-docs' and commit the result." >&2; exit 1; }
 	@git diff --exit-code HEAD -- web/src/client/learn/content/repo-facts.generated.ts $(MARKDOWN_DOC_TARGETS) notes/NOTES.md \
 		|| { echo "ERROR: generated docs are stale (or the regenerated refactor is uncommitted). Run 'make gen-docs' and commit the result." >&2; exit 1; }
