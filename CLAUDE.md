@@ -24,6 +24,7 @@ This project's Python is managed entirely by [uv](https://docs.astral.sh/uv/).
 ```bash
 make setup       # uv sync + TypeScript + web deps
 make all         # full pipeline (download → figures)
+make ci          # run every CI check in one shot (lint, typecheck, check-docs, provenance, py + 3.11 floor, ts, web)
 make test        # lib + inference + web tests
 make lint        # ruff check (kept at zero findings)
 make format      # ruff format (apply)
@@ -34,8 +35,8 @@ One-offs go through uv too, e.g. `uv run python pipeline/03_compute_norms.py`.
 
 ## Code quality gates (enforced in CI)
 
-- **Ruff** (`[tool.ruff]`, ruleset `E4/E7/E9/F/I/UP`): kept at **zero** findings — no baseline. `E402` is ignored in `pipeline/` and `scripts/` (intentional `sys.path.insert(...)` shim before the `lib.*` imports).
-- **basedpyright** (`[tool.basedpyright]`, `standard` mode): gated against `.basedpyright/baseline.json` — fails on **new** diagnostics only. Fix genuine issues; never grow the baseline to hide one. Regenerate with `uv run basedpyright --writebaseline` only when shrinking it.
+- **Ruff** (`[tool.ruff]`, ruleset `E4/E7/E9/F/I/UP`): the whole tree (`ruff check .`, including `tests/`) is kept at **zero** findings — no baseline. `E402` is ignored in `pipeline/`, `scripts/`, and `tests/` (intentional `sys.path.insert(...)` shim before the `lib.*` imports).
+- **basedpyright** (`[tool.basedpyright]`, `standard` mode): gated against `.basedpyright/baseline.json` — `make typecheck` fails on **new** diagnostics only, both **error- and warning**-severity (it gates on `--outputjson` via `scripts/typecheck_gate.py`, since basedpyright's own exit code ignores warnings). Fix genuine issues; never grow the baseline to hide one. Regenerate with `uv run basedpyright --writebaseline` only when shrinking it.
 - **pytest**: `make test`.
 
 ## Repo conventions

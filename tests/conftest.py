@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from lib.constants import DOMAINS, ITEM_COLUMNS, ITEMS_PER_DOMAIN
+from lib.constants import DOMAINS, ITEM_COLUMNS
 
 
 @pytest.fixture

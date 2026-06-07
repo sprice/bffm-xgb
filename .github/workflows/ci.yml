@@ -1,4 +1,4 @@
-name: Tests
+name: CI
 
 on:
   push:
@@ -59,8 +59,10 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # `make lint` runs `ruff check .` over the whole tree; any finding exits
+      # non-zero and fails this job.
       - name: Lint (ruff)
-        run: uv run ruff check pipeline lib scripts python
+        run: make lint
 
       # Regenerate the doc-data surfaces from the force-tracked source-of-truth
       # artifacts and fail (with the offending git diff) if the committed outputs
@@ -83,10 +85,13 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      # basedpyright reads [tool.basedpyright] from pyproject.toml and gates
-      # against .basedpyright/baseline.json: fails only on NEW type errors.
+      # `make typecheck` runs basedpyright (config in [tool.basedpyright], gated
+      # against .basedpyright/baseline.json so only NEW diagnostics count) and FAILS
+      # on any new error- OR warning-severity diagnostic. basedpyright's own exit code
+      # ignores warnings, so scripts/typecheck_gate.py parses --outputjson and closes
+      # that gap (green == 0 errors AND 0 warnings).
       - name: Type-check (basedpyright)
-        run: uv run basedpyright
+        run: make typecheck
 
   # Verify the committed artifact provenance tree is internally consistent
   # (checksums, intra-bundle git_hash agreement, norms references, item_info lock

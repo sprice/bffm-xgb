@@ -14,43 +14,49 @@ Usage:
 Status legend:
     PASS  internally consistent.
     WARN  a non-fatal advisory -- the bundle is internally consistent but predates
-          HEAD, or an on-disk file was cosmetically re-stamped (see below). WARN does
-          NOT fail --strict; it DOES fail under --strict-head where noted.
+          HEAD (an ancestor with no model-affecting drift). WARN does NOT fail
+          --strict; it DOES fail under --strict-head where noted.
     FAIL  a genuine inconsistency (checksum mismatch, intra-bundle git_hash
-          disagreement, substantive generation-code drift).
+          disagreement, substantive generation-code drift, a provable model-input
+          change such as the locked hyperparameters moving, or an on-disk item_info
+          ranking that no longer matches the bundle's recorded lock).
     SKIP  an artifact is absent (e.g. gitignored on a fresh clone).
 
-Release freshness, honestly (M19/M20) -- no retraining required to reconcile:
-    A bundle is "fresh" when its export git_hash is HEAD, OR an ancestor of HEAD with
-    NO drift under pipeline/ + lib/ + configs/ (release/refresh commits and a later
-    merge into main legitimately sit on top of the generation commit). Drift in those
-    paths -> WARN by default, FAIL under --strict-head, with the changed paths named.
+Model freshness, specifically (see _model_freshness): the per-variant "HEAD freshness"
+check asks the narrower question "could output/<variant>/model.onnx be stale?" rather
+than "did any generation file change?". A provable model-INPUT change -- the locked
+hyperparameters in artifacts/tuned_params.json differing from the bundle's recorded set --
+is ALWAYS a FAIL, checked first on every path (the comparison is content-only and
+git-independent, so it is not gated behind the git relationship). For the code signal it
+ignores pipeline stages that cannot produce the model (post-hoc eval, figures, upload) and
+drops the tuning stage when the hyperparameter lock is unchanged, so the residual WARN is
+genuine training/export/config/dependency drift (07_train / 11_export_onnx / lib / configs
+/ uv.lock), where no content hash can prove the trained model is unchanged. On a verifiable
+(ancestor) path that code signal is never downgraded to PASS; git-unverifiable states
+(shallow clone / no git / diff failure) degrade the code signal to "fresh" and rely on the
+content-sha chain, while the hyperparameter-input FAIL still applies. The resolved XGBoost
+thread count (xgb_n_jobs) and the cross-thread non-determinism of tree_method=hist are
+documented out-of-band determinants (docs/pipeline.md), not covered by this cheap check.
 
-    To reconcile a stale bundle WITHOUT retraining, regenerate the affected artifact
-    at HEAD and re-run this check:
-      * model card (output/<variant>/README.md) only -- no ONNX re-export, no retrain,
-        and NOTE this rewrites the human-readable card ONLY; it does NOT re-stamp any
-        provenance lock (see the item_info-lock note below):
-            make export-readme MODEL_DIR=models/reference   # rewrites README.md only
-      * notes / research_summary:   make notes
-      * figures:                    make figures
-    A FULL bundle regeneration (new model.onnx) requires `make all` / the remote
-    pipeline and is the ONLY path that should ever change a model checksum. This
-    checker never auto-regenerates or retrains; it only reports what is stale.
+Provenance, how it works: a provenance git_hash records the commit a stage was run at.
+    The workflow is to run the stage (or the whole pipeline), let it record the current
+    commit, then commit the changed files. A provenance hash changes ONLY by genuinely
+    re-running the stage that produces the artifact -- artifacts are never edited to point
+    at a different commit. This checker is read-only: it reports inconsistencies; it never
+    regenerates, retrains, or rewrites a provenance hash.
 
-    item_info.json carries its OWN embedded provenance git_hash, so regenerating
-    stage 05 at a newer commit re-stamps that hash and moves the on-disk file SHA
-    even when the ranking/correlation logic is byte-identical (e.g. a post-bundle
-    stage-05 delta that is only a comment + a leakage-guard assert). The per-bundle
-    "item_info lock" check distinguishes that cosmetic re-stamp (WARN) from a
-    substantive ranking change (FAIL). IMPORTANT: the locked SHA lives in
-    models/<variant>/training_report.json (data.item_info_sha256) and is written ONLY
-    by stage 07 (train); `make export-readme` rewrites README.md and CANNOT change it.
-    A cosmetic re-stamp WARN is reconciled by restoring the on-disk
-    data/processed/<variant>/item_info.json to the locked training-time bytes (or, if
-    the on-disk content is intended to become the new locked bytes, by re-running
-    stage 07 to re-stamp the lock) -- never by `make export-readme`, which would loop
-    with no effect. See check_output_bundle.
+Release freshness: a bundle is "fresh" when its export git_hash is HEAD, OR an ancestor of
+    HEAD with no model-affecting drift under pipeline/ + lib/ + configs/ (release/refresh
+    commits and a later merge into main legitimately sit on top of the generation commit).
+    Model-affecting drift -> WARN by default, FAIL under --strict-head, with the changed
+    paths named. A new model.onnx only ever comes from `make all` / the remote pipeline.
+
+item_info lock: the bundle records the SHA-256 of the item ranking the model was trained
+    against (training.data.item_info_sha256 in output/<variant>/provenance.json, originally
+    written by stage 07). On a fresh clone the on-disk data/processed/<variant>/item_info.json
+    is gitignored and absent -> SKIP. When it is present, its SHA must equal the recorded
+    lock; any difference means the working-tree ranking no longer matches what the model was
+    trained on -> FAIL. See check_output_bundle.
 """
 
 from __future__ import annotations
@@ -60,6 +66,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
@@ -90,11 +97,36 @@ GENERATION_PATHS = ("pipeline", "lib", "configs")
 # so editing it (e.g. to add branch support) must not flag the bundle as stale.
 GENERATION_PATH_EXCLUDES = (":(exclude)pipeline/13_upload_hf.py",)
 
-# The stage that produces data/processed/<variant>/item_info.json (the item ranking
-# + correlations the model is trained against). Used by the item_info lock-state
-# reconciliation below to decide whether an on-disk-vs-locked SHA drift is a
-# data-changing edit (FAIL territory) or a cosmetic re-stamp (WARN).
-ITEM_INFO_STAGE = "pipeline/05_compute_correlations.py"
+# Pipeline stages whose edits cannot change the trained model.onnx: they consume the
+# finished model (validation, baselines, the adaptive-form simulation), render figures,
+# or only transport the bundle. The model-freshness check (see _model_freshness) ignores
+# these so a change confined to post-hoc / publishing code does not flag the model stale.
+MODEL_IRRELEVANT_STAGES = (
+    "pipeline/08_validate.py",
+    "pipeline/09_baselines.py",
+    "pipeline/10_simulate.py",
+    "pipeline/12_generate_figures.py",
+    "pipeline/13_upload_hf.py",
+)
+# The tuning stage produces only the hyperparameters, which are content-hashed and
+# re-verified against the bundle (see _hyperparameters_drift). A tuner edit that leaves
+# the locked hyperparameters identical therefore cannot change the model, so it is
+# dropped from the model-freshness signal once the lock is confirmed unchanged.
+HP_PRODUCING_STAGE = "pipeline/06_tune.py"
+
+# Canonical, git-tracked source of the locked hyperparameters. _hyperparameters_drift
+# pins its comparison to this file rather than trusting the path a (potentially forged)
+# bundle names, so a tampered provenance.json cannot redirect the check to a matching
+# crafted file. All variants record this as their config_locked_params source.
+CANONICAL_HP_SOURCE_REL = "artifacts/tuned_params.json"
+
+# Dependency-resolution lockfile. A change here means a retrain at HEAD would run against
+# different library versions, so the model could differ; it is therefore treated as
+# model-relevant drift (>= WARN). uv.lock is the resolved source of truth -- pyproject.toml
+# tool-config edits that do not touch dependency resolution are intentionally not watched,
+# and the exact resolved versions / XGBoost thread count are documented out-of-band
+# determinants (see docs/pipeline.md), not re-verified by this cheap check.
+ENVIRONMENT_PATHS = ("uv.lock",)
 
 
 def _git(*args: str) -> subprocess.CompletedProcess[str] | None:
@@ -119,10 +151,41 @@ def _commit_present(commit: str) -> bool:
     return cp is not None and cp.returncode == 0
 
 
+def _commit_relationship(bundle_hash: str | None, head_hash: str | None) -> tuple[str, str]:
+    """Classify how ``bundle_hash`` relates to ``head_hash`` in git history.
+
+    Returns (kind, detail) where kind is one of:
+      "unverifiable" -- hashes unknown, no git, or objects absent (shallow clone /
+                        tarball). Callers degrade gracefully (rely on the sha chain).
+      "at_head"      -- bundle_hash == head_hash.
+      "ancestor"     -- bundle_hash is a strict ancestor of head_hash.
+      "not_ancestor" -- a real, differing commit that is NOT an ancestor of HEAD.
+
+    Shared by _release_fresh (generic bundle freshness) and _model_freshness
+    (model-scoped freshness) so the git-degradation rules live in exactly one place."""
+    if not bundle_hash or not head_hash or head_hash == "unknown":
+        return "unverifiable", "head/bundle hash unknown (git-unverifiable)"
+    if bundle_hash == head_hash:
+        return "at_head", "at HEAD"
+    if _git("rev-parse", "--git-dir") is None:
+        return "unverifiable", "git unavailable (git-unverifiable)"
+    if not _commit_present(bundle_hash) or not _commit_present(head_hash):
+        return "unverifiable", "bundle/HEAD object absent (shallow clone; git-unverifiable)"
+    anc = _git("merge-base", "--is-ancestor", bundle_hash, head_hash)
+    if anc is None:
+        return "unverifiable", "git unavailable (git-unverifiable)"
+    if anc.returncode != 0:
+        return (
+            "not_ancestor",
+            f"bundle {bundle_hash[:12]}... is not an ancestor of HEAD {head_hash[:12]}...",
+        )
+    return "ancestor", f"bundle {bundle_hash[:12]}... is an ancestor of HEAD"
+
+
 def _release_fresh(
     bundle_hash: str | None, head_hash: str | None, *, strict_head: bool
 ) -> tuple[bool, str]:
-    """Decide whether a bundle stamped ``bundle_hash`` is fresh w.r.t. ``head_hash``.
+    """Decide whether a bundle recorded at ``bundle_hash`` is fresh w.r.t. ``head_hash``.
 
     Fresh when:
       (a) bundle_hash == head_hash (exact match -- the original rule), OR
@@ -136,19 +199,13 @@ def _release_fresh(
     fresh=True with a 'git-unverifiable' note, so the content-sha chain is relied
     upon rather than failing. ``strict_head`` only changes the CALLER's
     PASS/WARN/FAIL mapping, not this predicate. Returns (fresh, detail)."""
-    if not bundle_hash or not head_hash or head_hash == "unknown":
-        return True, "head/bundle hash unknown (git-unverifiable)"
-    if bundle_hash == head_hash:
-        return True, "at HEAD"
-    if _git("rev-parse", "--git-dir") is None:
-        return True, "git unavailable (git-unverifiable)"
-    if not _commit_present(bundle_hash) or not _commit_present(head_hash):
-        return True, "bundle/HEAD object absent (shallow clone; git-unverifiable)"
-    anc = _git("merge-base", "--is-ancestor", bundle_hash, head_hash)
-    if anc is None:
-        return True, "git unavailable (git-unverifiable)"
-    if anc.returncode != 0:
-        return False, f"bundle {bundle_hash[:12]}... is not an ancestor of HEAD {head_hash[:12]}..."
+    kind, detail = _commit_relationship(bundle_hash, head_hash)
+    if kind in ("unverifiable", "at_head"):
+        return True, detail
+    if kind == "not_ancestor":
+        return False, detail
+    # kind == "ancestor": _commit_relationship guarantees both are real commit hashes.
+    assert bundle_hash is not None and head_hash is not None
     diff = _git(
         "diff", "--name-only", bundle_hash, head_hash, "--",
         *GENERATION_PATHS, *GENERATION_PATH_EXCLUDES,
@@ -161,89 +218,159 @@ def _release_fresh(
         return (
             False,
             f"generation paths changed since bundle commit {bundle_hash[:12]}...: "
-            f"{shown} -- regenerate the bundle at HEAD (see module docstring), no retrain "
-            "needed unless model.onnx itself is affected",
+            f"{shown} -- regenerate the bundle by re-running the pipeline and commit",
         )
     return True, f"bundle {bundle_hash[:12]}... is an ancestor of HEAD; no generation-path drift"
 
 
-def _diff_is_cosmetic(unified_diff: str) -> bool:
-    """Classify a unified diff of ITEM_INFO_STAGE as cosmetic (no ranking/correlation
-    logic change) vs substantive. Returns True only when EVERY added/removed content
-    line is provably non-computational: a comment, a blank line, or a bare ``assert``
-    leakage-guard. Any other changed line (or a diff we cannot parse) is treated as
-    substantive, so the classifier never blesses a real logic change -- it only
-    de-escalates the known no-op edits (comment + leakage-guard assert) that would
-    otherwise hard-FAIL a provably-identical ranking under the multi-variant retrain."""
-    saw_change = False
-    for raw in unified_diff.splitlines():
-        if raw.startswith(("+++", "---", "@@", "diff ", "index ")):
-            continue
-        if not raw or raw[0] not in "+-":
-            continue
-        body = raw[1:].strip()
-        saw_change = True
-        if not body:
-            continue  # blank line
-        if body.startswith("#"):
-            continue  # comment
-        if body.startswith(("assert ", "assert(")):
-            continue  # leakage-guard / invariant assert: does not alter rankings
-        return False  # a real code line changed -> substantive
-    return saw_change  # all changed lines were cosmetic (and there was at least one)
+def _hp_note(hp_status: str) -> str:
+    """Human-readable note about the hyperparameter-lock re-verification result."""
+    if hp_status == "match":
+        return "locked hyperparameters verified unchanged"
+    return "locked hyperparameters source unverifiable on this checkout"
 
 
-def _item_info_stage_diff(bundle_hash: str, disk_hash: str) -> tuple[str, bool]:
-    """Diff the item-ranking stage (05_compute_correlations.py) between the commit
-    the bundle was locked at (``bundle_hash``) and the commit the on-disk
-    item_info.json was last generated at (``disk_hash``, read from its embedded
-    provenance git_hash). Returns (detail, stage_changed):
+def _hyperparameters_drift(prov_doc: dict[str, Any] | None) -> tuple[str, str]:
+    """Re-verify the bundle's locked hyperparameters against their on-disk source.
 
-      stage_changed == False -> the two commits produce a byte-identical item_info
-        for the same inputs; an on-disk-vs-locked SHA mismatch is therefore COSMETIC
-        (the SHA moved only because the file re-embedded a newer provenance git_hash),
-        and NO retrain / re-lock is required to reconcile it.
-      stage_changed == True  -> the ranking/correlation logic genuinely differs
-        between the two commits, so the mismatch could reflect a real data change.
+    The bundle is self-describing: training.config.hyperparameters_source records the
+    mode and path the locked params came from. In ``config_locked_params`` mode the
+    source is the git-tracked canonical artifact (CANONICAL_HP_SOURCE_REL), carrying a
+    ``hyperparameters`` block re-readable even on a fresh clone. We compare that block to
+    the bundle's recorded training.config.hyperparameters.
 
-    Multi-variant note: all three variants (reference, ablation_none, ablation_focused)
-    share data_regime canonical_v1, so they lock the SAME item_info SHA. A no-op
-    stage-05 edit (comment- or assert-only) between the lock commit and the on-disk
-    commit changes the file bytes but NOT the rankings; classifying purely on whether
-    stage-05 appears in `git diff --name-only` would hard-FAIL all three variants for a
-    provably-identical ranking. We therefore inspect the diff CONTENT and treat a
-    comment/blank/assert-only delta as cosmetic. The locked item_info content is not
-    recoverable here (only its SHA is stored), so this source-diff classification is the
-    best available content signal; anything not provably cosmetic stays substantive.
+    The comparison is pinned to the CANONICAL committed source, NOT to whatever path the
+    bundle names: a forged provenance.json could otherwise point ``path`` at a file
+    crafted to match its own forged recorded hyperparameters. A bundle that declares a
+    non-canonical source path is treated conservatively as "unverifiable" -- the checker
+    never reads an arbitrary bundle-named path and never raises a spurious FAIL.
 
-    Git-unverifiable inputs (missing objects, no git) -> ("git-unverifiable", True)
-    so the caller stays conservative and does not silently bless a real drift."""
-    if not bundle_hash or not disk_hash:
-        return "embedded git_hash unknown (git-unverifiable)", True
-    if bundle_hash == disk_hash:
-        return "same generation commit", False
-    if _git("rev-parse", "--git-dir") is None:
-        return "git unavailable (git-unverifiable)", True
-    if not _commit_present(bundle_hash) or not _commit_present(disk_hash):
-        return "bundle/on-disk commit object absent (shallow clone; git-unverifiable)", True
-    names = _git("diff", "--name-only", bundle_hash, disk_hash, "--", ITEM_INFO_STAGE)
-    if names is None or names.returncode != 0:
-        return "stage diff unavailable (git-unverifiable)", True
-    if not names.stdout.strip():
-        return f"{ITEM_INFO_STAGE} unchanged between the two commits", False
-    # Stage 05 source differs: decide substantive vs cosmetic on the diff CONTENT,
-    # not merely on the path appearing in the name-only diff (a comment/assert-only
-    # edit must NOT FAIL a provably-identical ranking under the multi-variant retrain).
-    content = _git("diff", "--unified=0", bundle_hash, disk_hash, "--", ITEM_INFO_STAGE)
-    if content is None or content.returncode != 0:
-        return f"{ITEM_INFO_STAGE} changed between the two commits", True
-    if _diff_is_cosmetic(content.stdout):
-        return (
-            f"{ITEM_INFO_STAGE} changed between the two commits but only in "
-            "comment/blank/assert lines (no ranking/correlation logic change)",
-            False,
+    Returns (status, detail) where status is:
+      "match"        -- canonical-source hyperparameters equal the bundle's locked set.
+      "drift"        -- they differ -> a retrained model WOULD differ (caller FAILs).
+      "unverifiable" -- no recorded params, an absent/unreadable canonical source, a
+                        non-canonical source path, or a source mode that is not a
+                        re-readable file here (default_params / cli_params_override) ->
+                        caller stays conservative (no clearing).
+    """
+    training = prov_doc.get("training") if isinstance(prov_doc, dict) else None
+    config = training.get("config") if isinstance(training, dict) else None
+    if not isinstance(config, dict):
+        return "unverifiable", "no training.config block in provenance"
+    recorded = config.get("hyperparameters")
+    source = config.get("hyperparameters_source")
+    if not isinstance(recorded, dict) or not isinstance(source, dict):
+        return "unverifiable", "no recorded hyperparameters / source in provenance"
+    mode = source.get("mode")
+    path = source.get("path")
+    if mode != "config_locked_params" or not isinstance(path, str) or not path:
+        return "unverifiable", f"hyperparameters source mode={mode!r} not re-readable here"
+    # Pin to the canonical committed artifact; a bundle naming any other path is not
+    # trusted to choose the comparison target (see docstring).
+    canonical = PACKAGE_ROOT / CANONICAL_HP_SOURCE_REL
+    declared = Path(path)
+    if not declared.is_absolute():
+        declared = PACKAGE_ROOT / declared
+    if declared.resolve() != canonical.resolve():
+        return "unverifiable", (
+            f"hyperparameters source {path!r} is not the canonical {CANONICAL_HP_SOURCE_REL}"
         )
-    return f"{ITEM_INFO_STAGE} changed between the two commits", True
+    if not canonical.exists():
+        return "unverifiable", f"{CANONICAL_HP_SOURCE_REL} absent (gitignored / not pulled)"
+    src_doc = _load_json(canonical)
+    current = src_doc.get("hyperparameters") if isinstance(src_doc, dict) else None
+    if not isinstance(current, dict):
+        return "unverifiable", f"{CANONICAL_HP_SOURCE_REL} has no hyperparameters block"
+    if current == recorded:
+        return "match", f"hyperparameters match {CANONICAL_HP_SOURCE_REL}"
+    return "drift", f"hyperparameters in {CANONICAL_HP_SOURCE_REL} differ from the bundle's locked set"
+
+
+def _model_freshness(
+    bundle_hash: str | None,
+    head_hash: str | None,
+    *,
+    prov_doc: dict[str, Any] | None,
+) -> tuple[str, str]:
+    """Decide whether output/<variant>/model.onnx could be stale w.r.t. HEAD.
+
+    Scope: this answers "could model.onnx itself be stale?" -- it does NOT police the
+    other bundle members. config.json integrity is covered by its own checksum (verified
+    by the caller) and the human-readable README by check-docs.
+
+    Returns (verdict, detail) where verdict is one of:
+      "input_drift" -- a content-hashed model INPUT (the locked hyperparameters) provably
+                       changed vs the bundle's recorded set, so model.onnx WOULD differ
+                       (ALWAYS FAIL; checked first on every path -- see below).
+      "fresh"       -- the model-producing code, dependencies, AND the re-verifiable
+                       inputs are unchanged between the bundle commit and HEAD (PASS).
+      "code_drift"  -- model-producing CODE (07_train / 11_export_onnx / lib), a config,
+                       or the dependency lockfile changed and no content hash can prove
+                       the trained result is identical (WARN by default, FAIL under
+                       --strict-head).
+
+    The hyperparameter-input check runs FIRST and unconditionally: it is content-only and
+    git-independent (artifacts/tuned_params.json is git-tracked, so it is present even on a
+    shallow/tarball clone), so it must NOT be gated behind the git-relationship verdict --
+    otherwise a moved hyperparameter could slip through as "fresh" on a clone or at HEAD.
+
+    For the code/dependency signal this ignores pipeline stages that cannot affect
+    model.onnx (MODEL_IRRELEVANT_STAGES) and drops the tuning stage when the hyperparameter
+    lock is confirmed unchanged, leaving only genuine training/export/config/dependency
+    drift to warn about. On a verifiable (ancestor) path it never downgrades such a change
+    to "fresh"; git-unverifiable states (shallow clone / no git / diff failure) degrade the
+    *code* signal to "fresh" and rely on the content-sha chain, but the hyperparameter-input
+    FAIL above still applies. Determinants no file diff can capture -- the resolved XGBoost
+    thread count (xgb_n_jobs) and the cross-thread non-determinism of tree_method=hist --
+    are documented out-of-band (docs/pipeline.md) and are not covered here.
+    """
+    # A provable model-INPUT change is ALWAYS a FAIL, checked before any git short-circuit.
+    hp_status, hp_detail = _hyperparameters_drift(prov_doc)
+    if hp_status == "drift":
+        return "input_drift", (
+            f"locked hyperparameters changed vs the bundle's recorded set: {hp_detail} -- "
+            "model.onnx WOULD differ; a retrain is required (not a value-preserving refactor)"
+        )
+
+    kind, detail = _commit_relationship(bundle_hash, head_hash)
+    if kind in ("unverifiable", "at_head"):
+        return "fresh", detail
+    if kind == "not_ancestor":
+        # Divergent / rewritten history -- we cannot reason about the diff; stay
+        # conservative and treat it as code drift (WARN, or FAIL under --strict-head).
+        return "code_drift", detail
+
+    # kind == "ancestor": _commit_relationship guarantees both are real commit hashes;
+    # inspect exactly what changed under the generation + dependency paths.
+    assert bundle_hash is not None and head_hash is not None
+    diff = _git(
+        "diff", "--name-only", bundle_hash, head_hash, "--",
+        *GENERATION_PATHS, *ENVIRONMENT_PATHS,
+    )
+    if diff is None or diff.returncode != 0:
+        return "fresh", "gen-path diff unavailable (git-unverifiable)"
+    changed = [ln for ln in diff.stdout.splitlines() if ln.strip()]
+    relevant = [f for f in changed if f not in MODEL_IRRELEVANT_STAGES]
+    if hp_status == "match":
+        relevant = [f for f in relevant if f != HP_PRODUCING_STAGE]
+
+    bh = bundle_hash[:12]
+    if not relevant:
+        if changed:
+            return "fresh", (
+                f"bundle {bh}... is an ancestor of HEAD; model-producing code unchanged "
+                "(changed generation files cannot affect model.onnx -- post-hoc/eval/figure "
+                f"stages and/or the tuner; {_hp_note(hp_status)})"
+            )
+        return "fresh", f"bundle {bh}... is an ancestor of HEAD; no generation-path drift"
+
+    shown = ", ".join(relevant[:5]) + (" …" if len(relevant) > 5 else "")
+    return "code_drift", (
+        f"model-producing code or dependencies changed since bundle commit {bh}...: {shown}; "
+        f"{_hp_note(hp_status)} -- model.onnx is affected ONLY if this change altered the "
+        "trained trees or ONNX bytes (a value-preserving refactor needs no retrain). To "
+        "confirm, retrain at the recorded xgb_n_jobs and compare model.onnx."
+    )
 
 
 class ProvenanceChecker:
@@ -502,8 +629,11 @@ def check_output_bundle(
 
         bundle_hash = export.get("git_hash")
         bundle_hash_str = bundle_hash if isinstance(bundle_hash, str) and bundle_hash else None
-        # Fresh = at HEAD, OR an ancestor of HEAD with no generation-path drift.
-        fresh, fresh_detail = _release_fresh(bundle_hash_str, head_hash, strict_head=strict_head)
+        # Generic freshness (any generation-path drift) gates the norms-snapshot check
+        # below: a stale bundle legitimately predates the current norms. The narrower
+        # model-freshness verdict (does model.onnx itself risk staleness?) is computed
+        # separately for the HEAD-freshness line further down.
+        fresh, _fresh_detail = _release_fresh(bundle_hash_str, head_hash, strict_head=strict_head)
 
         # Norms snapshot: hard FAIL only when the bundle is at HEAD; otherwise a
         # stale bundle legitimately predates the current norms -> WARN.
@@ -519,7 +649,11 @@ def check_output_bundle(
                     continue
                 checker.warned(label, "data_snapshot_id stale (bundle predates HEAD)")
 
-        # Checksum verification (always hard; passes on the committed bundle).
+        # Checksum verification (always hard; passes on the committed bundle). model.onnx
+        # is gitignored, so on a fresh clone it is absent and its bytes cannot be checked --
+        # track that so the bundle line reports honestly (config verified; model bytes not
+        # checked) rather than claiming a blanket "checksums verified".
+        model_verified = False
         artifacts = prov_doc.get("artifacts", {})
         if isinstance(artifacts, dict):
             config_sha = artifacts.get("config_json_sha256")
@@ -535,38 +669,17 @@ def check_output_bundle(
             if not isinstance(model_sha, str) or not model_sha:
                 checker.failed(label, "artifacts block missing model_onnx_sha256")
                 continue
-            if model_path.exists() and file_sha256(model_path).lower() != model_sha.lower():
-                checker.failed(label, "model_onnx_sha256 does not match model.onnx")
-                continue
+            if model_path.exists():
+                if file_sha256(model_path).lower() != model_sha.lower():
+                    checker.failed(label, "model_onnx_sha256 does not match model.onnx")
+                    continue
+                model_verified = True
 
-        # Item-info lock-state reconciliation (M20).
-        #
-        # The bundle locks the SHA-256 of the item ranking / correlations file
-        # (data/processed/<variant>/item_info.json) it was trained against. The
-        # on-disk file is gitignored, so on a fresh clone it is absent -> SKIP.
-        #
-        # When the on-disk file IS present and its SHA differs from the lock, the
-        # mismatch is reported honestly rather than swallowed: a SHA can move for
-        # two very different reasons, and the operator needs to know which:
-        #   * COSMETIC re-stamp (WARN) -- item_info.json embeds its own provenance
-        #     git_hash, so regenerating stage 05 at a newer commit that did NOT touch
-        #     the ranking/correlation logic re-stamps that hash and changes the file
-        #     SHA while leaving every ranking/correlation byte-identical (e.g. a
-        #     post-bundle stage-05 delta that is only a comment + a leakage-guard
-        #     assert). It is NOT a model problem: the published model is unaffected.
-        #     The lock SHA lives in models/<variant>/training_report.json
-        #     (data.item_info_sha256), written ONLY by stage 07 (train). It is
-        #     reconciled either by restoring the on-disk item_info.json to the locked
-        #     training-time bytes (the lock is the source of truth for the published
-        #     bundle), or -- if the on-disk content is intended to become the new lock
-        #     -- by re-running stage 07 to re-stamp that SHA. It is NOT reconciled by
-        #     `make export-readme`, which only regenerates the human-readable card
-        #     (output/<variant>/README.md) and never touches the lock. NO retrain of
-        #     the model weights is required, since the ranking/correlation bytes are
-        #     identical.
-        #   * SUBSTANTIVE change (FAIL) -- the ranking/correlation logic itself
-        #     differs between the lock commit and the on-disk file's commit, so the
-        #     on-disk item_info may no longer match what the model was trained on.
+        # item_info lock: the bundle records the SHA-256 of the item ranking the model
+        # was trained against (training.data.item_info_sha256). The on-disk file is
+        # gitignored, so on a fresh clone it is absent -> SKIP. When present, its SHA
+        # must equal the recorded lock; any difference means the working-tree ranking no
+        # longer matches what the model was trained on -> FAIL.
         data_block = training.get("data") if isinstance(training, dict) else None
         if isinstance(data_block, dict):
             locked_item_info_sha = data_block.get("item_info_sha256")
@@ -593,34 +706,14 @@ def check_output_bundle(
                             f"on-disk matches lock ({locked_item_info_sha[:12]}...)",
                         )
                     else:
-                        disk_doc = _load_json(item_info_path)
-                        disk_git_hash = ""
-                        if isinstance(disk_doc, dict):
-                            prov = disk_doc.get("provenance")
-                            if isinstance(prov, dict):
-                                gh = prov.get("git_hash")
-                                disk_git_hash = gh if isinstance(gh, str) else ""
-                        stage_detail, stage_changed = _item_info_stage_diff(
-                            bundle_hash_str or "", disk_git_hash
-                        )
-                        base = (
-                            f"on-disk {disk_item_info_sha[:12]}... != lock "
-                            f"{locked_item_info_sha[:12]}..."
-                        )
-                        if stage_changed:
-                            checker.failed(
-                                f"{label} item_info lock",
-                                f"{base}; {stage_detail} (ranking/correlations may differ)",
-                            )
-                            continue
-                        checker.warned(
+                        checker.failed(
                             f"{label} item_info lock",
-                            f"{base}; cosmetic re-stamp only ({stage_detail}; "
-                            "embedded provenance git_hash moved, rankings byte-identical) "
-                            "-- reconcile by restoring on-disk item_info.json to the locked "
-                            "bytes, or re-run stage 07 to re-stamp the lock; `make "
-                            "export-readme` does NOT touch the lock and will not clear this",
+                            f"on-disk {disk_item_info_sha[:12]}... != recorded lock "
+                            f"{locked_item_info_sha[:12]}...: the working-tree item ranking "
+                            "differs from the one the model was trained against (re-run the "
+                            "pipeline and commit, or restore the recorded item_info.json)",
                         )
+                        continue
 
         # Intra-bundle git_hash agreement: export / training.provenance /
         # config.provenance must agree regardless of staleness (always FAIL).
@@ -644,22 +737,37 @@ def check_output_bundle(
             checker.failed(f"{label} git_hash agreement", f"intra-bundle disagreement: {detail}")
             continue
 
-        # HEAD freshness: a bundle that is at HEAD -- or an ancestor of HEAD with
-        # no generation-path drift (release/refresh commits, a merge into main) --
-        # is FRESH and PASSes even under --strict-head. A genuinely stale bundle
-        # (gen-path drift, or not an ancestor) is WARN by default, FAIL under
-        # --strict-head. Git-unverifiable (shallow clone / no git) degrades to PASS.
+        # HEAD freshness, scoped to the trained model (see _model_freshness): a bundle
+        # at HEAD -- or an ancestor of HEAD whose model-producing code AND hash-locked
+        # inputs are unchanged -- is FRESH and PASSes even under --strict-head. Genuine
+        # training/export code drift is WARN by default, FAIL under --strict-head; a
+        # provable model-INPUT change (locked hyperparameters) always FAILs. Changes
+        # confined to post-hoc/eval/figure/upload stages, or to the tuner when the
+        # hyperparameter lock is unchanged, do NOT flag the model stale. Git-unverifiable
+        # (shallow clone / no git) degrades to PASS.
         if bundle_hash_str and head_known:
-            if fresh:
-                checker.passed(f"{label} HEAD freshness", fresh_detail)
-            elif strict_head:
-                checker.failed(f"{label} HEAD freshness", fresh_detail)
+            verdict, model_detail = _model_freshness(
+                bundle_hash_str, head_hash, prov_doc=prov_doc
+            )
+            if verdict == "fresh":
+                checker.passed(f"{label} HEAD freshness", model_detail)
+            elif verdict == "input_drift" or strict_head:
+                checker.failed(f"{label} HEAD freshness", model_detail)
             else:
-                checker.warned(f"{label} HEAD freshness", fresh_detail)
+                checker.warned(f"{label} HEAD freshness", model_detail)
 
         if bundle_hash_str:
             seen_bundle_hashes.add(bundle_hash_str)
-        checker.passed(f"{label} bundle", "provenance.json valid, checksums verified")
+        if model_verified:
+            checker.passed(
+                f"{label} bundle", "provenance.json valid, config + model checksums verified"
+            )
+        else:
+            checker.passed(
+                f"{label} bundle",
+                "provenance.json valid, config checksum verified; model.onnx absent "
+                "(gitignored / not pulled) -- model bytes NOT checked",
+            )
 
     # Cross-variant agreement: all variants should be exported from one commit.
     if len(seen_bundle_hashes) > 1:

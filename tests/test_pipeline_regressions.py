@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import hashlib
+import importlib.util
 import json
 import logging
 import os
@@ -23,7 +23,6 @@ import pytest
 from lib.constants import DEFAULT_STAGE07_CV_FOLDS, DOMAINS, ITEM_COLUMNS
 from lib.item_info import file_sha256
 from lib.provenance_checks import build_split_signature as _build_split_signature
-
 
 _MODULE_COUNTER = 0
 
@@ -3914,7 +3913,7 @@ def test_prepare_write_metadata_embeds_provenance_and_split_hashes(tmp_path) -> 
     val_sha = file_sha256(val_path)
     test_sha = file_sha256(test_path)
     expected_sig = hashlib.sha256(
-        f"train={train_sha}\nval={val_sha}\ntest={test_sha}\n".encode("utf-8")
+        f"train={train_sha}\nval={val_sha}\ntest={test_sha}\n".encode()
     ).hexdigest()
 
     assert payload["provenance"]["script"] == "04_prepare_data.py"
@@ -4320,7 +4319,7 @@ def test_norms_stage_main_writes_lock_and_meta(tmp_path, monkeypatch) -> None:
 
     with open(output_path) as f:
         payload = json.load(f)
-    from lib.splits import assign_splits, CANONICAL_SEED, CANONICAL_TEST_SIZE, CANONICAL_VAL_SIZE
+    from lib.splits import CANONICAL_SEED, CANONICAL_TEST_SIZE, CANONICAL_VAL_SIZE, assign_splits
 
     labels = assign_splits(
         np.arange(1, len(df) + 1),
@@ -4564,7 +4563,7 @@ def test_stage04_sample_relies_on_population_guard_not_a_hard_refusal(tmp_path) 
 def test_prepare_random_split_partitions_by_respondent_id() -> None:
     """random_split must match assign_splits exactly and produce disjoint partitions."""
     prepare = _load_pipeline_module("04_prepare_data.py")
-    from lib.splits import assign_splits, CANONICAL_SEED, CANONICAL_TEST_SIZE, CANONICAL_VAL_SIZE
+    from lib.splits import CANONICAL_SEED, CANONICAL_TEST_SIZE, CANONICAL_VAL_SIZE, assign_splits
 
     df = _make_dataset(n_rows=40)
     df.insert(0, "respondent_id", np.arange(1, len(df) + 1))
@@ -5729,7 +5728,7 @@ def test_upload_bundle_requires_provenance_json(tmp_path) -> None:
 
 def test_figures_writes_manifest_json(tmp_path) -> None:
     """Verify manifest.json schema by building a synthetic manifest matching the pipeline shape."""
-    from lib.provenance import build_provenance, relative_to_root, file_sha256
+    from lib.provenance import build_provenance, file_sha256, relative_to_root
 
     fig_dir = tmp_path / "figures"
     fig_dir.mkdir(parents=True)

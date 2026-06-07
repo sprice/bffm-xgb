@@ -86,15 +86,16 @@ intentional `xgboost`/`onnx`/`onnxmltools` version bump.
 ## Linting & Formatting
 
 ```bash
-make lint     # ruff check (pipeline/, lib/, scripts/, python/)
+make lint     # ruff check . (whole tree, incl. tests/)
 make format   # ruff format (apply)
 ```
 
 Linting uses [ruff](https://docs.astral.sh/ruff/) (config in `[tool.ruff]` in
 `pyproject.toml`; ruleset `E4/E7/E9/F/I/UP`). The CI `lint` job runs `ruff
-check` on every push/PR and the tree is kept at **zero** findings (no baseline).
-`E402` (import-not-at-top) is ignored for `pipeline/` and `scripts/`, where a
-`sys.path.insert(...)` precedes the `lib.*` imports by design.
+check .` over the whole tree (including `tests/`) on every push/PR and it is kept
+at **zero** findings (no baseline). `E402` (import-not-at-top) is ignored for
+`pipeline/`, `scripts/`, and `tests/`, where a `sys.path.insert(...)` precedes the
+`lib.*` imports by design.
 
 ## Type Checking
 
@@ -110,7 +111,11 @@ every push/PR.
 
 The checker is gated against a committed baseline at
 `.basedpyright/baseline.json`: it **fails only on new diagnostics**, so new code
-must be type-clean. pandas is fully typed via the `pandas-stubs` dev dependency;
+must be type-clean. New **error- and warning**-severity diagnostics both fail
+`make typecheck` — basedpyright's own exit code ignores warnings, so the target
+pipes `--outputjson` through `scripts/typecheck_gate.py` to gate on both (green ==
+0 errors **and** 0 warnings). Keep that gate; a plain `basedpyright` invocation
+would let new warnings through CI. pandas is fully typed via the `pandas-stubs` dev dependency;
 the baseline grandfathers the residual false-positives from libraries that ship
 no/incomplete type stubs (xgboost, onnxmltools, scipy, matplotlib) and should
 only ever shrink. To inspect or re-snapshot it:

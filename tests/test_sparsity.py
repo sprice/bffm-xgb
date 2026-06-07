@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 from scipy import stats
 
 from lib.constants import DOMAINS, ITEM_COLUMNS, ITEMS_PER_DOMAIN

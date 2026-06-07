@@ -77,7 +77,7 @@ VALID_TRAIN_RUNS := 1 2 3
 RESEARCH_EVAL_TARGETS := research-eval-reference research-eval-ablation-none research-eval-ablation-focused
 _CALLER_PARALLEL_MAKEFLAGS = $(filter -j% -j --jobserver-auth=% --jobserver-fds=%,$(MAKEFLAGS))
 
-.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full verify-release pull-reference prepare correlations tune train train-1 train-2 train-3 validate baselines simulate export export-all export-repo-readme export-readme export-reference export-ablation-none export-ablation-focused figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-summary research-summary-strict notes gen-docs check-docs refresh-docs upload-hf upload-hf-reference lint format typecheck test test-lib test-inference test-web fixtures smoke smoke-clean archive clean restore web-setup web-dev web-build deploy-web
+.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full verify-release pull-reference prepare correlations tune train train-1 train-2 train-3 validate baselines simulate export export-all export-repo-readme export-readme export-reference export-ablation-none export-ablation-focused figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-summary research-summary-strict notes gen-docs check-docs refresh-docs upload-hf upload-hf-reference lint format typecheck ci test test-lib test-inference test-web fixtures smoke smoke-clean archive clean restore web-setup web-dev web-build deploy-web
 
 # Full pipeline, delegated to scripts/run-pipeline.sh -- the single source of
 # truth for the stage sequence, so `make all` and the script cannot drift (the
@@ -329,13 +329,13 @@ upload-hf-reference: $(_UPLOAD_HF_DEPS)
 	$(PY) pipeline/13_upload_hf.py --variant reference $(_RESET_FLAG) $(_HF_REVISION_FLAG)
 
 lint:
-	uv run ruff check pipeline lib scripts python
+	uv run ruff check .
 
 format:
 	uv run ruff format pipeline lib scripts python
 
 typecheck:
-	uv run basedpyright
+	uv run basedpyright --outputjson | $(PY) scripts/typecheck_gate.py
 
 test: test-lib test-inference test-web
 
@@ -348,6 +348,22 @@ test-inference:
 
 test-web:
 	cd web && npx vitest run
+
+# Run every check that CI (.github/workflows/ci.yml) runs, in one shot, fail-fast
+# (make aborts on the first failing step). Assumes deps are installed (`make setup`);
+# CI installs them in each job, so `make ci` runs the CHECKS, not the installs. Mirrors
+# the lint, typecheck, check-docs, provenance, Python (incl. the 3.11 floor job), and
+# TypeScript/web jobs, including the REQUIRE_ARTIFACTS / MODEL_DIR env CI sets.
+ci:
+	$(MAKE) lint
+	$(MAKE) typecheck
+	$(MAKE) check-docs
+	$(MAKE) verify-release
+	REQUIRE_ARTIFACTS=1 $(PY) -m pytest tests/ python/ --tb=short
+	REQUIRE_ARTIFACTS=1 uv run --python 3.11 python -m pytest tests/ python/ --tb=short
+	cd typescript && npm run build && REQUIRE_ARTIFACTS=1 npx vitest run
+	cd web && npm run typecheck && npm run build && \
+		MODEL_DIR=$(CURDIR)/tests/fixtures/golden REQUIRE_ARTIFACTS=1 npx vitest run
 
 # Regenerate the committed test-fixture bundle (tests/fixtures/golden/): a tiny
 # deterministic ONNX model + config + golden vectors used by the tri-runtime

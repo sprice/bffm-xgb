@@ -59,6 +59,9 @@ select = ["E4", "E7", "E9", "F", "I", "UP"]
 # installation. E402 (import-not-at-top) is therefore expected in these dirs.
 "pipeline/*" = ["E402"]
 "scripts/*" = ["E402"]
+# Tests use the same `sys.path.insert(0, PACKAGE_ROOT)` shim before importing lib/
+# and the numbered pipeline/script modules, so E402 is expected here too.
+"tests/*" = ["E402"]
 # Test defers the `inference` import until after a skip guard (intentional).
 "python/test_inference.py" = ["E402"]
 
