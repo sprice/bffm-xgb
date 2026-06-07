@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-"""Simulate adaptive assessment on held-out IPIP-BFFM test data.
+"""Simulate sequential (SEM-stopping) item selection on held-out IPIP-BFFM test data.
 
-This script simulates the actual adaptive testing process:
+NOTE: This is a NEGATIVE-RESULT probe, not the deployed system. Under the checked-in
+operating point (SEM threshold 0.45, min 4 items/domain) the sequential loop collapses
+to a fixed 4-4-4-4-4 20-item form -- every respondent stops at exactly 20 items, so the
+SEM stop never actually binds -- and it delivers no adaptive efficiency gain over the
+fixed balanced form. It is retained to document that adaptive item selection does not help.
+
+The simulated process is:
 1. Start with the universal first item
 2. Use cross-domain correlation utility to select subsequent items
 3. Stop when SEM threshold is met for all domains (or max items reached)
@@ -11,9 +17,9 @@ Reads models from models/reference/, item info from
 data/processed/item_info.json, and test data from data/processed/test.parquet.
 
 Usage:
-    python pipeline/10_simulate.py --data-dir data/processed/ext_est [options]
-    python pipeline/10_simulate.py --data-dir data/processed/ext_est --n-sample 5000 --sem-threshold 0.45
-    python pipeline/10_simulate.py --data-dir data/processed/ext_est --sweep-sem-thresholds
+    python pipeline/10_simulate.py --data-dir data/processed/canonical_v1 [options]
+    python pipeline/10_simulate.py --data-dir data/processed/canonical_v1 --n-sample 5000 --sem-threshold 0.45
+    python pipeline/10_simulate.py --data-dir data/processed/canonical_v1 --sweep-sem-thresholds
 """
 
 import sys
@@ -28,17 +34,16 @@ import logging
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-import joblib
 import numpy as np
 import pandas as pd
-import scipy.special
 from tqdm import tqdm
 
-from lib.constants import DOMAINS, DOMAIN_LABELS, ITEM_COLUMNS
+from lib.constants import ADAPTIVE_STOP, DOMAIN_LABELS, DOMAINS, ITEM_COLUMNS, MODEL_STEM
 from lib.item_info import (
     load_item_info_for_model,
-    load_item_info_strict,
 )
+from lib.models import load_domain_models
+from lib.models import missing_models as compute_missing_models
 from lib.norms import load_norms
 from lib.provenance import add_provenance_args, build_provenance, relative_to_root
 from lib.provenance_checks import (
@@ -57,7 +62,6 @@ log = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-REQUIRED_QUANTILES = ("q05", "q50", "q95")
 DOMAIN_LABELS_DISPLAY = DOMAIN_LABELS
 DEFAULT_ARTIFACTS_DIR = Path("artifacts")
 
@@ -69,7 +73,16 @@ DEFAULT_ARTIFACTS_DIR = Path("artifacts")
 
 @dataclass
 class SelectionWeights:
-    """Weights for item selection scoring."""
+    """Weights for item selection scoring.
+
+    These are HAND-SET defaults (not tuned/grid-searched): they weight
+    cross-domain information utility most heavily, then coverage need, then
+    remaining uncertainty, and must sum to 1.0. The simulation is the documented
+    NEGATIVE result — adaptive selection collapses to a fixed 20-item form (see
+    module docstring) — so these weights only shape the (rejected) adaptive
+    trajectory and are not load-bearing for any headline metric. They are
+    recorded in simulation_results.json provenance for reproducibility.
+    """
 
     alpha: float = 0.5  # Cross-domain correlation utility weight
     beta: float = 0.3  # Coverage need weight
@@ -78,16 +91,28 @@ class SelectionWeights:
 
 @dataclass
 class AdaptiveConfig:
-    """Configuration for adaptive assessment."""
+    """Configuration for adaptive assessment.
+
+    The stopping parameters are hand-set, not tuned. The DEFAULT path uses SEM
+    stopping (`use_sem_stopping=True`, `sem_threshold=0.45`), which is gated on
+    `min_items_per_domain=4` (a hard floor of 4*5=20 items): the SEM check only
+    runs once every domain has >= 4 items, so in practice it never binds before
+    the floor — every respondent stops at exactly 20 items. (The CI path,
+    `ci_width_target=0.5` in raw 1-5 score units, is disabled by default and is
+    NOT floor-gated.) The `--sweep-sem-thresholds` path records the chosen
+    value's behavior. The stop_reason accounting distinguishes a floor-driven
+    stop (`min_items_floor`) from a genuine SEM stop (`sem_threshold_met`).
+    """
 
     min_items: int = 8
     max_items: int = 50
     ci_width_target: float = 0.5  # Target 90% CI width in RAW SCORE units (1-5 scale)
-    min_items_per_domain: int = 4  # At least 4 items per domain before stopping
+    # At least N items per domain before stopping (single-sourced policy).
+    min_items_per_domain: int = ADAPTIVE_STOP["min_items_per_domain"]
     target_items_per_domain: dict[str, int] | int = 1
     use_ci_stopping: bool = False
     use_sem_stopping: bool = True
-    sem_threshold: float = 0.45
+    sem_threshold: float = ADAPTIVE_STOP["sem_threshold"]  # single-sourced policy
     selection_weights: SelectionWeights = field(default_factory=SelectionWeights)
     selection_strategy: str = "correlation_ranked"
 
@@ -120,33 +145,6 @@ class DomainPrediction:
 def get_item_columns() -> list[str]:
     """Get all item column names."""
     return list(ITEM_COLUMNS)
-
-
-def load_models(models_dir: Path) -> dict[str, dict[str, Any]]:
-    """Load trained domain models (15 .joblib files)."""
-    domain_models: dict[str, dict[str, Any]] = {}
-
-    for domain in DOMAINS:
-        domain_models[domain] = {}
-        for q_name in REQUIRED_QUANTILES:
-            model_path = models_dir / f"adaptive_{domain}_{q_name}.joblib"
-            if model_path.exists():
-                domain_models[domain][q_name] = joblib.load(model_path)
-
-    return domain_models
-
-
-def get_missing_required_models(
-    domain_models: dict[str, dict[str, Any]],
-) -> list[str]:
-    """Return missing domain/quantile model keys (e.g., 'ext_q05')."""
-    missing: list[str] = []
-    for domain in DOMAINS:
-        models = domain_models.get(domain, {})
-        for q_name in REQUIRED_QUANTILES:
-            if q_name not in models:
-                missing.append(f"{domain}_{q_name}")
-    return missing
 
 
 def load_item_info_for_model_bundle(
@@ -893,7 +891,16 @@ def check_stopping_criteria(
                 all_sem_met = False
 
         if all_sem_met:
-            return True, "sem_threshold_met"
+            # Distinguish an honest SEM-driven stop from a floor-driven one: if
+            # every domain is sitting at exactly the min_items_per_domain floor,
+            # the floor (not the SEM threshold) determined the length — the SEM
+            # criterion was already satisfied the moment the floor was reached.
+            # Labeling that "sem_threshold_met" misattributes the stop.
+            floor_bound = all(
+                domain_coverage.get(d, 0) == config.min_items_per_domain
+                for d in DOMAINS
+            )
+            return True, "min_items_floor" if floor_bound else "sem_threshold_met"
         return False, "continuing"
 
     # CI-based stopping
@@ -1126,9 +1133,9 @@ def run_simulation(
     _validate_test_data_schema(test_df)
     norms_map = norms if norms is not None else load_norms()
 
-    missing_models = get_missing_required_models(domain_models)
-    if missing_models:
-        missing_str = ", ".join(sorted(missing_models))
+    missing = compute_missing_models(domain_models)
+    if missing:
+        missing_str = ", ".join(sorted(missing))
         raise ValueError(
             "Incomplete model bundle: missing required quantile models "
             f"({missing_str}). Re-run training before simulation."
@@ -1427,23 +1434,29 @@ def run_sem_threshold_sweep(
             if sem_values:
                 domain_sem_at_stop[domain] = float(np.mean(sem_values))
 
-        # Compute SEM-stopped percentage
+        # Compute SEM-stopped percentage. A floor-bound stop (every domain at
+        # the min_items_per_domain floor) is now labeled "min_items_floor", so it
+        # is NOT counted here — sem_stopped_pct reflects only genuine SEM stops,
+        # making it honest that at these thresholds the SEM criterion never binds.
         total = analysis["n_respondents"]
         sem_stopped = analysis["stop_reasons"].get("sem_threshold_met", 0)
+        floor_stopped = analysis["stop_reasons"].get("min_items_floor", 0)
         sem_stopped_pct = sem_stopped / total * 100 if total > 0 else 0.0
+        floor_stopped_pct = floor_stopped / total * 100 if total > 0 else 0.0
 
         sweep_results["per_threshold"][str(threshold)] = {
             "analysis": analysis,
             "domain_sem_at_stop": domain_sem_at_stop,
             "sem_stopped_pct": sem_stopped_pct,
+            "floor_stopped_pct": floor_stopped_pct,
         }
 
     # Print formatted summary table
     log.info("")
     log.info("SEM Threshold Sweep Results")
-    log.info("=" * 82)
+    log.info("=" * 96)
     log.info(
-        "%-12s%-13s%-9s%-8s%-10s%-11s%-14s",
+        "%-12s%-13s%-9s%-8s%-10s%-11s%-14s%-14s",
         "Threshold",
         "Mean Items",
         "Median",
@@ -1451,8 +1464,9 @@ def run_sem_threshold_sweep(
         "<=5pct",
         "Coverage",
         "SEM-stopped%",
+        "Floor-stopped%",
     )
-    log.info("-" * 82)
+    log.info("-" * 96)
 
     for threshold in thresholds:
         entry = sweep_results["per_threshold"][str(threshold)]
@@ -1462,8 +1476,12 @@ def run_sem_threshold_sweep(
         w5 = f"{overall['within_5_pct'] * 100:.1f}%"
         cov = f"{overall['coverage_90'] * 100:.1f}%"
         sem_pct = f"{entry['sem_stopped_pct']:.1f}%"
+        # Floor-stopped% exposes that the min-items floor (not the SEM threshold)
+        # drives stopping at these thresholds — otherwise the ~0% SEM column is
+        # misleading on its own.
+        floor_pct = f"{entry['floor_stopped_pct']:.1f}%"
         log.info(
-            "%-12.2f%-13.1f%-9.0f%-8.2f%-10s%-11s%-14s",
+            "%-12.2f%-13.1f%-9.0f%-8.2f%-10s%-11s%-14s%-14s",
             threshold,
             items["mean"],
             items["median"],
@@ -1471,9 +1489,10 @@ def run_sem_threshold_sweep(
             w5,
             cov,
             sem_pct,
+            floor_pct,
         )
 
-    log.info("=" * 82)
+    log.info("=" * 96)
 
     return sweep_results
 
@@ -1724,15 +1743,15 @@ def main() -> int:
     # Load resources
     log.info("")
     log.info("1. Loading models and data...")
-    domain_models = load_models(models_dir)
+    domain_models = load_domain_models(models_dir)
     n_models = sum(len(m) for m in domain_models.values())
     log.info("   Loaded %d models from %s", n_models, models_dir)
 
-    missing_models = get_missing_required_models(domain_models)
-    if missing_models:
+    missing = compute_missing_models(domain_models)
+    if missing:
         log.error("Incomplete model bundle. Missing required models:")
-        for key in sorted(missing_models):
-            log.error("   - adaptive_%s.joblib", key)
+        for key in sorted(missing):
+            log.error("   - %s_%s.joblib", MODEL_STEM, key)
         log.error(
             "Run training pipeline to regenerate all 15 domain/quantile models."
         )
@@ -1979,6 +1998,15 @@ def main() -> int:
                     "n_sample": args.n_sample,
                     "calibration_applied": bool(calibration_params),
                     "calibration_source": calibration_source,
+                    "magic_number_provenance": (
+                        "Selection weights (alpha/beta/gamma) and the SEM/CI "
+                        "stopping thresholds are hand-set defaults, not tuned. "
+                        "With min_items_per_domain=4 the 4x5=20 floor binds "
+                        "before SEM/CI, so the simulation collapses to a fixed "
+                        "20-item form; floor-driven stops are labeled "
+                        "'min_items_floor' (not 'sem_threshold_met'). This is the "
+                        "documented negative result, not a load-bearing metric."
+                    ),
                 },
                 "analysis": analysis,
                 "provenance": provenance,

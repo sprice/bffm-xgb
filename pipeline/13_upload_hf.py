@@ -11,7 +11,7 @@ import argparse
 import json
 import logging
 
-from lib.constants import DOMAINS
+from lib.constants import DOMAINS, QUANTILE_NAME_LIST
 from lib.provenance import file_sha256
 
 logging.basicConfig(
@@ -20,8 +20,6 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger(__name__)
-
-QUANTILE_NAMES = ("q05", "q50", "q95")
 
 
 def _validate_output_bundle(output_dir: Path) -> list[Path]:
@@ -107,7 +105,7 @@ def _validate_output_bundle(output_dir: Path) -> list[Path]:
 
     outputs = config.get("outputs")
     expected_outputs = [
-        f"{domain}_{q}" for domain in DOMAINS for q in QUANTILE_NAMES
+        f"{domain}_{q}" for domain in DOMAINS for q in QUANTILE_NAME_LIST
     ]
     if not isinstance(outputs, list) or outputs != expected_outputs:
         raise ValueError(
@@ -193,6 +191,15 @@ def main():
         action="store_true",
         help="Delete and recreate the repo to clear commit history before uploading",
     )
+    parser.add_argument(
+        "--revision",
+        type=str,
+        default=None,
+        help=(
+            "Target branch (revision) to upload to, e.g. --revision next. "
+            "The branch is created if absent. Defaults to the repo default branch (main)."
+        ),
+    )
     args = parser.parse_args()
 
     try:
@@ -235,6 +242,12 @@ def main():
             log.info("delete_repo skipped (repo may not exist yet): %s", exc)
     log.info("Creating/updating repo: %s", args.repo_id)
     api.create_repo(repo_id=args.repo_id, exist_ok=True, private=args.private)
+
+    # Upload to a non-default branch when requested (created if absent). This lets
+    # a release be staged/validated on e.g. `next` before promoting it to main.
+    if args.revision:
+        log.info("Targeting branch (revision): %s (creating if absent)", args.revision)
+        api.create_branch(repo_id=args.repo_id, branch=args.revision, exist_ok=True)
 
     output_dir = _resolve_output_dir(args.output_dir)
 
@@ -300,7 +313,7 @@ def main():
         new_files = {op.path_in_repo for op in operations if isinstance(op, CommitOperationAdd)}
         preserve = {".gitattributes"}
         try:
-            existing = set(api.list_repo_files(repo_id=args.repo_id))
+            existing = set(api.list_repo_files(repo_id=args.repo_id, revision=args.revision))
             stale = existing - new_files - preserve
             if stale:
                 log.info("Deleting %d stale file(s) from repo", len(stale))
@@ -314,6 +327,7 @@ def main():
             repo_id=args.repo_id,
             operations=operations,
             commit_message=f"Upload variant {args.variant}",
+            revision=args.revision,
         )
     else:
         # Multi-variant mode: individual file uploads
@@ -323,6 +337,7 @@ def main():
                 path_or_fileobj=str(local_path),
                 path_in_repo=path_in_repo,
                 repo_id=args.repo_id,
+                revision=args.revision,
             )
 
     log.info("Upload complete: https://huggingface.co/%s", args.repo_id)

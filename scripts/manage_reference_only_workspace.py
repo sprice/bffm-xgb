@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import shutil
-import sys
 from pathlib import Path
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -14,16 +13,19 @@ CONFLICT_PATHS = [
     "artifacts/research_summary.json",
     "artifacts/variants/ablation_none",
     "artifacts/variants/ablation_focused",
-    "artifacts/variants/ablation_stratified",
     "notes/NOTES.md",
     "output/ablation_none",
     "output/ablation_focused",
-    "output/ablation_stratified",
     "logs/train-ablation-none.log",
     "logs/train-ablation-focused.log",
-    "logs/train-ablation-stratified.log",
     "logs/eval-ablation-none.log",
     "logs/eval-ablation-focused.log",
+    # Legacy stratified regime (removed in the canonical_v1 split redesign).
+    # Retained here so the guard still detects and --force-cleans any leftover
+    # outputs from the old ext_est/ext_est_opn pipeline during the transition.
+    "artifacts/variants/ablation_stratified",
+    "output/ablation_stratified",
+    "logs/train-ablation-stratified.log",
     "logs/eval-ablation-stratified.log",
 ]
 

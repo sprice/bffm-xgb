@@ -1,8 +1,9 @@
+# Shared keys (data_dir, artifacts_dir, require_test_split, training,
+# hyperparameters.locked_params) live in configs/_base.yaml and are merged
+# underneath this file by lib.config.load_config_with_base.
 name: reference
 description: "Published model: focused + Mini-IPIP + imbalanced sparsity"
 output_dir: models/reference
-data_dir: data/processed/ext_est
-artifacts_dir: artifacts
 
 sparsity:
   enabled: true
@@ -12,23 +13,26 @@ sparsity:
   n_augmentation_passes: 3
 
 hyperparameters:
-  locked_params: artifacts/tuned_params.json
   lock_policy: strict_data_hash
 
-training:
-  random_state: 42
-  n_jobs: 16
-
+# Coverage acceptance gates are ONE-SIDED floors (07_train.py checks
+# observed coverage_90 < floor). Nominal target is 0.90 (the intervals are
+# 90% prediction intervals). Floors are the tightest round value the
+# PUBLISHED model still clears with a safety margin, read from the observed
+# coverage_90 in artifacts/variants/reference/validation_results.json:
+#   full_50  overall 0.9260, per-domain min 0.9172 (agr)
+#   sparse_20 overall 0.8977, per-domain min 0.8923 (opn)
+# No upper bound: full_50 over-covers (~0.93) and must keep passing.
 validation:
   min_pearson_r: 0.90
-  min_coverage_90: 0.88
+  min_coverage_90: 0.91          # observed 0.9260, margin +1.60pp (was 0.88)
   per_domain:
     min_pearson_r: 0.90
-    min_coverage_90: 0.88
+    min_coverage_90: 0.90        # observed min 0.9172 (agr), margin +1.72pp (was 0.88)
   sparse_20:
     enabled: true
     min_pearson_r: 0.90
-    min_coverage_90: 0.88
+    min_coverage_90: 0.88        # observed 0.8977, margin +1.77pp; sparse-20 runs below nominal 0.90
     per_domain:
       min_pearson_r: 0.85
-      min_coverage_90: 0.84
+      min_coverage_90: 0.87      # observed min 0.8923 (opn), margin +2.23pp (was 0.84)

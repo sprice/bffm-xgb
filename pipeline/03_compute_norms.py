@@ -17,10 +17,19 @@ import pandas as pd
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from lib.constants import DOMAINS, DOMAIN_LABELS, ITEM_COLUMNS
+from lib.constants import DOMAIN_LABELS, DOMAINS, ITEM_COLUMNS
 from lib.item_info import file_sha256
 from lib.mini_ipip import load_mini_ipip_mapping
 from lib.provenance import add_provenance_args, build_provenance, relative_to_root
+from lib.splits import (
+    CANONICAL_SEED,
+    CANONICAL_SPLIT_ID,
+    CANONICAL_TEST_SIZE,
+    CANONICAL_VAL_SIZE,
+    SPLIT_SCHEME,
+    assign_splits,
+    population_signature,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,10 +38,14 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-NORM_SCHEMA_VERSION = 2
+NORM_SCHEMA_VERSION = 3
 NORM_DATASET = "IPIP-FFM (openpsychometrics.org)"
 NORM_TABLE = "responses"
-NORM_SCOPE = "full cleaned dataset from stage 02 SQLite (not split-specific)"
+NORM_SCOPE = (
+    "training split of canonical_v1 (plain random 70/15/15, seed 42) from the "
+    "stage 02 SQLite; held-out val/test rows are excluded so norms do not leak "
+    "into the percentile targets"
+)
 
 
 def _resolve_path(path: Path) -> Path:
@@ -47,7 +60,9 @@ def _default_meta_path(output_path: Path) -> Path:
     return output_path.parent / f"{output_path.name}.meta.json"
 
 
-def _load_domain_scores_from_sqlite(db_path: Path) -> pd.DataFrame:
+def _load_domain_scores_from_sqlite(
+    db_path: Path, sample: int | None = None
+) -> pd.DataFrame:
     if not db_path.exists():
         raise FileNotFoundError(
             f"SQLite database not found: {db_path}. Run stage 02 (make load) first."
@@ -55,7 +70,14 @@ def _load_domain_scores_from_sqlite(db_path: Path) -> pd.DataFrame:
 
     score_cols = [f"{d}_score" for d in DOMAINS]
     query_cols = ITEM_COLUMNS + score_cols
-    query = f"SELECT {', '.join(query_cols)} FROM {NORM_TABLE}"
+    query = (
+        f"SELECT respondent_id, {', '.join(query_cols)} "
+        f"FROM {NORM_TABLE} ORDER BY respondent_id"
+    )
+    # --sample takes the first N respondents (same ORDER BY + LIMIT as stage 04's
+    # load_from_sqlite) so a smoke run's norms population matches stage 04's split.
+    if sample is not None:
+        query += f" LIMIT {sample}"
     with sqlite3.connect(str(db_path)) as conn:
         df = pd.read_sql_query(query, conn)
 
@@ -73,13 +95,15 @@ def _compute_norms(df: pd.DataFrame) -> dict[str, dict[str, float | int]]:
     stats: dict[str, dict[str, float | int]] = {}
     for domain in DOMAINS:
         col = f"{domain}_score"
-        values = pd.to_numeric(df[col], errors="coerce").dropna().astype(float)
-        if values.empty:
+        numeric = pd.to_numeric(df[col], errors="coerce")
+        values = np.asarray(numeric, dtype=float)
+        values = values[~np.isnan(values)]
+        if values.size == 0:
             raise ValueError(f"{col} has no valid rows")
 
         mean = float(values.mean())
         sd = float(values.std(ddof=1))
-        n = int(values.shape[0])
+        n = int(values.size)
 
         if not np.isfinite(mean) or not np.isfinite(sd) or sd <= 0:
             raise ValueError(
@@ -103,13 +127,15 @@ def _compute_mini_ipip_norms(
                 f"Mini-IPIP mapping for {domain} includes missing columns: {missing_items}"
             )
 
-        values = pd.to_numeric(df[items].mean(axis=1), errors="coerce").dropna().astype(float)
-        if values.empty:
+        numeric = pd.to_numeric(df[items].mean(axis=1), errors="coerce")
+        values = np.asarray(numeric, dtype=float)
+        values = values[~np.isnan(values)]
+        if values.size == 0:
             raise ValueError(f"Mini-IPIP {domain} has no valid rows")
 
         mean = float(values.mean())
         sd = float(values.std(ddof=1))
-        n = int(values.shape[0])
+        n = int(values.size)
         if not np.isfinite(mean) or not np.isfinite(sd) or sd <= 0:
             raise ValueError(
                 f"Invalid Mini-IPIP norm stats for {domain}: mean={mean}, sd={sd}, n={n}"
@@ -124,6 +150,7 @@ def _build_lock_payload(
     mini_ipip_computed: dict[str, dict[str, float | int]],
     mini_ipip_mapping_path: Path,
     mini_ipip_mapping_sha256: str,
+    population_sig: str,
 ) -> dict[str, Any]:
     n_total = int(min(int(computed[d]["n"]) for d in DOMAINS))
     return {
@@ -131,6 +158,18 @@ def _build_lock_payload(
         "dataset": NORM_DATASET,
         "table": NORM_TABLE,
         "scope": NORM_SCOPE,
+        "split": {
+            "id": CANONICAL_SPLIT_ID,
+            "scheme": SPLIT_SCHEME,
+            "seed": CANONICAL_SEED,
+            "test_size": CANONICAL_TEST_SIZE,
+            "val_size": CANONICAL_VAL_SIZE,
+            "fit_on": "train",
+            # Identity of the respondent population the split (and thus these
+            # train-only norms) were computed on; stage 04 re-checks it so a
+            # stale artifact from a different population fails closed (A5-review).
+            "population_signature": population_sig,
+        },
         "n_respondents": n_total,
         "mini_ipip_mapping": {
             "file": mini_ipip_mapping_path.name,
@@ -254,6 +293,17 @@ def main() -> int:
         default=1e-9,
         help="Max allowed absolute drift for --check (default: 1e-9)",
     )
+    parser.add_argument(
+        "--sample",
+        type=int,
+        default=None,
+        help=(
+            "Fit norms on only the first N respondents (ORDER BY respondent_id) "
+            "for a tiny end-to-end smoke run. Mirrors stage 04 --sample so the "
+            "two operate on the same population; norms stay train-only on that "
+            "sampled set. NOT for production (use the full population)."
+        ),
+    )
     add_provenance_args(parser)
     args = parser.parse_args()
 
@@ -281,11 +331,24 @@ def main() -> int:
     log.info("Check mode:   %s (tolerance=%g)", bool(args.check), args.tolerance)
 
     try:
-        df = _load_domain_scores_from_sqlite(db_path)
+        df = _load_domain_scores_from_sqlite(db_path, sample=args.sample)
+        labels = assign_splits(
+            df["respondent_id"].to_numpy(),
+            seed=CANONICAL_SEED,
+            test_size=CANONICAL_TEST_SIZE,
+            val_size=CANONICAL_VAL_SIZE,
+        )
+        train_df = df.loc[labels == "train"].reset_index(drop=True)
+        log.info(
+            "Fitting norms on TRAIN split only: %s of %s rows (%s)",
+            f"{len(train_df):,}",
+            f"{len(df):,}",
+            CANONICAL_SPLIT_ID,
+        )
         mini_ipip_mapping = load_mini_ipip_mapping(mini_ipip_mapping_path)
         mini_ipip_mapping_sha256 = file_sha256(mini_ipip_mapping_path)
-        computed = _compute_norms(df)
-        mini_ipip_computed = _compute_mini_ipip_norms(df, mini_ipip_mapping)
+        computed = _compute_norms(train_df)
+        mini_ipip_computed = _compute_mini_ipip_norms(train_df, mini_ipip_mapping)
     except (
         FileNotFoundError,
         sqlite3.Error,
@@ -302,6 +365,7 @@ def main() -> int:
         mini_ipip_computed,
         mini_ipip_mapping_path=mini_ipip_mapping_path,
         mini_ipip_mapping_sha256=mini_ipip_mapping_sha256,
+        population_sig=population_signature(df["respondent_id"].to_numpy()),
     )
     expected_norms: dict[str, dict[str, float]]
     expected_mini_ipip_norms: dict[str, dict[str, float]]

@@ -1,5 +1,16 @@
+import { readFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import { reverseScore } from "./reverse-score";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const canonical = JSON.parse(
+  readFileSync(
+    resolve(__dirname, "..", "..", "..", "tests", "fixtures", "golden", "canonical_items.json"),
+    "utf-8"
+  )
+) as { domain_balanced_20: string[]; reverse_keyed: Record<string, boolean> };
 
 const REVERSE_KEYED = [
   "ext2", "ext4", "ext6", "ext8", "ext10",
@@ -72,5 +83,19 @@ describe("reverseScore", () => {
 
   it("handles empty input", () => {
     expect(reverseScore({})).toEqual({});
+  });
+
+  it("agrees with the canonical reverse-key flags for the deployed 20 items", () => {
+    // Ties reverse-score.ts to the canonical source of truth (derived from
+    // lib.constants.REVERSE_KEYED): a reverse-keyed item maps 1 -> 5, a
+    // forward-keyed item leaves 1 unchanged.
+    for (const id of canonical.domain_balanced_20) {
+      const scored = reverseScore({ [id]: 1 })[id];
+      if (canonical.reverse_keyed[id]) {
+        expect(scored).toBe(5);
+      } else {
+        expect(scored).toBe(1);
+      }
+    }
   });
 });

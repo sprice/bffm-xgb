@@ -1,6 +1,6 @@
-# BFFM-XGB: Big Five From 20 Questions
+# BFFM-XGB: machine learning for shorter Big Five assessments
 
-Open-source pipeline for training XGBoost quantile regression models that predict Big Five personality scores from partial questionnaire responses. Trained on [~603k respondents](https://openpsychometrics.org/_rawdata) from the [IPIP-BFFM](https://ipip.ori.org/newBigFive5broadKey.htm) dataset with sparsity augmentation, the 15 exported ONNX models (5 domains x 3 quantiles) produce percentile scores with calibrated 90% prediction intervals from as few as 20 items.
+Open-source pipeline for training XGBoost quantile regression models that predict Big Five personality scores from partial questionnaire responses. Trained on 422k of [~603k respondents](https://openpsychometrics.org/_rawdata) (a seed-locked 70/15/15 split) from the [IPIP-BFFM](https://ipip.ori.org/newBigFive5broadKey.htm) dataset with sparsity augmentation, the 15 exported ONNX models (5 domains x 3 quantiles) produce percentile scores with empirical 90% prediction intervals from as few as 20 items (validated to ~90% coverage at the 20-item operating point; no post-hoc width adjustment is applied).
 
 **What's here:**
 - **Models** — Pre-trained ONNX models, public domain, on [HuggingFace](https://huggingface.co/shawnprice/bffm-xgb)
@@ -10,28 +10,53 @@ Open-source pipeline for training XGBoost quantile regression models that predic
 
 ### Comparison with the Mini-IPIP
 
-The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) is the standard short personality test in psychology research (Donnellan et al., 2006). Both approaches use 20 items (4 per domain) to recover the full 50-item IPIP-BFFM scale scores. All *r* values are Pearson correlations with the full 50-item scale on a held-out test set (*N* = 90,499).
+The [Mini-IPIP](https://ipip.ori.org/MiniIPIPTable.htm) is the standard short personality test in psychology research (Donnellan et al., 2006). Both approaches use 20 items (4 per domain) to recover the full 50-item IPIP-BFFM scale scores. All *r* values are Pearson correlations with the full 50-item scale on the held-out `canonical_v1` test split (the test rows in the data counts in [docs/research.md](docs/research.md#data)). "Overall *r*" is a respondent-pooled correlation across all five domains' stacked percentile vectors (numerically ≈ the mean of the per-domain *r*).
 
-|                              | Mini-IPIP              | BFFM-XGB-20                 |
+<!-- BEGIN GENERATED: comparison-table -->
+|                              | Mini-IPIP (averaging)  | BFFM-XGB-20 (XGBoost)       |
 | ---------------------------- | ---------------------- | --------------------------- |
 | **Items**                    | 20 (4 per domain)      | 20 (4 per domain)           |
 | **Item selection**           | Expert-curated brevity | Top-4 by within-domain *r*  |
 | **Scoring**                  | Simple scale averaging | XGBoost quantile regression |
-| **Overall *r***              | .906                   | **.927**                    |
-| **MAE (percentile pts)**     | 9.2                    | **8.2**                     |
+| **Overall *r***              | .907                   | **.928**                    |
+| **MAE (percentile pts)**     | 9.2                    | **8.1**                     |
 | **90% prediction intervals** | —                      | ✓ (89.5% coverage)          |
+<!-- END GENERATED: comparison-table -->
+
+The BFFM-XGB-20 figures in the table above are the **fixed, pre-specified domain-balanced 20-item form** — the top-4 items per domain — which is the deployed web form, not a post-hoc best-of-grid selection. Evaluated instead under *random* balanced 20-item masking (the random-balanced row below), the model's general partial-response accuracy is lower. Empirical 90%-PI coverage and the paired recovery *r* at each operating point:
+
+<!-- BEGIN GENERATED: coverage-by-regime -->
+- **Deployed 20-item form (fixed top-4 per domain):** 89.5% empirical coverage (*r* = 0.93) — slightly under the nominal 90% by design.
+- **Random balanced 20-item masking:** 89.8% empirical coverage (*r* = 0.911).
+- **Full 50 items (self-recovery):** 92.6% empirical coverage (*r* = 0.9997).
+<!-- END GENERATED: coverage-by-regime -->
+
+Sparse-20 headline metrics are computed on a single fixed balanced mask (RNG seed 42); the reported bootstrap CI reflects respondent-sampling variance only and does not include mask-selection variance (stage-07 training averages over multiple masks).
 
 **Per-domain accuracy at *K* = 20:**
 
-| Domain                | Mini-IPIP *α* | Mini-IPIP *r* | BFFM-XGB-20 *r* |
-| --------------------- | ------------- | ------------- | --------------- |
-| Extraversion          | .77           | .939          | **.947**        |
-| Agreeableness         | .70           | .911          | **.920**        |
-| Conscientiousness     | .69           | .909          | **.919**        |
-| Emotional Stability   | .68           | .929          | **.937**        |
-| Intellect/Imagination | .65           | .842          | **.910**        |
+<!-- BEGIN GENERATED: per-domain-k20 -->
+| Domain                | Mini-IPIP *α* (reported) | Mini-IPIP *r* (averaging) | BFFM-XGB-20 *r* (XGBoost) |
+| --------------------- | ------------------------ | ------------------------- | ------------------------- |
+| Extraversion          | .77                      | .938          | **.947**        |
+| Agreeableness         | .70                      | .912          | **.920**        |
+| Conscientiousness     | .69                      | .910          | **.921**        |
+| Emotional Stability   | .68                      | .930          | **.938**        |
+| Intellect/Imagination | .65                      | .842          | **.912**        |
+<!-- END GENERATED: per-domain-k20 -->
 
-At 15 items, BFFM-XGB already matches the Mini-IPIP's 20-item accuracy (*r* = .908 vs .906).
+The Mini-IPIP *α* column reports the published Donnellan et al. (2006) reliabilities, not values computed on this sample — so it is not directly comparable to the same-sample recovery *r* columns (the repo's own OSPP-train Mini-IPIP alpha differ and are in `reliability.json`). The two recovery-*r* columns also use **different item sets**: the Mini-IPIP-*r* column scores the four expert-curated Mini-IPIP items per domain (simple averaging), while the BFFM-XGB-20 column scores the top-4-by-*r* items (XGBoost). So the column-to-column gap reflects *both* scoring method and item selection — not the item set held fixed. The scoring-only vs selection-only decomposition is below.
+
+With only 15 items and XGBoost scoring (3 per domain), BFFM-XGB matches the overall recovery of the 20-item simple-averaging Mini-IPIP (the Mini-IPIP **Overall *r*** in the table above) — fewer items, though the comparison also differs in scoring method and item set. The 15-item figure and the full per-*K* curve are in [NOTES.md](notes/NOTES.md) and `artifacts/variants/reference/ml_vs_averaging_comparison.json`.
+
+The 20-item gain combines two levers: the **scoring method** (XGBoost vs simple averaging) and the **item set** (top-4-by-*r* vs the expert-curated Mini-IPIP items). Holding the item set fixed (the domain-balanced top-4), the scoring lever alone accounts for the gains below; the remainder is item selection.
+
+<!-- BEGIN GENERATED: decomposition -->
+- **Scoring lever (item set held fixed):** XGBoost scoring alone adds roughly +0.004 to +0.008 *r* per domain over averaging (about +0.006 overall, bootstrap 95% CI [+0.0062, +0.0065]).
+- **Selection lever:** the remainder of the 20-item gain is item selection (top-4-by-*r* vs the expert-curated Mini-IPIP items); for Emotional Stability the Mini-IPIP items scored with XGBoost slightly *beat* the top-4-by-*r* selection (scoring, not selection).
+<!-- END GENERATED: decomposition -->
+
+See the per-domain decomposition in [NOTES.md](notes/NOTES.md) and `artifacts/variants/reference/ml_vs_averaging_comparison.json`.
 
 ## Quick Start
 
@@ -40,14 +65,16 @@ At 15 items, BFFM-XGB already matches the Mini-IPIP's 20-item accuracy (*r* = .9
 | Python     | [`python/`](python/)         | `pip install onnxruntime numpy scipy pytest` | [Inference guide](docs/inference.md)          |
 | TypeScript | [`typescript/`](typescript/) | `npm ci`                                     | [Inference guide](docs/inference.md)          |
 
-Give it answers (1–5 scale, reverse-scored), get percentiles with 90% confidence intervals. See [docs/inference.md](docs/inference.md) for full code examples.
+Give it answers (1–5 scale, reverse-scored), get percentiles with 90% prediction intervals. See [docs/inference.md](docs/inference.md) for full code examples.
 
 ## Reproduce
 
 ```bash
-make setup    # Python, TypeScript, and web dependencies
-make all      # Full pipeline: download through figures
-make test     # All tests: lib, inference, and web
+make setup     # Python (uv sync), TypeScript, and web dependencies
+make all       # Full pipeline: download through figures
+make test      # All tests: lib, inference, and web
+make lint      # Lint (ruff)
+make typecheck # Static type check (basedpyright, standard mode)
 ```
 
 See [docs/pipeline.md](docs/pipeline.md) for pipeline stages, training variants, hyperparameter tuning, and research evaluation.
@@ -78,8 +105,9 @@ bffm-xgb/
 ├── LICENSE.md          MIT License
 ├── Makefile            Orchestrates the full pipeline
 ├── NOTICES.md          Third-party attributions (CC0, IPIP, OSPP)
-├── pyproject.toml      pytest configuration (pythonpath, testpaths)
-├── requirements.txt    Python dependencies
+├── pyproject.toml      Project metadata, dependencies, and tool config (ruff, basedpyright, pytest)
+├── uv.lock             Locked, hashed dependency versions (uv)
+├── .python-version     Pinned Python (uv)
 └── README.md           This file
 ```
 
@@ -97,8 +125,11 @@ bffm-xgb/
 
 - Norms are derived from self-selected online respondents (OSPP); they may not represent the general population
 - Models are trained on English-language IPIP items only
+- **No demographic-subgroup or measurement-invariance analysis** has been performed; accuracy may vary by gender, age, or region
+- **No external / out-of-distribution validation:** every reported number is on a held-out split of the *same* OSPP dataset, so these are *score-recovery* metrics (recovering the full-scale score from a subset of its own items), not external-trait validity
+- The deployed 20-item Emotional Stability subscale is composed entirely of reverse-keyed items, so it is more sensitive to acquiescence (yea-saying) and careless responding than the full 50-item assessment; the other four short-form domains mix keyed directions
 - Accuracy degrades with fewer items; 20 items is the recommended minimum for reliable scoring
-- Intended for educational use only
+- **Not validated for clinical diagnosis or high-stakes selection**
 
 ## License
 

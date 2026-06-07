@@ -1,0 +1,11 @@
+{
+  "//": "Type-check-only config for the server TEST files (vitest transpiles them but never type-checks). The build config (tsconfig.server.json) excludes *.test.ts so dist/ stays test-free; this one includes them so `npm run typecheck` covers the full server surface. Tests run under vitest (esbuild bundler resolution), not node directly, so bundler resolution checks real type errors without the NodeNext extensionless-import strictness vitest ignores.",
+  "extends": "./tsconfig.server.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "esnext",
+    "moduleResolution": "bundler"
+  },
+  "include": ["src/server"],
+  "exclude": []
+}

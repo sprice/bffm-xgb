@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate publication-quality figures for the IPIP-BFFM adaptive assessment paper.
+"""Generate publication-quality figures for the IPIP-BFFM sparse quantile model paper.
 
 Reads data from JSON/CSV artifacts and saves figures to figures/.
 
@@ -26,14 +26,14 @@ import logging
 from typing import Any
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 
-from lib.constants import DOMAINS
-from lib.provenance import build_provenance, relative_to_root, file_sha256
+from lib.provenance import build_provenance, file_sha256, relative_to_root
 
 logging.basicConfig(
     level=logging.INFO,
@@ -388,7 +388,9 @@ def figure_1_efficiency_curves(data: dict, fig_dir: Path) -> None:
     ax.set_xlabel("Number of items")
     ax.set_ylabel("Pearson r (overall)")
     ax.set_xlim(3, 52)
-    ax.set_ylim(0.50, 1.02)
+    # Floor at 0.45 (not 0.50) so the Worst-K K=5 negative control (r ≈ 0.467)
+    # and its CI render instead of being clipped at the bottom of the axis.
+    ax.set_ylim(0.45, 1.02)
     ax.set_xticks([5, 10, 15, 20, 25, 30, 40, 50])
     ax.yaxis.set_major_locator(mticker.MultipleLocator(0.05))
     ax.yaxis.set_minor_locator(mticker.MultipleLocator(0.025))
@@ -397,7 +399,23 @@ def figure_1_efficiency_curves(data: dict, fig_dir: Path) -> None:
     ax.yaxis.grid(True, which="major", linewidth=0.4, color="0.85", zorder=0)
 
     ax.legend(loc="lower right", frameon=True)
-    ax.set_title("Assessment Efficiency: Accuracy vs. Number of Items", pad=10)
+    ax.set_title("Assessment Efficiency: Score Recovery vs. Number of Items", pad=10)
+
+    # The K=50 endpoint is within-dataset score recovery (r approx 1 by
+    # construction: the target is a deterministic transform of those same 50
+    # items), not external trait validity. Flag this so the curve is not
+    # over-read as accuracy at the ceiling.
+    ax.text(
+        0.015,
+        0.015,
+        "K=50 endpoint is within-dataset score recovery (r ≈ 1 because the target is a deterministic transform of those same 50 items).",
+        transform=ax.transAxes,
+        fontsize=7,
+        color="0.45",
+        ha="left",
+        va="bottom",
+        zorder=6,
+    )
 
     for fmt in ("png", "pdf"):
         fig.savefig(fig_dir / f"fig1_efficiency_curves.{fmt}")
@@ -443,10 +461,15 @@ def figure_2_domain_starvation(df: pd.DataFrame, fig_dir: Path) -> None:
 
     # Create a panel: one sub-heatmap per K value
     fig, axes = plt.subplots(1, len(k_vals), figsize=(8.5, 3.2), sharey=True)
-    fig.subplots_adjust(wspace=0.08)
+    # Reserve an explicit left margin for the leftmost panel's strategy row
+    # labels (set only on idx==0) and an explicit right margin for the manual
+    # colorbar. Without this, savefig(bbox="tight") + the add_axes([0.93, ...])
+    # colorbar can crop the y-tick strategy labels, making rows unattributable.
+    fig.subplots_adjust(left=0.16, right=0.9, bottom=0.18, top=0.83, wspace=0.08)
 
     vmin, vmax = 0, 10
 
+    im = None  # AxesImage from the last sub-heatmap; reused for the shared colorbar
     for idx, k in enumerate(k_vals):
         ax = axes[idx]
         sub = df[df["n_items"] == k]
@@ -501,22 +524,28 @@ def figure_2_domain_starvation(df: pd.DataFrame, fig_dir: Path) -> None:
         )
         ax.set_title(f"K = {k}", fontsize=10, pad=4)
 
+        # With sharey=True the y-axis ticks are shared across panels, so set the
+        # strategy ticks/labels once on the first panel and only HIDE (not clear)
+        # the labels on the rest. Calling set_yticks([]) on a shared axis wipes
+        # the ticks from every panel, leaving the strategy rows unlabelled.
+        ax.set_yticks(range(len(strategies)))
         if idx == 0:
-            ax.set_yticks(range(len(strategies)))
             ax.set_yticklabels(
                 [STRATEGY_LABELS[s].split(" (")[0] for s in strategies],
                 fontsize=8.5,
             )
         else:
-            ax.set_yticks([])
+            ax.tick_params(labelleft=False)
 
         # Remove spines for heatmap
         for spine in ax.spines.values():
             spine.set_visible(False)
         ax.tick_params(length=0)
 
-    # Colorbar
-    cbar_ax = fig.add_axes([0.93, 0.18, 0.015, 0.65])
+    # Colorbar sits in the reserved right margin (right=0.9 above) so it does
+    # not overlap the panels; its vertical extent matches the panels' bottom/top.
+    cbar_ax = fig.add_axes((0.925, 0.18, 0.015, 0.65))
+    assert im is not None, "no sub-heatmaps were rendered (empty k_vals)"
     cbar = fig.colorbar(im, cax=cbar_ax)
     cbar.set_label("Items", fontsize=9)
     cbar.ax.tick_params(labelsize=8)
@@ -714,6 +743,10 @@ def figure_4_per_domain_k20(df: pd.DataFrame, fig_dir: Path) -> None:
     strategy_short = {
         "domain_balanced": "Domain-Balanced",
         "mini_ipip": "Mini-IPIP",
+        # "Greedy Top-K" is the display label for the CSV's `adaptive_topk` method
+        # (greedy selection by cross-domain correlation utility -- the negative
+        # result). The label->method map is recorded in figures/manifest.json so the
+        # figure is reconcilable with baseline_comparison_per_domain.csv.
         "adaptive_topk": "Greedy Top-K",
     }
 
@@ -873,7 +906,7 @@ def figure_4_per_domain_k20(df: pd.DataFrame, fig_dir: Path) -> None:
         )
 
     ax.legend(loc="lower left", frameon=True)
-    ax.set_title("Per-Domain Accuracy at 20 Items", pad=10)
+    ax.set_title("Per-Domain Score Recovery at 20 Items", pad=10)
 
     for fmt in ("png", "pdf"):
         fig.savefig(fig_dir / f"fig4_per_domain_k20.{fmt}")
@@ -884,6 +917,19 @@ def figure_4_per_domain_k20(df: pd.DataFrame, fig_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
+
+def _attach_figure_checksums(
+    figure_entries: list[dict[str, Any]], fig_dir: Path
+) -> list[dict[str, Any]]:
+    """Lock each figure to a content hash (A5.5), computed from the rendered files
+    on disk. Keyed by the same format strings already in each entry's `formats`."""
+    for entry in figure_entries:
+        entry["sha256"] = {
+            fmt: file_sha256(fig_dir / f"{entry['filename']}.{fmt}")
+            for fmt in entry["formats"]
+        }
+    return figure_entries
 
 
 def main() -> int:
@@ -959,33 +1005,46 @@ def main() -> int:
             "sha256": file_sha256(path),
         }
 
+    # Lock each rendered figure to a content hash (A5.5) so the committed images
+    # are provably the ones rendered from the locked source data. figure_1..4()
+    # ran above (each savefig + plt.close), so the files exist on disk now.
+    figure_entries: list[dict[str, Any]] = [
+        {
+            "filename": "fig1_efficiency_curves",
+            "formats": ["png", "pdf"],
+            "source_artifacts": ["baseline_comparison_results"],
+        },
+        {
+            "filename": "fig2_domain_starvation",
+            "formats": ["png", "pdf"],
+            "source_artifacts": ["baseline_comparison_per_domain_csv"],
+        },
+        {
+            "filename": "fig3_ml_vs_averaging",
+            "formats": ["png", "pdf"],
+            "source_artifacts": ["ml_vs_averaging_comparison"],
+        },
+        {
+            "filename": "fig4_per_domain_k20",
+            "formats": ["png", "pdf"],
+            "source_artifacts": ["baseline_comparison_per_domain_csv"],
+            # Maps each displayed bar label to its `method` value in the source
+            # CSV, so "Greedy Top-K" is reconcilable with the `adaptive_topk` row.
+            "series_labels": {
+                "Domain-Balanced": "domain_balanced",
+                "Mini-IPIP": "mini_ipip",
+                "Greedy Top-K": "adaptive_topk",
+            },
+        },
+    ]
+    _attach_figure_checksums(figure_entries, fig_dir)
+
     manifest = {
         "schema_version": 1,
         "provenance": build_provenance(Path(__file__).name),
         "model_dir": relative_to_root(common_model_dir),
         "source_artifacts": source_artifacts,
-        "figures": [
-            {
-                "filename": "fig1_efficiency_curves",
-                "formats": ["png", "pdf"],
-                "source_artifacts": ["baseline_comparison_results"],
-            },
-            {
-                "filename": "fig2_domain_starvation",
-                "formats": ["png", "pdf"],
-                "source_artifacts": ["baseline_comparison_per_domain_csv"],
-            },
-            {
-                "filename": "fig3_ml_vs_averaging",
-                "formats": ["png", "pdf"],
-                "source_artifacts": ["ml_vs_averaging_comparison"],
-            },
-            {
-                "filename": "fig4_per_domain_k20",
-                "formats": ["png", "pdf"],
-                "source_artifacts": ["baseline_comparison_per_domain_csv"],
-            },
-        ],
+        "figures": figure_entries,
     }
 
     manifest_path = fig_dir / "manifest.json"

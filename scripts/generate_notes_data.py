@@ -13,18 +13,25 @@ Usage:
 
 import argparse
 import json
+import math
 import re
 import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from lib.constants import DEFAULT_STAGE07_CV_FOLDS
+from lib.config import load_config_with_base
+from lib.constants import (
+    ADAPTIVE_STOP,
+    DEFAULT_STAGE07_CV_FOLDS,
+    DOMAIN_DISPLAY_LABELS,
+    DOMAINS,
+    QUANTILE_NAME_LIST,
+    REFERENCE_VARIANT,
+)
 
 ARTIFACTS_DIR = PACKAGE_ROOT / "artifacts"
 CONFIGS_DIR = PACKAGE_ROOT / "configs"
@@ -33,13 +40,9 @@ NOTES_PATH = PACKAGE_ROOT / "notes" / "NOTES.md"
 RESEARCH_SUMMARY_PATH = ARTIFACTS_DIR / "research_summary.json"
 
 DOMAIN_ORDER = ["ext", "agr", "csn", "est", "opn"]
-DOMAIN_LABELS = {
-    "ext": "Extraversion",
-    "agr": "Agreeableness",
-    "csn": "Conscientiousness",
-    "est": "Emotional Stability",
-    "opn": "Intellect/Imagination",
-}
+# Display labels single-sourced in lib.constants.DOMAIN_DISPLAY_LABELS (shared
+# with the doc generator and the model-card template) so they cannot drift.
+DOMAIN_LABELS = DOMAIN_DISPLAY_LABELS
 DOMAIN_KEYS_BASELINE = {
     "ext": "Extraversion",
     "agr": "Agreeableness",
@@ -51,14 +54,29 @@ VARIANT_ORDER = [
     "reference",
     "ablation_none",
     "ablation_focused",
-    "ablation_stratified",
 ]
 VARIANT_LABELS = {
     "reference": "Reference",
     "ablation_none": "Ablation: No Sparsity",
     "ablation_focused": "Ablation: Focused Only",
-    "ablation_stratified": "Ablation: Stratified Split",
 }
+
+# The variants the cross-variant ("ablation_*") sections iterate. Defaults to the
+# full set; update_notes() narrows it to just the reference variant for a
+# reference-only build, then restores it (in a finally) so direct generator calls
+# — e.g. the BFFM_STRICT_DRIFT byte-drift test — always see the full order.
+_ACTIVE_VARIANT_ORDER: list[str] = list(VARIANT_ORDER)
+
+
+def _reference_only_disclosure() -> str:
+    """One-line NOTES disclosure prepended to the cross-variant detail sections when
+    only the reference variant was run (so the "All Runs" headings are not misleading)."""
+    if _ACTIVE_VARIANT_ORDER == [REFERENCE_VARIANT]:
+        return (
+            "> Ablation variants (no-sparsity, focused-only) were not run in this "
+            "reference-only build; only the reference run is shown below.\n"
+        )
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -69,11 +87,6 @@ VARIANT_LABELS = {
 def load_json(path: Path) -> dict:
     with open(path) as f:
         return json.load(f)
-
-
-def load_yaml(path: Path) -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f)
 
 
 def load_research_summary() -> dict:
@@ -102,9 +115,15 @@ def load_reference_notes_inputs() -> dict:
     return notes_inputs
 
 
-def load_variant_notes_inputs(variant: str) -> dict:
-    """Load variant-scoped NOTES inputs from research_summary.json."""
-    payload = load_research_summary()
+def load_variant_notes_inputs(variant: str, payload: dict | None = None) -> dict:
+    """Load variant-scoped NOTES inputs from research_summary.json.
+
+    Pass an already-parsed ``payload`` (from a single ``load_research_summary()``
+    call) to avoid re-reading/re-parsing the multi-MB summary once per variant;
+    omitting it preserves the standalone behavior of reading from disk.
+    """
+    if payload is None:
+        payload = load_research_summary()
     variants = payload.get("variants", {})
     if not isinstance(variants, dict):
         raise ValueError(f"{RESEARCH_SUMMARY_PATH} has invalid 'variants' object.")
@@ -179,6 +198,14 @@ def fmt_pct(val: float) -> str:
     return f"{val:.1f}%"
 
 
+def _cov_cell(val: object) -> str:
+    """Format a coverage value as a percent, degrading to '---' when missing or
+    non-finite (e.g. an empty central/tail band) instead of rendering 'nan%'."""
+    if isinstance(val, (int, float)) and math.isfinite(val):
+        return fmt_pct(val * 100)
+    return "---"
+
+
 def fmt_f(val: float, places: int = 2) -> str:
     return f"{val:.{places}f}"
 
@@ -219,10 +246,22 @@ def pad_table(rows: list[list[str]]) -> str:
 
 def gen_model_config() -> str:
     hp = load_hyperparameters_for_notes()
+    # De-hardcode the model count, quantile labels, and RNG seed: the count is
+    # (domains x quantiles) from lib.constants and the seed is the reference
+    # config's training.random_state, so this row never drifts from the source.
+    n_domains = len(DOMAINS)
+    n_quantiles = len(QUANTILE_NAME_LIST)
+    quantile_str = ", ".join(QUANTILE_NAME_LIST)
+    ref = load_config_with_base(CONFIGS_DIR / "reference.yaml")
+    rng_seed = str(ref["training"]["random_state"])
     rows = [
         ["Parameter", "Value"],
         ["Algorithm", "XGBoost quantile regression (pinball loss)"],
-        ["Models", "15 (5 domains x 3 quantiles: q05, q50, q95)"],
+        [
+            "Models",
+            f"{n_domains * n_quantiles} ({n_domains} domains x {n_quantiles} "
+            f"quantiles: {quantile_str})",
+        ],
         ["n_estimators", f"{hp['n_estimators']:,}"],
         ["max_depth", str(hp["max_depth"])],
         ["learning_rate", fmt_f(hp["learning_rate"], 4)],
@@ -231,7 +270,7 @@ def gen_model_config() -> str:
         ["colsample_bytree", fmt_f(hp["colsample_bytree"], 3)],
         ["reg_lambda", fmt_f(hp["reg_lambda"], 3)],
         ["reg_alpha", fmt_f(hp["reg_alpha"], 3)],
-        ["RNG seed", "42"],
+        ["RNG seed", rng_seed],
     ]
     return pad_table(rows)
 
@@ -259,7 +298,17 @@ def _gen_validation_from_notes_inputs(notes_inputs: dict) -> str:
     val = _notes_input_dict(notes_inputs, "validation_results")
     metrics = val["metrics"]
     rows = [
-        ["Domain", "r", "MAE", "RMSE", "Within-5", "90% Coverage", "Raw Crossing Rate"]
+        [
+            "Domain",
+            "r",
+            "MAE",
+            "RMSE",
+            "Within-5",
+            "90% Coverage",
+            "Central Cov (20-80)",
+            "Tail Cov (<20,>80)",
+            "Raw Crossing Rate",
+        ]
     ]
     for d in DOMAIN_ORDER:
         dm = metrics[d]
@@ -271,10 +320,9 @@ def _gen_validation_from_notes_inputs(notes_inputs: dict) -> str:
                 fmt_f(dm["rmse"], 2),
                 fmt_pct(dm["within_5_pct"] * 100),
                 fmt_pct(dm["coverage_90"] * 100),
-                fmt_pct(
-                    dm.get("raw_crossing_rate", dm.get("quantile_crossing_rate", 0))
-                    * 100
-                ),
+                _cov_cell(dm.get("coverage_central")),
+                _cov_cell(dm.get("coverage_tail")),
+                fmt_pct(dm.get("raw_crossing_rate", 0.0) * 100),
             ]
         )
     ov = metrics["overall"]
@@ -285,8 +333,10 @@ def _gen_validation_from_notes_inputs(notes_inputs: dict) -> str:
             f"**{fmt_f(ov['mae'], 2)}**",
             f"**{fmt_f(ov['rmse'], 2)}**",
             f"**{fmt_pct(ov['within_5_pct'] * 100)}**",
-            "---",
-            "---",
+            f"**{fmt_pct(ov['coverage_90'] * 100)}**",
+            f"**{_cov_cell(ov.get('coverage_central'))}**",
+            f"**{_cov_cell(ov.get('coverage_tail'))}**",
+            f"**{fmt_pct(ov.get('raw_crossing_rate', 0.0) * 100)}**",
         ]
     )
     return pad_table(rows)
@@ -317,6 +367,11 @@ def _gen_baselines_from_notes_inputs(notes_inputs: dict) -> str:
     for k in [5, 10, 15, 20, 25, 30, 40, 50]:
         k_data = overall.get(str(k), {})
         row = [str(k)]
+        # At the K=50 ceiling every strategy collapses to the full scale with
+        # r ~= 0.9997; rendering those cells at 3 decimals reads as "1.000" and
+        # falsely asserts perfect recovery, so render the ceiling row at 4
+        # decimals (fmt_r) like the validation table.
+        fmt_cell = fmt_r if k == 50 else fmt_r3
         for method, _ in strategy_order:
             entry = k_data.get(method)
             if entry is None:
@@ -324,9 +379,9 @@ def _gen_baselines_from_notes_inputs(notes_inputs: dict) -> str:
                 continue
             r = entry["pearson_r"]
             ci = entry.get("pearson_r_ci")
-            r_str = fmt_r3(r)
+            r_str = fmt_cell(r)
             if ci:
-                r_str += f" [{fmt_r3(ci[0])}, {fmt_r3(ci[1])}]"
+                r_str += f" [{fmt_cell(ci[0])}, {fmt_cell(ci[1])}]"
             if k == 20 and method in ("domain_balanced", "mini_ipip"):
                 r_str = f"**{r_str}**"
             row.append(r_str)
@@ -428,10 +483,36 @@ def gen_ml_vs_averaging() -> str:
     return _gen_ml_vs_averaging_from_notes_inputs(notes_inputs)
 
 
+def _ci_bracket(ci: object, places: int, signed: bool = False) -> str:
+    """Render a [lo, hi] CI pair, degrading to '---' when absent/malformed."""
+    if isinstance(ci, (list, tuple)) and len(ci) == 2:
+        lo, hi = ci
+        if isinstance(lo, (int, float)) and isinstance(hi, (int, float)):
+            if signed:
+                return f"[{lo:+.{places}f}, {hi:+.{places}f}]"
+            return f"[{fmt_f(float(lo), places)}, {fmt_f(float(hi), places)}]"
+    return "---"
+
+
 def _gen_ml_vs_averaging_from_notes_inputs(notes_inputs: dict) -> str:
     comp = _notes_input_dict(notes_inputs, "ml_vs_averaging_comparison")
+    # Scoring-method tags (M12): the r/MAE columns mix two scoring methods, so
+    # tag each header so a skimmer cannot attribute both to one method. The Delta
+    # columns carry their paired bootstrap 95% CI (M11): data already exists in
+    # ml_vs_averaging_comparison (delta_r_ci / delta_mae_ci) — no recompute.
     rows = [
-        ["Strategy", "K", "ML r", "Avg r", "Delta r", "ML MAE", "Avg MAE", "Delta MAE"]
+        [
+            "Strategy",
+            "K",
+            "ML r (XGBoost)",
+            "Avg r (averaging)",
+            "Delta r",
+            "Delta r 95% CI",
+            "ML MAE (XGBoost)",
+            "Avg MAE (averaging)",
+            "Delta MAE",
+            "Delta MAE 95% CI",
+        ]
     ]
     for entry in comp["comparisons"]:
         method = entry["method"]
@@ -448,9 +529,81 @@ def _gen_ml_vs_averaging_from_notes_inputs(notes_inputs: dict) -> str:
                 fmt_f(entry["ml_r"], 4),
                 fmt_f(entry["avg_r"], 4),
                 f"{entry['delta_r']:+.4f}",
+                _ci_bracket(entry.get("delta_r_ci"), 4, signed=True),
                 fmt_f(entry["ml_mae"], 2),
                 fmt_f(entry["avg_mae"], 2),
                 f"{entry['delta_mae']:+.2f}",
+                _ci_bracket(entry.get("delta_mae_ci"), 2, signed=True),
+            ]
+        )
+    table = pad_table(rows)
+
+    # Surface the paired (same-respondent) delta CI for the headline
+    # domain-balanced-ML vs Mini-IPIP-averaging contrast (M11).
+    paired = comp.get("xgb_vs_mini_ipip_paired")
+    if isinstance(paired, dict):
+        dr = paired.get("delta_pearson_r")
+        dmae = paired.get("delta_mae")
+        if isinstance(dr, (int, float)) and isinstance(dmae, (int, float)):
+            table += (
+                f"\n\nPaired (same-respondent) headline contrast at K="
+                f"{paired.get('n_items', 20)} — domain-balanced (XGBoost) vs "
+                f"Mini-IPIP (averaging): Δr = {dr:+.4f} "
+                f"{_ci_bracket(paired.get('delta_pearson_r_ci'), 4, signed=True)}, "
+                f"ΔMAE = {dmae:+.2f} pp "
+                f"{_ci_bracket(paired.get('delta_mae_ci'), 2, signed=True)} "
+                "(bootstrap 95% CI, paired differences)."
+            )
+    return table
+
+
+def gen_ml_vs_averaging_per_domain() -> str:
+    notes_inputs = load_reference_notes_inputs()
+    return _gen_ml_vs_averaging_per_domain_from_notes_inputs(notes_inputs)
+
+
+def _gen_ml_vs_averaging_per_domain_from_notes_inputs(notes_inputs: dict) -> str:
+    """Per-domain matched-item decomposition at K=20: isolate the SCORING gain
+    (ML minus averaging on the SAME items) for the domain-balanced vs the
+    Mini-IPIP item set, so the reader can separate scoring from item selection.
+    """
+    comp = _notes_input_dict(notes_inputs, "ml_vs_averaging_comparison")
+    by_method: dict[str, dict] = {}
+    for entry in comp["comparisons"]:
+        if entry.get("n_items") == 20 and entry.get("method") in ("domain_balanced", "mini_ipip"):
+            by_method[entry["method"]] = entry
+    missing = [m for m in ("domain_balanced", "mini_ipip") if m not in by_method]
+    if missing:
+        raise KeyError(
+            "ml_vs_averaging_comparison must contain K=20 rows for: " + ", ".join(missing)
+        )
+    db = by_method["domain_balanced"]
+    mi = by_method["mini_ipip"]
+    rows = [
+        [
+            "Domain",
+            "DB items: ML r",
+            "DB items: Avg r",
+            "DB scoring Δr",
+            "Mini-IPIP items: ML r",
+            "Mini-IPIP items: Avg r",
+            "Mini-IPIP scoring Δr",
+        ]
+    ]
+    for d in DOMAIN_ORDER:
+        db_ml = db["ml_per_domain"][d]
+        db_avg = db["avg_per_domain"][d]
+        mi_ml = mi["ml_per_domain"][d]
+        mi_avg = mi["avg_per_domain"][d]
+        rows.append(
+            [
+                DOMAIN_LABELS[d],
+                fmt_r(db_ml, 4),
+                fmt_r(db_avg, 4),
+                f"{db_ml - db_avg:+.4f}",
+                fmt_r(mi_ml, 4),
+                fmt_r(mi_avg, 4),
+                f"{mi_ml - mi_avg:+.4f}",
             ]
         )
     return pad_table(rows)
@@ -489,7 +642,21 @@ def _gen_simulation_from_notes_inputs(notes_inputs: dict) -> str:
             f"**{fmt_pct(ov['coverage_90'] * 100)}**",
         ]
     )
-    return pad_table(rows)
+    n_resp = analysis.get("n_respondents")
+    # Derive the comparison base N from the bundle rather than hardcoding it, so the
+    # caption stays correct across split regenerations (canonical_v1 test_rows etc.).
+    sm = notes_inputs.get("split_metadata")
+    base_n = sm.get("test_rows") if isinstance(sm, dict) else None
+    base_n_str = f"the full *N* = {base_n:,}" if isinstance(base_n, int) else "the full held-out test split"
+    caption = ""
+    if isinstance(n_resp, int):
+        caption = (
+            f"Simulated on a random {n_resp:,}-respondent subsample of the held-out "
+            f"test split (the baseline and validation tables use {base_n_str}), "
+            "so these estimates carry wider confidence intervals and are not co-powered "
+            "with the headline numbers.\n\n"
+        )
+    return caption + pad_table(rows)
 
 
 def gen_calibration() -> str:
@@ -641,7 +808,8 @@ def gen_validation_quintiles() -> str:
                 center_piw.append(piw)
 
     if tail_mae and center_mae:
-        avg = lambda xs: sum(xs) / len(xs)
+        def avg(xs):
+            return sum(xs) / len(xs)
         rows.append(
             [
                 "**Avg Tails (Q1/Q5, all domains)**",
@@ -667,7 +835,7 @@ def gen_validation_quintiles() -> str:
 
 
 def gen_data_splits() -> str:
-    """Dataset split sizes and stratification from pipeline stage 04."""
+    """Dataset split sizes from pipeline stage 04 (single plain random split)."""
     notes_inputs = load_reference_notes_inputs()
     sm = _notes_input_dict(notes_inputs, "split_metadata")
     rows = [
@@ -679,9 +847,9 @@ def gen_data_splits() -> str:
     ]
     header = pad_table(rows)
 
-    strat = (
-        f"\n\nStratification: {sm['stratification']} "
-        f"({sm['n_strata']} strata, seed={sm['seed']}).\n\n"
+    split_note = (
+        f"\n\nSplit: {sm.get('split_id', 'canonical_v1')} — plain random partition "
+        f"(70/15/15, seed={sm.get('seed', 42)}).\n\n"
     )
 
     val = sm.get("validation", {})
@@ -697,14 +865,14 @@ def gen_data_splits() -> str:
                     fmt_f(dv.get("ks_pvalue", 0), 3),
                 ]
             )
-        strat += pad_table(vrows)
+        split_note += pad_table(vrows)
 
-    return header + strat
+    return header + split_note
 
 
 def gen_training_config() -> str:
     """Training sparsity and augmentation settings from reference config."""
-    ref = load_yaml(CONFIGS_DIR / "reference.yaml")
+    ref = load_config_with_base(CONFIGS_DIR / "reference.yaml")
     sp = ref["sparsity"]
     tr = ref["training"]
     cv_folds = tr.get("cv_folds", DEFAULT_STAGE07_CV_FOLDS)
@@ -838,7 +1006,7 @@ def gen_ablation_overview() -> str:
         ]
     ]
 
-    for variant in VARIANT_ORDER:
+    for variant in _ACTIVE_VARIANT_ORDER:
         variant_payload = variants.get(variant, {})
         if not isinstance(variant_payload, dict):
             rows.append([VARIANT_LABELS.get(variant, variant)] + ["---"] * 7)
@@ -887,7 +1055,7 @@ def gen_ablation_overview() -> str:
             ]
         )
 
-    return pad_table(rows)
+    return _reference_only_disclosure() + pad_table(rows)
 
 
 def gen_ablation_provenance() -> str:
@@ -906,7 +1074,7 @@ def gen_ablation_provenance() -> str:
         ]
     ]
 
-    for variant in VARIANT_ORDER:
+    for variant in _ACTIVE_VARIANT_ORDER:
         payload = variants.get(variant, {})
         if not isinstance(payload, dict):
             rows.append([VARIANT_LABELS.get(variant, variant)] + ["---"] * 5)
@@ -932,14 +1100,21 @@ def gen_ablation_provenance() -> str:
             ]
         )
 
-    return pad_table(rows)
+    return _reference_only_disclosure() + pad_table(rows)
 
 
 def _iter_variant_notes_inputs() -> list[tuple[str, str, dict]]:
+    # Read research_summary.json (multi-MB; embeds every variant's full
+    # notes_inputs) ONCE and reuse the parsed payload across all variants, rather
+    # than re-reading/re-parsing it per variant. Each of the cross-variant detail
+    # generators calls this, so the single read keeps a 3-variant build from
+    # parsing the summary dozens of times. A genuinely absent variant still
+    # raises KeyError from load_variant_notes_inputs (fail-loud, unchanged).
+    payload = load_research_summary()
     records: list[tuple[str, str, dict]] = []
-    for variant in VARIANT_ORDER:
+    for variant in _ACTIVE_VARIANT_ORDER:
         label = VARIANT_LABELS.get(variant, variant)
-        notes_inputs = load_variant_notes_inputs(variant)
+        notes_inputs = load_variant_notes_inputs(variant, payload)
         records.append((variant, label, notes_inputs))
     return records
 
@@ -949,7 +1124,21 @@ def _gen_sparse20_validation_from_notes_inputs(notes_inputs: dict) -> str:
     sparse = val.get("sparse_20", {}).get("metrics", {})
     if not isinstance(sparse, dict) or "overall" not in sparse:
         raise KeyError("validation_results.sparse_20.metrics missing.")
-    rows = [["Domain", "r", "MAE", "RMSE", "Within-5", "90% Coverage"]]
+    # Central/Tail coverage columns (M15): the deployed sparse-20 form under-covers
+    # at the score extremes just like the full-50 ceiling, so surface the same
+    # central (20-80) vs tail (<20,>80) split here too.
+    rows = [
+        [
+            "Domain",
+            "r",
+            "MAE",
+            "RMSE",
+            "Within-5",
+            "90% Coverage",
+            "Central Cov (20-80)",
+            "Tail Cov (<20,>80)",
+        ]
+    ]
     for d in DOMAIN_ORDER:
         dm = sparse[d]
         rows.append(
@@ -960,6 +1149,8 @@ def _gen_sparse20_validation_from_notes_inputs(notes_inputs: dict) -> str:
                 fmt_f(dm["rmse"], 2),
                 fmt_pct(dm["within_5_pct"] * 100),
                 fmt_pct(dm["coverage_90"] * 100),
+                _cov_cell(dm.get("coverage_central")),
+                _cov_cell(dm.get("coverage_tail")),
             ]
         )
     ov = sparse["overall"]
@@ -971,13 +1162,31 @@ def _gen_sparse20_validation_from_notes_inputs(notes_inputs: dict) -> str:
             f"**{fmt_f(ov['rmse'], 2)}**",
             f"**{fmt_pct(ov['within_5_pct'] * 100)}**",
             f"**{fmt_pct(ov['coverage_90'] * 100)}**",
+            f"**{_cov_cell(ov.get('coverage_central'))}**",
+            f"**{_cov_cell(ov.get('coverage_tail'))}**",
         ]
     )
-    return pad_table(rows)
+    caveat = (
+        "\n\nThe deployed domain-balanced 20-item form shows the same "
+        "under-coverage at the score extremes as the full-50 ceiling: aggregate "
+        "90% coverage is near nominal, but the tail band (below the 20th / above "
+        "the 80th percentile) under-covers relative to the central band — compare "
+        "the Central and Tail columns above. Treat the 90% prediction interval as "
+        "well-calibrated mainly in the central score range.\n"
+    )
+    # Mask-selection-variance disclosure (M9): the sparse-20 headline is computed
+    # on a SINGLE fixed balanced mask, so its bootstrap CI is respondent-only.
+    mask_disclosure = (
+        "\n> Sparse-20 headline metrics are computed on a single fixed balanced "
+        "mask (RNG seed 42); the reported bootstrap CI reflects respondent-sampling "
+        "variance only and does not include mask-selection variance (stage-07 "
+        "training averages over multiple masks).\n"
+    )
+    return pad_table(rows) + caveat + mask_disclosure
 
 
 def gen_ablation_validation_details() -> str:
-    parts: list[str] = []
+    parts: list[str] = [d] if (d := _reference_only_disclosure()) else []
     for _, label, notes_inputs in _iter_variant_notes_inputs():
         parts.append(f"#### {label}\n")
         parts.append("**Full-50 validation:**\n")
@@ -988,7 +1197,7 @@ def gen_ablation_validation_details() -> str:
 
 
 def gen_ablation_baselines_details() -> str:
-    parts: list[str] = []
+    parts: list[str] = [d] if (d := _reference_only_disclosure()) else []
     for _, label, notes_inputs in _iter_variant_notes_inputs():
         parts.append(f"#### {label}\n")
         parts.append(_gen_baselines_from_notes_inputs(notes_inputs))
@@ -996,7 +1205,7 @@ def gen_ablation_baselines_details() -> str:
 
 
 def gen_ablation_per_domain_k20_details() -> str:
-    parts: list[str] = []
+    parts: list[str] = [d] if (d := _reference_only_disclosure()) else []
     for _, label, notes_inputs in _iter_variant_notes_inputs():
         parts.append(f"#### {label}\n")
         parts.append(_gen_per_domain_k20_from_notes_inputs(notes_inputs))
@@ -1004,7 +1213,7 @@ def gen_ablation_per_domain_k20_details() -> str:
 
 
 def gen_ablation_domain_starvation_details() -> str:
-    parts: list[str] = []
+    parts: list[str] = [d] if (d := _reference_only_disclosure()) else []
     for _, label, notes_inputs in _iter_variant_notes_inputs():
         parts.append(f"#### {label}\n")
         parts.append(_gen_domain_starvation_from_notes_inputs(notes_inputs))
@@ -1012,7 +1221,7 @@ def gen_ablation_domain_starvation_details() -> str:
 
 
 def gen_ablation_ml_vs_averaging_details() -> str:
-    parts: list[str] = []
+    parts: list[str] = [d] if (d := _reference_only_disclosure()) else []
     for _, label, notes_inputs in _iter_variant_notes_inputs():
         parts.append(f"#### {label}\n")
         parts.append(_gen_ml_vs_averaging_from_notes_inputs(notes_inputs))
@@ -1020,11 +1229,51 @@ def gen_ablation_ml_vs_averaging_details() -> str:
 
 
 def gen_ablation_simulation_details() -> str:
-    parts: list[str] = []
+    parts: list[str] = [d] if (d := _reference_only_disclosure()) else []
     for _, label, notes_inputs in _iter_variant_notes_inputs():
         parts.append(f"#### {label}\n")
         parts.append(_gen_simulation_from_notes_inputs(notes_inputs))
     return "\n\n".join(parts)
+
+
+def gen_reliability() -> str:
+    notes_inputs = load_reference_notes_inputs()
+    return _gen_reliability_from_notes_inputs(notes_inputs)
+
+
+def _gen_reliability_from_notes_inputs(notes_inputs: dict) -> str:
+    """Per-domain Cronbach's alpha for the three forms (train split). Degrades to a
+    placeholder when reliability.json was not present in the bundle."""
+    rel = notes_inputs.get("reliability")
+    if not isinstance(rel, dict) or rel.get("__error__"):
+        return "*Reliability data not available (regenerate stage 05 to produce `reliability.json`).*"
+
+    forms = [
+        ("Full 50-item", "full_50"),
+        ("Domain-balanced 20", "domain_balanced_20"),
+        ("Mini-IPIP 20", "mini_ipip_20"),
+    ]
+
+    def _alpha_cell(block: object) -> str:
+        if isinstance(block, dict):
+            a = block.get("alpha")
+            if isinstance(a, (int, float)):
+                return fmt_r(float(a), 3)
+        return "---"
+
+    rows = [["Domain", *[label for label, _ in forms]]]
+    for d in DOMAIN_ORDER:
+        cells = [DOMAIN_LABELS[d]]
+        for _, key in forms:
+            form = rel.get(key)
+            cells.append(_alpha_cell(form.get(d) if isinstance(form, dict) else None))
+        rows.append(cells)
+
+    header = (
+        "Cronbach's alpha by domain, computed on the **training split**. Standardized "
+        "alpha, mean inter-item *r*, and McDonald's omega are in `reliability.json`.\n\n"
+    )
+    return header + pad_table(rows)
 
 
 # ---------------------------------------------------------------------------
@@ -1032,6 +1281,7 @@ def gen_ablation_simulation_details() -> str:
 # ---------------------------------------------------------------------------
 
 SECTION_GENERATORS = {
+    "reliability": gen_reliability,
     "data_splits": gen_data_splits,
     "training_config": gen_training_config,
     "model_config": gen_model_config,
@@ -1044,6 +1294,7 @@ SECTION_GENERATORS = {
     "per_domain_k20": gen_per_domain_k20,
     "domain_starvation": gen_domain_starvation,
     "ml_vs_averaging": gen_ml_vs_averaging,
+    "ml_vs_averaging_per_domain": gen_ml_vs_averaging_per_domain,
     "simulation": gen_simulation,
     "calibration": gen_calibration,
     "headline_k20": gen_headline_k20,
@@ -1061,42 +1312,90 @@ SECTION_GENERATORS = {
 }
 
 
-def update_notes(dry_run: bool = False) -> None:
+def update_notes(
+    dry_run: bool = False, reference_only: bool = False, check: bool = False
+) -> None:
     if not NOTES_TEMPLATE_PATH.exists():
         print(f"ERROR: Template not found: {NOTES_TEMPLATE_PATH}")
         sys.exit(1)
-    text = NOTES_TEMPLATE_PATH.read_text()
-    updated = 0
-    failed = 0
 
-    for name, gen_fn in SECTION_GENERATORS.items():
-        pattern = rf"(<!-- BEGIN:{name} -->\n).*?(\n<!-- END:{name} -->)"
-        if not re.search(pattern, text, flags=re.DOTALL):
-            print(f"  SKIP  {name} (no markers found in NOTES.md)")
-            continue
-        try:
-            content = gen_fn()
-            replacement = rf"\g<1>{content}\g<2>"
-            text = re.sub(pattern, replacement, text, flags=re.DOTALL)
-            updated += 1
-            if dry_run:
-                print(f"\n--- {name} ---")
-                print(content)
-            else:
-                print(f"  OK    {name}")
-        except Exception as e:
-            print(f"  FAIL  {name}: {e}")
-            failed += 1
+    # Scope the cross-variant ("ablation_*") sections to just the reference variant
+    # for a reference-only build, then ALWAYS restore the default (finally) so a
+    # later direct generator call (e.g. the byte-drift test) sees the full order.
+    global _ACTIVE_VARIANT_ORDER
+    _ACTIVE_VARIANT_ORDER = [REFERENCE_VARIANT] if reference_only else list(VARIANT_ORDER)
+    try:
+        text = NOTES_TEMPLATE_PATH.read_text()
+        updated = 0
+        failed = 0
 
-    if failed:
-        print(f"\nWARNING: {failed} sections failed to generate — file not written")
-        sys.exit(1)
+        for name, gen_fn in SECTION_GENERATORS.items():
+            pattern = rf"(<!-- BEGIN:{name} -->\n).*?(\n<!-- END:{name} -->)"
+            if not re.search(pattern, text, flags=re.DOTALL):
+                print(f"  SKIP  {name} (no markers found in NOTES.md)")
+                continue
+            try:
+                content = gen_fn()
+                replacement = rf"\g<1>{content}\g<2>"
+                text = re.sub(pattern, replacement, text, flags=re.DOTALL)
+                updated += 1
+                if dry_run:
+                    print(f"\n--- {name} ---")
+                    print(content)
+                else:
+                    print(f"  OK    {name}")
+            except Exception as e:
+                print(f"  FAIL  {name}: {e}")
+                failed += 1
 
-    if not dry_run:
-        NOTES_PATH.write_text(text)
-        print(f"\nUpdated {updated} sections in {NOTES_PATH.relative_to(PACKAGE_ROOT)}")
-    else:
-        print(f"\nDry run: {updated} sections would be updated")
+        if failed:
+            print(f"\nWARNING: {failed} sections failed to generate — file not written")
+            sys.exit(1)
+
+        # Inline placeholders for hand-authored narrative that cites single-sourced
+        # policy constants (lib.constants.ADAPTIVE_STOP) or a derived metric, so the
+        # prose can't drift. Architecture form-size mentions ("4 items per domain"
+        # for the domain-balanced form) intentionally stay inline as literals.
+        topk20 = load_reference_notes_inputs()["baseline_comparison_results"][
+            "per_domain"
+        ]["20"]["adaptive_topk"]
+        worst_greedy_r = min(float(topk20[d]["pearson_r"]) for d in DOMAIN_ORDER)
+        placeholders = {
+            "{{SEM_THRESHOLD}}": f"{ADAPTIVE_STOP['sem_threshold']:g}",
+            "{{MIN_ITEMS_PER_DOMAIN}}": str(ADAPTIVE_STOP["min_items_per_domain"]),
+            "{{GREEDY_WORST_DOMAIN_R}}": f"{worst_greedy_r:.2f}",
+        }
+        for token, value in placeholders.items():
+            text = text.replace(token, value)
+        # Any {{...}} token surviving substitution is a template placeholder with
+        # no matching entry above (e.g. a rename/typo): str.replace() would silently
+        # leave it, letting a hardcoded literal drift back in undetected. Fail loudly.
+        # (A template that simply doesn't use a given placeholder is fine.)
+        leftover = re.findall(r"\{\{[A-Za-z0-9_]+\}\}", text)
+        if leftover:
+            print(f"  FAIL  unresolved placeholders: {sorted(set(leftover))}", file=sys.stderr)
+            sys.exit(1)
+
+        rel = NOTES_PATH.relative_to(PACKAGE_ROOT)
+        if check:
+            # Non-destructive staleness gate (mirrors generate_doc_data --check):
+            # regenerate from the tracked research_summary.json and compare to the
+            # committed file WITHOUT writing, so check-docs catches a retrain that
+            # never re-ran `make notes` (and hand-edits to the generated file).
+            if not NOTES_PATH.exists():
+                print(f"MISSING: {rel}", file=sys.stderr)
+                sys.exit(1)
+            if NOTES_PATH.read_text() != text:
+                print(f"STALE: {rel} is out of date; run `make notes`.", file=sys.stderr)
+                sys.exit(1)
+            print(f"ok: {rel}")
+        elif not dry_run:
+            NOTES_PATH.write_text(text)
+            print(f"\nUpdated {updated} sections in {rel}")
+        else:
+            print(f"\nDry run: {updated} sections would be updated")
+    finally:
+        _ACTIVE_VARIANT_ORDER = list(VARIANT_ORDER)
 
 
 def main() -> None:
@@ -1104,8 +1403,27 @@ def main() -> None:
     parser.add_argument(
         "--dry-run", action="store_true", help="Print sections without writing"
     )
+    parser.add_argument(
+        "--reference-only",
+        action="store_true",
+        help=(
+            "Render a single-variant NOTES.md: scope the cross-variant sections to "
+            "the reference variant only (with a disclosure that ablations were not "
+            "run), instead of failing on absent ablation bundles."
+        ),
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "Verify the committed notes/NOTES.md is up to date with the tracked "
+            "artifacts without writing (non-zero exit if stale). Used by check-docs."
+        ),
+    )
     args = parser.parse_args()
-    update_notes(dry_run=args.dry_run)
+    update_notes(
+        dry_run=args.dry_run, reference_only=args.reference_only, check=args.check
+    )
 
 
 if __name__ == "__main__":

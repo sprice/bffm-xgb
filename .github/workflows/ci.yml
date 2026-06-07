@@ -1,0 +1,174 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # uv manages the interpreter (per .python-version) and installs from
+      # pyproject.toml + uv.lock. No bare `python`/`pip` — everything via uv.
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run pipeline tests
+        run: uv run python -m pytest tests/ -v --tb=short
+
+      # REQUIRE_ARTIFACTS=1 turns the committed-fixture-backed inference tests
+      # into hard failures if the fixture is ever missing (no silent skip).
+      - name: Run inference tests
+        run: uv run python -m pytest python/ -v
+        env:
+          REQUIRE_ARTIFACTS: "1"
+
+  # Exercise the advertised requires-python floor (3.11). Dev + the job above run
+  # the pinned 3.14 interpreter, so without this the >=3.11 claim is never tested.
+  test-python-floor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Run the suite under Python 3.11 (the supported floor)
+        run: uv run --python 3.11 python -m pytest tests/ python/ --tb=short
+        env:
+          REQUIRE_ARTIFACTS: "1"
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      # `make lint` runs `ruff check .` over the whole tree; any finding exits
+      # non-zero and fails this job.
+      - name: Lint (ruff)
+        run: make lint
+
+      # Regenerate the doc-data surfaces from the force-tracked source-of-truth
+      # artifacts and fail (with the offending git diff) if the committed outputs
+      # (repo-facts.generated.ts + the GENERATED markdown fences) are stale.
+      # check-docs runs ONLY the generator against the committed artifacts, then
+      # git-diffs the outputs; it does NOT retrain or rebuild research_summary.json,
+      # so stale docs fail without touching the training pipeline.
+      - name: Check generated docs are up to date
+        run: make check-docs
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      # `make typecheck` runs basedpyright (config in [tool.basedpyright], gated
+      # against .basedpyright/baseline.json so only NEW diagnostics count) and FAILS
+      # on any new error- OR warning-severity diagnostic. basedpyright's own exit code
+      # ignores warnings, so scripts/typecheck_gate.py parses --outputjson and closes
+      # that gap (green == 0 errors AND 0 warnings).
+      - name: Type-check (basedpyright)
+        run: make typecheck
+
+  # Verify the committed artifact provenance tree is internally consistent
+  # (checksums, intra-bundle git_hash agreement, norms references, item_info lock
+  # state). This runs the CLONE-SIDE checker only -- no SQLite DB, no retrain -- so
+  # it is cheap and never regenerates the bundle. Plain --strict (NOT --strict-head):
+  # the published bundle legitimately predates HEAD (release/refresh commits sit on
+  # top of the generation commit), so git-staleness is an advisory WARN here, not a
+  # failure; only genuine inconsistencies fail the job. Promote to --strict-head
+  # (STRICT_HEAD=1) once the bundle has been regenerated at HEAD.
+  provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # full history so release-freshness can resolve the bundle's ancestor
+          # commit (a shallow clone degrades the git checks to git-unverifiable PASS)
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Verify provenance tree (clone-side, no retrain)
+        run: make verify-release
+
+  test-typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+
+      - name: Install dependencies
+        run: cd typescript && npm ci
+
+      - name: Build (tsc)
+        run: cd typescript && npm run build
+
+      - name: Run tests
+        run: cd typescript && npx vitest run
+        env:
+          REQUIRE_ARTIFACTS: "1"
+
+  test-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: cd web && npm ci
+
+      - name: Type-check (client + server)
+        run: cd web && npm run typecheck
+
+      - name: Build (vite + tsc server)
+        run: cd web && npm run build
+
+      # MODEL_DIR points predictor.test.ts at the committed fixture (web/model's
+      # gitignored symlink target is absent in CI). REQUIRE_ARTIFACTS=1 hard-fails
+      # the fixture-backed suites if it is missing. repo-facts.test.ts now RUNS in
+      # CI (the small bundle artifacts it reads are force-tracked in git), so it
+      # guards the Learn-site data.ts against drift from the published bundle.
+      - name: Run tests
+        run: cd web && npx vitest run
+        env:
+          MODEL_DIR: ${{ github.workspace }}/tests/fixtures/golden
+          REQUIRE_ARTIFACTS: "1"

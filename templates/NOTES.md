@@ -125,7 +125,8 @@ table below shows the exact allocation). Extraversion items dominate because
 they correlate moderately with other domains, which inflates their composite
 utility scores; but those cross-domain correlations are too weak to actually
 predict the other domains. The best-served domain achieves near-perfect
-recovery while the worst-served domain falls to chance-level prediction.
+recovery while the worst-served domain falls to weak/moderate prediction
+(*r* ≈ {{GREEDY_WORST_DOMAIN_R}}, driven only by cross-domain inference).
 
 This is not a cold-start problem. A constrained greedy start (one item per
 domain first, then greedy fill) still fell far below domain-balanced and
@@ -136,7 +137,7 @@ allocation.
 ### Finding 2: The Adaptive Dream Collapses to the Static Strategy
 
 We built a full adaptive assessment simulation with SEM-based stopping
-(threshold 0.45, minimum 4 items per domain, held-out respondents from the
+(threshold {{SEM_THRESHOLD}}, minimum {{MIN_ITEMS_PER_DOMAIN}} items per domain, held-out respondents from the
 test split). The result was definitive: every respondent converged to exactly
 20 items in a 4-4-4-4-4 allocation. The adaptive strategy collapsed to the
 static domain-balanced strategy.
@@ -165,9 +166,10 @@ responses improves recovery with no item changes: a drop-in upgrade.
 ### Training and Pipeline Lessons
 
 Sparse-input training is required. Without sparsity augmentation, performance
-at the same operating point drops sharply; the cross-variant overview table
-shows the no-sparsity ablation falling well below the reference on both
-sparse-20 validation and the *K* = 20 baseline.
+at the same operating point drops sharply: the no-sparsity ablation falls well
+below the reference on both sparse-20 validation and the *K* = 20 baseline.
+(The cross-variant tables below report this comparison only when the ablation
+suite is run; a reference-only build shows the reference variant alone.)
 
 Two historical pipeline fixes were also important:
 
@@ -257,8 +259,8 @@ Adaptive simulation outcomes for each variant at the operating point.
 
 ### Dataset
 
-Valid respondents from the Open-Source Psychometrics Project, stratified
-split into train/validation/test.
+Valid respondents from the Open-Source Psychometrics Project, split at
+random into train/validation/test (70/15/15, seed-locked).
 
 <!-- BEGIN:data_splits -->
 *Data will be populated after training run.*
@@ -308,10 +310,16 @@ the primary evaluation.
 *Data will be populated after training run.*
 <!-- END:validation -->
 
-Coverage: all domains exceed the 90% nominal target, as the table shows. Raw
-crossing rates confirm that the nonlinear raw-to-percentile CDF transform
-frequently inverts quantile ordering. The post-transform sort operation catches
-and corrects these inversions.
+Coverage is **not uniform across the score range**: aggregate (90%) coverage
+meets or exceeds the nominal target in the central band (20-80 percentile), but
+the intervals **under-cover at the score extremes** (below the 20th / above the
+80th percentile) — compare the "Central Cov" and "Tail Cov" columns. The quintile
+table below shows the same pattern more finely. The "Raw Crossing Rate" column is
+the **pre-sort** rate: the three independently-trained q05/q50/q95 models are not
+jointly monotone and disagree on ordering for a substantial fraction of
+full-information predictions. The reported intervals are forced monotonic with a
+sort before use, so the post-sort crossing rate is zero **by construction** — it
+is therefore not reported as if it were a measured quantity.
 
 ### Ceiling Check by Quintile (50 Items, 90K Test)
 
@@ -367,12 +375,43 @@ psychometrically independent factor.
 
 The ML advantage holds across all tested item counts, as the table shows, and is
 largest at fewer items where cross-domain information sharing matters most. Both
-correlation and MAE improvements are consistent across budgets.
+correlation and MAE improvements are consistent across budgets. The `r` and `MAE`
+columns are explicitly tagged by scoring method — *(XGBoost)* for the ML columns and
+*(averaging)* for the simple-averaging columns — so neither can be misattributed to a
+single method. Each `Delta` column carries its paired bootstrap 95% CI, and the line
+below the table reports the headline domain-balanced-(XGBoost) vs Mini-IPIP-(averaging)
+contrast with a *paired*, same-respondent CI.
+
+#### Decomposing the Headline: Scoring vs Item Selection (K = 20)
+
+The headline BFFM-XGB-20 vs Mini-IPIP gap mixes two distinct levers — the
+**scoring method** (XGBoost vs simple averaging) and the **item set**
+(top-4-by-*r* vs the expert-curated Mini-IPIP items). The table below holds the
+item set fixed and reports the *scoring* gain (ML − averaging) separately for each
+set, so the two contributions are not conflated.
+
+<!-- BEGIN:ml_vs_averaging_per_domain -->
+*Data will be populated after training run.*
+<!-- END:ml_vs_averaging_per_domain -->
+
+Reading the table: the "scoring Δr" columns are the pure ML-over-averaging gain on
+identical items. For **Emotional Stability** the two 20-item sets recover almost
+equally well under ML scoring while averaging trails both — so the headline EST gain
+is driven by the **scoring method, not the item selection** (compare the small ML-*r*
+gap between the two EST rows against their much larger "scoring Δr"). The full per-row
+decomposition is in `artifacts/variants/reference/ml_vs_averaging_comparison.json`.
+
+The Mini-IPIP comparator now carries the same respondent-level bootstrap 95% CIs as
+every XGBoost method (see the item-selection table above), and the headline
+domain-balanced-ML vs Mini-IPIP-averaging gap is reported with a *paired*
+(same-respondent) bootstrap CI in the `xgb_vs_mini_ipip_paired` block of that
+artifact — so the overall-r contrast (see the table above) can be judged for
+significance.
 
 ### Simulation Results (20-Item Operating Point)
 
 Held-out respondents from the test split, correlation-ranked selection,
-SEM threshold 0.45, min 4 items per domain. All respondents converge to
+SEM threshold {{SEM_THRESHOLD}}, min {{MIN_ITEMS_PER_DOMAIN}} items per domain. All respondents converge to
 exactly 20 items (4-4-4-4-4).
 
 <!-- BEGIN:simulation -->
@@ -380,9 +419,12 @@ exactly 20 items (4-4-4-4-4).
 <!-- END:simulation -->
 
 Simulation results closely match the static baseline evaluation (compare the
-overall *r* here to the headline results table). Correlation-ranked selection is
-equivalent to the optimal static strategy; the agreement between the two also
-confirms the pipeline end-to-end.
+overall *r* here to the headline results table). Note the simulation is run on a
+random subsample of the test split (see the table caption for the count), not the
+full held-out test split used for the baseline and validation tables, so its
+estimates are less precise and should not be read as co-powered with the headline
+numbers. Correlation-ranked selection is equivalent to the optimal static strategy;
+the agreement between the two also confirms the pipeline end-to-end.
 
 ### Calibration
 
@@ -420,11 +462,34 @@ This 20-item set differs from the Mini-IPIP: the domain-balanced set selects by
 maximum within-domain correlation, while Mini-IPIP was designed for brevity and
 broad coverage.
 
-### Greedy Item Ranking (Cross-Domain Info Score)
+Note the deployed Emotional Stability four-item subset (est1, est6, est7, est8) is
+entirely **reverse-keyed** — a consequence of ranking purely by within-domain
+correlation. This maximizes discrimination but makes the EST short-form score
+vulnerable to acquiescence (yea-saying) bias; the other four domains mix keyed
+directions, and the full 50-item assessment is unaffected.
 
-Top 20 items by cross-domain information score. The domain distribution is heavily
-skewed, which drives the domain starvation mechanism described above (see the
-domain starvation table for counts).
+### Internal-Consistency Reliability
+
+Cronbach's alpha for each domain across three forms — the full 10-item domains, the
+deployed domain-balanced 20-item form (4 items/domain), and the Mini-IPIP 4-item
+form — computed on the training split. (Reliability bounds how high score-recovery
+*r* can plausibly go; standardized alpha, mean inter-item *r*, and McDonald's omega
+are in `reliability.json`.)
+
+<!-- BEGIN:reliability -->
+*Data will be populated after training run.*
+<!-- END:reliability -->
+
+### Greedy Item Ranking (Composite Score)
+
+Top 20 items by the adaptive-selection **composite** score. The domain distribution
+is heavily skewed, which drives the domain starvation mechanism described above (see
+the domain starvation table for counts).
+
+> Rows are sorted by the **composite** score actually used for greedy ranking
+> (`composite = cross_domain_info + 0.2·entropy − 0.1·|skew|`, per
+> `pipeline/05_compute_correlations.py`), **not** by the lone "Info Score" column
+> shown below — so the displayed Info Score is not monotone down the Rank column.
 
 <!-- BEGIN:greedy_ranking -->
 *Data will be populated after training run.*
@@ -460,7 +525,7 @@ Placeholder sections for analyses under consideration.
 ### Sparsity Augmentation Ablation
 
 Preliminary results from ablation configs (reference vs focused-only vs
-stratified vs no-augmentation). Formalize when ablation artifacts are standardized.
+no-augmentation). Formalize when ablation artifacts are standardized.
 
 ### Per-Quintile Fairness Analysis
 

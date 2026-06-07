@@ -8,8 +8,9 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY dist ./dist
 
-# Model is downloaded from HF at startup via HF_REPO_ID env var.
-# Set HF_REPO_ID and optionally HF_VARIANT (default: "reference").
+# Model is downloaded from HF at startup via HF_REPO_ID env var (fails closed:
+# also requires HF_REVISION + HF_SHA256_CONFIG + HF_SHA256_MODEL; optional
+# HF_VARIANT, default "reference"), OR mount a local model via MODEL_DIR.
 
 RUN chown -R node:node /app
 USER node

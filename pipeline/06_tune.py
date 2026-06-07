@@ -13,43 +13,46 @@ via the locked_params key in each YAML config.
 
 Usage:
     python pipeline/06_tune.py --trials 200 --config configs/reference.yaml
-    python pipeline/06_tune.py --trials 200 --data-dir data/processed/ext_est --config configs/reference.yaml
+    python pipeline/06_tune.py --trials 200 --data-dir data/processed/canonical_v1 --config configs/reference.yaml
     python pipeline/06_tune.py --trials 200 --parallel-trials 4 --config configs/reference.yaml
     python pipeline/06_tune.py --trials 50 --output artifacts/tuned_params.json
 """
 
-import sys
+import argparse
 import gc
 import json
 import logging
 import shutil
+import sys
 import time
-import argparse
 import warnings
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
 import numpy as np
 import pandas as pd
+import xgboost as xgb
 from scipy import stats
 from scipy.stats import ConstantInputWarning
-import xgboost as xgb
 
+from lib.config import load_config_with_base
 from lib.constants import (
+    DEFAULT_EARLY_STOPPING_ROUNDS,
+    DEFAULT_PARAMS,
     DOMAINS,
     ITEM_COLUMNS,
-    DEFAULT_PARAMS,
-    DEFAULT_EARLY_STOPPING_ROUNDS,
+    TUNING_OBJECTIVE,
+    TUNING_OBJECTIVE_FALLBACK,
 )
-from lib.scoring import raw_score_to_percentile
-from lib.provenance import build_provenance, add_provenance_args
 from lib.item_info import file_sha256, load_item_info_strict
 from lib.mini_ipip import load_mini_ipip_mapping
 from lib.parallelism import coerce_positive_int, resolve_default_xgb_n_jobs
+from lib.provenance import add_provenance_args, build_provenance
 from lib.provenance_checks import build_split_signature as _build_split_signature
+from lib.scoring import raw_score_to_percentile
 from lib.sparsity import apply_adaptive_sparsity_balanced, apply_sparsity_single
 
 logging.basicConfig(
@@ -59,7 +62,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-DEFAULT_DATA_DIR = Path("data/processed/ext_est")
+DEFAULT_DATA_DIR = Path("data/processed/canonical_v1")
 DEFAULT_ARTIFACTS_DIR = Path("artifacts")
 
 # ---------------------------------------------------------------------------
@@ -149,6 +152,38 @@ def _safe_pearson(
     return float(r)
 
 
+def deployment_aligned_objective(
+    mean_sparse: float, min_sparse: float, mean_full: float
+) -> float:
+    """Deployment-aligned tuning composite (single-sourced policy weights).
+
+    Single source of truth: ``lib.constants.TUNING_OBJECTIVE``. Rewards mean
+    sparse-20 correlation with a smaller full-50 share, then subtracts hinge
+    penalties when the sparse-20 minimum or full-50 mean fall under their
+    floors. Value-identical to the prior inline literals.
+    """
+    o = TUNING_OBJECTIVE
+    sparse_penalty = o["sparse20_penalty_weight"] * max(
+        0.0, o["sparse20_penalty_floor"] - min_sparse
+    )
+    full_penalty = o["full50_penalty_weight"] * max(
+        0.0, o["full50_penalty_floor"] - mean_full
+    )
+    return (
+        o["sparse20_weight"] * mean_sparse + o["full50_weight"] * mean_full
+    ) - sparse_penalty - full_penalty
+
+
+def full50_fallback_objective(mean_full: float, min_full: float) -> float:
+    """Conservative full-50-only objective when sparse-20 eval is unavailable.
+
+    Single source of truth: ``lib.constants.TUNING_OBJECTIVE_FALLBACK``.
+    Value-identical to the prior inline literals (1.5, 0.90).
+    """
+    f = TUNING_OBJECTIVE_FALLBACK
+    return mean_full - f["penalty_weight"] * max(0.0, f["min_r_floor"] - min_full)
+
+
 # ---------------------------------------------------------------------------
 # Sparsity helpers
 # ---------------------------------------------------------------------------
@@ -158,7 +193,7 @@ def _apply_sparsity_for_tuning(
     item_info: dict,
     config: dict,
     rng: np.random.Generator,
-    mini_ipip_items: Optional[dict[str, list[str]]] = None,
+    mini_ipip_items: dict[str, list[str]] | None = None,
 ) -> pd.DataFrame:
     """Apply training-consistent sparsity to data for tuning."""
     sparsity_cfg = config.get("sparsity", {})
@@ -188,7 +223,7 @@ def _create_xgb_model(
     quantile: float,
     params: dict,
     n_jobs: int = 1,
-    early_stopping_rounds: Optional[int] = None,
+    early_stopping_rounds: int | None = None,
     gpu: bool = False,
 ) -> xgb.XGBRegressor:
     """Create an XGBoost quantile regression model."""
@@ -228,7 +263,7 @@ def _run_optuna_tuning(
     n_trials: int,
     item_info: dict,
     config: dict,
-    mini_ipip_items: Optional[dict[str, list[str]]] = None,
+    mini_ipip_items: dict[str, list[str]] | None = None,
     parallel_trials: int = 1,
     gpu: bool = False,
 ) -> dict:
@@ -390,18 +425,14 @@ def _run_optuna_tuning(
             min_sparse = float(min(correlations_sparse))
             mean_full = float(np.mean(correlations_full)) if correlations_full else mean_sparse
 
-            sparse_penalty = 2.0 * max(0.0, 0.85 - min_sparse)
-            full_penalty = 1.0 * max(0.0, 0.95 - mean_full)
-            composite = (0.80 * mean_sparse + 0.20 * mean_full) - sparse_penalty - full_penalty
+            composite = deployment_aligned_objective(mean_sparse, min_sparse, mean_full)
         else:
             if not correlations_full:
                 return float("-inf")
             mean_full = float(np.mean(correlations_full))
             min_full = float(min(correlations_full))
 
-            # Conservative full-50-only fallback objective.
-            full_penalty = 1.5 * max(0.0, 0.90 - min_full)
-            composite = mean_full - full_penalty
+            composite = full50_fallback_objective(mean_full, min_full)
 
         if trial.number % 10 == 0:
             gc.collect()
@@ -414,13 +445,23 @@ def _run_optuna_tuning(
 
     log.info("Starting Optuna optimization with %d trials (parallel=%d)...", n_trials, parallel_trials)
     if sparse20_eval_enabled:
+        _o = TUNING_OBJECTIVE
         log.info(
-            "Objective: 0.80*mean_r_sparse20 + 0.20*mean_r_full "
-            "- 2.0*max(0,0.85-min_r_sparse20) - 1.0*max(0,0.95-mean_r_full)"
+            "Objective: %g*mean_r_sparse20 + %g*mean_r_full "
+            "- %g*max(0,%g-min_r_sparse20) - %g*max(0,%g-mean_r_full)",
+            _o["sparse20_weight"],
+            _o["full50_weight"],
+            _o["sparse20_penalty_weight"],
+            _o["sparse20_penalty_floor"],
+            _o["full50_penalty_weight"],
+            _o["full50_penalty_floor"],
         )
     else:
+        _f = TUNING_OBJECTIVE_FALLBACK
         log.info(
-            "Objective (full-50 fallback): mean_r_full - 1.5*max(0,0.90-min_r_full)"
+            "Objective (full-50 fallback): mean_r_full - %g*max(0,%g-min_r_full)",
+            _f["penalty_weight"],
+            _f["min_r_floor"],
         )
     t0 = time.time()
     study.optimize(objective, n_trials=n_trials, n_jobs=parallel_trials, show_progress_bar=True)
@@ -521,13 +562,8 @@ def main() -> int:
         if not config_path.exists():
             log.error("Config file not found: %s", config_path)
             return 1
-        try:
-            import yaml
-        except ImportError:
-            log.error("PyYAML not installed. Install with: pip install pyyaml")
-            return 1
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
+        # Merges configs/_base.yaml (shared defaults) underneath the variant.
+        config = load_config_with_base(config_path)
         log.info("Loaded config: %s", config.get("name", config_path.name))
     else:
         log.info("No config specified; using default sparsity settings (disabled)")
@@ -642,7 +678,7 @@ def main() -> int:
     # Load item info for sparse-20 objective and sparsity masking
     item_info: dict = {}
     item_info_sha256: str | None = None
-    mini_ipip_items: Optional[dict[str, list[str]]] = None
+    mini_ipip_items: dict[str, list[str]] | None = None
     try:
         item_info, item_info_sha256 = _load_item_info(
             data_dir,

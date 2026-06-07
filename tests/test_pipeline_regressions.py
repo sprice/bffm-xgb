@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import hashlib
+import importlib.util
 import json
 import logging
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -22,7 +23,6 @@ import pytest
 from lib.constants import DEFAULT_STAGE07_CV_FOLDS, DOMAINS, ITEM_COLUMNS
 from lib.item_info import file_sha256
 from lib.provenance_checks import build_split_signature as _build_split_signature
-
 
 _MODULE_COUNTER = 0
 
@@ -197,18 +197,6 @@ def _dummy_domain_models() -> dict[str, dict[str, _DummyModel]]:
         }
         for domain in DOMAINS
     }
-
-
-def test_prepare_data_compute_quintile_strata_fails_closed_for_missing_ext_est_opn_columns() -> None:
-    prepare = _load_pipeline_module("04_prepare_data.py")
-    frame = _make_dataset().drop(columns=["opn_score"])
-
-    with pytest.raises(ValueError) as exc_info:
-        prepare.compute_quintile_strata(frame, stratification="ext-est-opn")
-
-    message = str(exc_info.value)
-    assert "ext-est-opn" in message
-    assert "opn_score" in message
 
 
 def test_tune_safe_pearson_floors_nonfinite() -> None:
@@ -437,6 +425,81 @@ def test_train_sparse_gate_defaults_to_disabled_without_config_block(
         report = json.load(f)
     assert report["validation_metrics_sparse_20"] == {}
     assert report["validation_metrics_sparse_20_runs"] == []
+    # Default path: gate passes and is enforced -> honest record on the happy path.
+    assert report["quality_gates"] == {"passed": True, "enforced": True}
+
+
+def test_train_no_gate_saves_despite_failing_quality_gate(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """By default a failing quality gate aborts before saving anything; with
+    --no-gate the run still saves and honestly records the (failed, unenforced)
+    gate outcome in training_report.json — so a multi-day run is not discarded on a
+    near-miss, but a saved-despite-failure bundle is distinguishable from a clean one."""
+    train = _load_pipeline_module("07_train.py")
+    monkeypatch.setattr(train, "PACKAGE_ROOT", tmp_path)
+
+    data_dir = tmp_path / "data" / "processed"
+    data_dir.mkdir(parents=True)
+    frame = _make_dataset()
+    frame.to_parquet(data_dir / "train.parquet", index=False)
+    frame.to_parquet(data_dir / "val.parquet", index=False)
+
+    cfg_path = tmp_path / "cfg_gate.yaml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "name: unit_gate",
+                "output_dir: models/unit_gate",
+                "sparsity:",
+                "  enabled: false",
+                "training:",
+                "  cv_folds: 0",
+                "  random_state: 42",
+                "validation:",
+                "  min_pearson_r: 0.99",  # achieved overall r=0.92 -> gate fails
+                "  min_coverage_90: 0.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        train,
+        "_load_item_info",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not load item_info")),
+    )
+    monkeypatch.setattr(train, "_load_mini_ipip_mapping", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(train, "_train_domain_models", lambda *_args, **_kwargs: _dummy_domain_models())
+    monkeypatch.setattr(train, "_validate_model_outputs", lambda *_args, **_kwargs: {"ok": {"passed": True}})
+    monkeypatch.setattr(
+        train,
+        "_evaluate_domain_models",
+        lambda *_args, **_kwargs: _make_eval_metrics(r=0.92, coverage=0.9),
+    )
+    monkeypatch.setattr(
+        train,
+        "_compute_calibration_params",
+        lambda *_args, **_kwargs: {
+            domain: {"observed_coverage": 0.9, "scale_factor": 1.0} for domain in DOMAINS
+        },
+    )
+    monkeypatch.setattr(train.joblib, "dump", lambda *_args, **_kwargs: None)
+
+    report_path = tmp_path / "models" / "unit_gate" / "training_report.json"
+
+    # Default: a failing gate aborts before saving — no report written.
+    monkeypatch.setattr(sys, "argv", ["07_train.py", "--config", str(cfg_path)])
+    assert train.main() == 1
+    assert not report_path.exists(), "Failing gate must not write a training report by default"
+
+    # --no-gate: the run saves and records the failed/unenforced gate outcome.
+    monkeypatch.setattr(sys, "argv", ["07_train.py", "--config", str(cfg_path), "--no-gate"])
+    assert train.main() == 0
+    with open(report_path) as f:
+        report = json.load(f)
+    assert report["quality_gates"] == {"passed": False, "enforced": False}
 
 
 def test_train_prepare_features_targets_requires_full_big5_schema() -> None:
@@ -722,6 +785,36 @@ def test_validate_percentile_metric_fn_uses_nan_for_degenerate_pearson() -> None
     assert np.isfinite(metrics["mae"])
 
 
+def test_validate_domain_metrics_reports_raw_crossing_and_no_fake_zero() -> None:
+    """A4.3: raw_crossing_rate is the headline metric; the misleading constant
+    quantile_crossing_rate=0.0 is gone, replaced by monotonized_crossing_rate."""
+    validate = _load_pipeline_module("08_validate.py")
+    rng = np.random.default_rng(0)
+    true = rng.uniform(0, 100, size=400)
+    pred = true + rng.normal(0, 5, size=400)
+    pred = np.clip(pred, 0, 100)
+    per_domain = {
+        "ext": {
+            "true": true,
+            "pred": pred,
+            "lower": np.clip(pred - 10, 0, 100),
+            "upper": np.clip(pred + 10, 0, 100),
+            "raw_crossing_rate": 0.25,
+        }
+    }
+    metrics = validate._compute_domain_metrics(per_domain)
+    ext = metrics["ext"]
+    assert ext["raw_crossing_rate"] == 0.25
+    assert ext["monotonized_crossing_rate"] == 0.0
+    assert "quantile_crossing_rate" not in ext  # guard against the misleading key
+    # A4.4: tail vs central coverage surfaced per-domain and overall.
+    assert "coverage_central" in ext and "coverage_tail" in ext
+    overall = metrics["overall"]
+    assert overall["raw_crossing_rate"] == 0.25  # mean over the one domain
+    assert overall["monotonized_crossing_rate"] == 0.0
+    assert "coverage_central" in overall and "coverage_tail" in overall
+
+
 def test_figures_include_worst_k_with_distinct_color() -> None:
     figures = _load_pipeline_module("12_generate_figures.py")
 
@@ -984,6 +1077,50 @@ def test_correlations_item_info_embeds_provenance_metadata(tmp_path) -> None:
     assert provenance.get("source_sha256") == source_sha
 
 
+def test_cronbach_alpha_distinguishes_correlated_from_independent() -> None:
+    """A4.5: alpha is high for a coherent scale, low for independent items, and
+    None when there are too few rows/items to define it."""
+    correlations = _load_pipeline_module("05_compute_correlations.py")
+    rng = np.random.default_rng(7)
+    n = 500
+    latent = rng.normal(size=n)
+    coherent = pd.DataFrame(
+        {f"ext{i}": latent + rng.normal(scale=0.4, size=n) for i in range(1, 5)}
+    )
+    a_coherent = correlations.cronbach_alpha(coherent, [f"ext{i}" for i in range(1, 5)])
+    assert a_coherent["k"] == 4 and a_coherent["n"] == n
+    assert a_coherent["alpha"] is not None and a_coherent["alpha"] > 0.7
+
+    independent = pd.DataFrame({f"agr{i}": rng.normal(size=n) for i in range(1, 5)})
+    a_indep = correlations.cronbach_alpha(independent, [f"agr{i}" for i in range(1, 5)])
+    assert a_indep["alpha"] is not None and a_indep["alpha"] < 0.3
+
+    a_small = correlations.cronbach_alpha(coherent.head(10), [f"ext{i}" for i in range(1, 5)])
+    assert a_small["alpha"] is None and a_small["n"] == 10
+
+
+def test_write_reliability_embeds_provenance(tmp_path) -> None:
+    """A4.5: reliability.json carries stage-05 provenance, split=train, and the three forms."""
+    correlations = _load_pipeline_module("05_compute_correlations.py")
+    source_path = tmp_path / "train.parquet"
+    source_path.write_bytes(b"synthetic-train")
+    reliability = {
+        "method": {"cronbach_alpha": "...", "omega": "..."},
+        "full_50": {
+            "ext": {"alpha": 0.8, "alpha_std": 0.81, "r_bar": 0.3, "omega": 0.79, "n": 500, "k": 10}
+        },
+        "domain_balanced_20": {},
+        "mini_ipip_20": {},
+    }
+    out_path = tmp_path / "reliability.json"
+    correlations.write_reliability(out_path, reliability, source_path)
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["split"] == "train"
+    assert payload["provenance"]["script"] == "05_compute_correlations.py"
+    assert "source_sha256" in payload
+    assert {"full_50", "domain_balanced_20", "mini_ipip_20"} <= set(payload)
+
+
 def test_correlations_item_correlations_embeds_standard_provenance(tmp_path) -> None:
     correlations = _load_pipeline_module("05_compute_correlations.py")
     source_path = tmp_path / "train.parquet"
@@ -1191,11 +1328,172 @@ def test_baselines_ml_vs_avg_fails_closed_when_any_domain_percentile_missing() -
             mini_ipip_norms={domain: {"mean": 3.0, "sd": 1.0} for domain in DOMAINS},
             sparse_calibration={},
             full_calibration={},
+            train_df=X_test,
             n_bootstrap=3,
         )
         raise AssertionError("Expected fail-closed error for missing domain percentile columns")
     except ValueError as exc:
         assert "complete domain targets" in str(exc).lower() or "percentile" in str(exc).lower()
+
+
+def test_baselines_subset_norms_match_train_subset_average() -> None:
+    """A4.7: subset norms = mean/sd(ddof=1) of the per-domain subset average over train."""
+    baselines = _load_pipeline_module("09_baselines.py")
+    rng = np.random.default_rng(1)
+    train = pd.DataFrame(
+        rng.uniform(1.0, 5.0, size=(200, len(ITEM_COLUMNS))),
+        columns=ITEM_COLUMNS,
+    )
+    cols_by_domain = {"ext": ["ext1", "ext2", "ext3", "ext4"], "agr": ["agr1", "agr2"]}
+    norms = baselines._compute_subset_norms(train, cols_by_domain)
+    expected_ext = train[["ext1", "ext2", "ext3", "ext4"]].mean(axis=1)
+    assert norms["ext"]["mean"] == pytest.approx(float(expected_ext.mean()))
+    assert norms["ext"]["sd"] == pytest.approx(float(expected_ext.std(ddof=1)))
+    # Only requested domains are present; full-domain default is NOT used.
+    assert "agr" in norms and "csn" not in norms
+
+
+def test_baselines_subset_norms_fail_closed_on_degenerate_sd() -> None:
+    """A4.7: a constant subset (sd<=0) must fail closed rather than emit NaN percentiles."""
+    baselines = _load_pipeline_module("09_baselines.py")
+    train = pd.DataFrame({"ext1": [3.0] * 50, "ext2": [3.0] * 50})
+    with pytest.raises(ValueError):
+        baselines._compute_subset_norms(train, {"ext": ["ext1", "ext2"]})
+
+
+def test_baselines_mini_ipip_standalone_bootstrap_attaches_cis() -> None:
+    """A4.1: the Mini-IPIP comparator gets respondent-level bootstrap CIs like every
+    XGBoost method, but NO coverage CI (averaging has no prediction intervals)."""
+    baselines = _load_pipeline_module("09_baselines.py")
+    rng = np.random.default_rng(2)
+    n = 300
+    mapping = {d: [f"{d}{i}" for i in range(1, 5)] for d in DOMAINS}
+    item_cols = [it for d in DOMAINS for it in mapping[d]]
+    X_test = pd.DataFrame(rng.uniform(1.0, 5.0, size=(n, len(item_cols))), columns=item_cols)
+    y_test = pd.DataFrame({f"{d}_percentile": rng.uniform(0, 100, size=n) for d in DOMAINS})
+    norms = {d: {"mean": 3.0, "sd": 1.0} for d in DOMAINS}
+
+    overall, per_domain = baselines._evaluate_mini_ipip_standalone(
+        X_test, y_test, mini_ipip_mapping=mapping, mini_ipip_norms=norms, n_bootstrap=64,
+    )
+    assert "pearson_r_ci" in overall and len(overall["pearson_r_ci"]) == 2
+    assert overall["pearson_r_ci"][0] <= overall["pearson_r_ci"][1]
+    assert "coverage_90_ci" not in overall  # averaging has no intervals
+    for d in DOMAINS:
+        assert "pearson_r_ci" in per_domain[d]
+
+    overall0, _ = baselines._evaluate_mini_ipip_standalone(
+        X_test, y_test, mini_ipip_mapping=mapping, mini_ipip_norms=norms, n_bootstrap=0,
+    )
+    assert "pearson_r_ci" not in overall0
+
+
+def test_baselines_ml_vs_avg_emits_paired_xgb_vs_mini_ipip() -> None:
+    """A4.1 (part B): a paired domain_balanced-ML vs Mini-IPIP-averaging bootstrap
+    with a 95% CI is emitted on the shared test respondents."""
+    baselines = _load_pipeline_module("09_baselines.py")
+    rng = np.random.default_rng(3)
+    n_rows = 200
+    X_test = pd.DataFrame(
+        rng.uniform(1.0, 5.0, size=(n_rows, len(ITEM_COLUMNS))),
+        columns=ITEM_COLUMNS,
+    )
+    cols = {f"{d}_percentile": rng.uniform(0, 100, size=n_rows) for d in DOMAINS}
+    cols.update({f"{d}_score": rng.uniform(1.5, 4.5, size=n_rows) for d in DOMAINS})
+    y_test = pd.DataFrame(cols)
+    item_pool = [
+        {"id": item_id, "home_domain": item_id[:3], "own_domain_r": 0.3 + rank * 1e-4, "rank": rank}
+        for rank, item_id in enumerate(ITEM_COLUMNS, start=1)
+    ]
+
+    class _LinearModel:
+        def __init__(self, offset: float) -> None:
+            self.offset = float(offset)
+
+        def predict(self, X: pd.DataFrame) -> np.ndarray:
+            arr = X.to_numpy(dtype=np.float64, copy=False)
+            base = np.nanmean(arr, axis=1)
+            return np.clip(0.6 * base + self.offset, 1.0, 5.0)
+
+    domain_models = {
+        d: {"q05": _LinearModel(0.0), "q50": _LinearModel(0.1), "q95": _LinearModel(0.2)}
+        for d in DOMAINS
+    }
+
+    out = baselines._run_ml_vs_averaging_comparison(
+        domain_models=domain_models,
+        X_values=X_test.values,
+        all_columns=list(X_test.columns),
+        X_test=X_test,
+        y_test=y_test,
+        item_pool=item_pool,
+        available_items=list(X_test.columns),
+        mini_ipip_mapping={d: [f"{d}{i}" for i in range(1, 5)] for d in DOMAINS},
+        mini_ipip_norms={d: {"mean": 3.0, "sd": 1.0} for d in DOMAINS},
+        sparse_calibration={},
+        full_calibration={},
+        train_df=X_test,
+        n_bootstrap=64,
+    )
+    paired = out["xgb_vs_mini_ipip_paired"]
+    assert paired["n_items"] == 20
+    assert paired["comparison"] == "domain_balanced_ml"
+    assert paired["reference"] == "mini_ipip_averaging"
+    assert len(paired["delta_pearson_r_ci"]) == 2
+    assert paired["delta_pearson_r_ci"][0] <= paired["delta_pearson_r_ci"][1]
+    # Mini-IPIP arm now also carries CIs within the same comparison artifact.
+    assert "comparisons" in out
+
+    # A4.7: the domain_balanced averaging arm must use train-fit SUBSET norms, not
+    # full-domain norms (norms=None). Guards a revert of the avg_norms wiring.
+    db_row = next(
+        r for r in out["comparisons"]
+        if r["method"] == "domain_balanced" and r["n_items"] == 20
+    )
+    db_items = baselines._select_domain_balanced(item_pool, 4)
+    subset_cols = {d: [it for it in db_items if it.startswith(d)] for d in DOMAINS}
+    subset = baselines._compute_simple_averaging_scores(
+        X_test, y_test, db_items,
+        norms=baselines._compute_subset_norms(X_test, subset_cols),
+    )["overall"]
+    full_domain = baselines._compute_simple_averaging_scores(
+        X_test, y_test, db_items, norms=None,
+    )["overall"]
+    assert db_row["avg_mae"] == pytest.approx(subset["mae"])
+    assert subset["mae"] != pytest.approx(full_domain["mae"])  # subset vs full-domain diverge
+
+
+def test_paired_xgb_vs_mini_ipip_delta_sign_follows_comparison_minus_reference() -> None:
+    """A4.1: delta = domain_balanced_ML minus mini_ipip_averaging; swapping the arms
+    must flip the sign (the comparison/reference labels alone are hardcoded strings)."""
+    baselines = _load_pipeline_module("09_baselines.py")
+    rng = np.random.default_rng(11)
+    n = 300
+    truth = {d: rng.uniform(0, 100, n) for d in DOMAINS}
+    high_r = {d: {"true": truth[d], "pred": truth[d] + rng.normal(0, 2, n)} for d in DOMAINS}
+    low_r = {d: {"true": truth[d], "pred": rng.normal(50, 5, n)} for d in DOMAINS}
+
+    res = baselines._paired_xgb_vs_mini_ipip(high_r, low_r, n_bootstrap=64, seed=42)
+    assert res["comparison"] == "domain_balanced_ml" and res["reference"] == "mini_ipip_averaging"
+    assert res["delta_pearson_r"] > 0  # comparison (high r) minus reference (low r)
+    lo, hi = res["delta_pearson_r_ci"]
+    assert lo <= res["delta_pearson_r"] <= hi
+    assert len(res["delta_mae_ci"]) == 2
+
+    swapped = baselines._paired_xgb_vs_mini_ipip(low_r, high_r, n_bootstrap=64, seed=42)
+    assert swapped["delta_pearson_r"] < 0  # sign flips when the arms are swapped
+
+
+def test_figures_attach_checksums_matches_files(tmp_path) -> None:
+    """A5.5: _attach_figure_checksums hashes the rendered files per format."""
+    figures = _load_pipeline_module("12_generate_figures.py")
+    (tmp_path / "figX.png").write_bytes(b"png-bytes")
+    (tmp_path / "figX.pdf").write_bytes(b"pdf-bytes")
+    entries = [{"filename": "figX", "formats": ["png", "pdf"], "source_artifacts": []}]
+    figures._attach_figure_checksums(entries, tmp_path)
+    assert entries[0]["sha256"]["png"] == file_sha256(tmp_path / "figX.png")
+    assert entries[0]["sha256"]["pdf"] == file_sha256(tmp_path / "figX.pdf")
+    assert len(entries[0]["sha256"]["png"]) == 64
 
 
 def test_baselines_compute_metrics_fails_closed_on_constant_inputs() -> None:
@@ -1228,7 +1526,7 @@ def test_simulate_defaults_to_sem_stopping(tmp_path, monkeypatch) -> None:
         domain: {"q05": object(), "q50": object(), "q95": object()}
         for domain in DOMAINS
     }
-    monkeypatch.setattr(simulate, "load_models", lambda *_args, **_kwargs: dummy_models)
+    monkeypatch.setattr(simulate, "load_domain_models", lambda *_args, **_kwargs: dummy_models)
     monkeypatch.setattr(
         simulate,
         "load_norms",
@@ -1498,7 +1796,7 @@ def test_simulate_model_dir_relative_to_package_root(tmp_path, monkeypatch) -> N
         captured["models_dir"] = path
         return dummy_models
 
-    monkeypatch.setattr(simulate, "load_models", _fake_load_models)
+    monkeypatch.setattr(simulate, "load_domain_models", _fake_load_models)
     monkeypatch.setattr(simulate, "load_norms", lambda *_args, **_kwargs: {d: {"mean": 3.0, "sd": 0.8} for d in DOMAINS})
     monkeypatch.setattr(
         simulate,
@@ -2110,49 +2408,6 @@ def test_train_main_records_xgb_n_jobs_from_cli(
     assert report["provenance"]["xgb_n_jobs"] == 5
 
 
-def test_train_cross_validation_uses_stratified_split_when_strata_provided(monkeypatch) -> None:
-    train = _load_pipeline_module("07_train.py")
-
-    frame = _make_dataset(n_rows=8)
-    X, y, y_pct = train._prepare_features_targets(frame)
-    strata = pd.Series([0, 0, 0, 0, 1, 1, 1, 1], dtype=np.int64)
-
-    captured: dict[str, Any] = {}
-
-    class _FakeStratifiedKFold:
-        def __init__(self, n_splits, shuffle, random_state):  # type: ignore[no-untyped-def]
-            captured["n_splits"] = n_splits
-            captured["shuffle"] = shuffle
-            captured["random_state"] = random_state
-
-        def split(self, X_split, y_split):  # type: ignore[no-untyped-def]
-            captured["y_split"] = list(np.asarray(y_split))
-            idx = np.arange(len(X_split))
-            yield idx[[0, 1, 4, 5]], idx[[2, 3, 6, 7]]
-            yield idx[[2, 3, 6, 7]], idx[[0, 1, 4, 5]]
-
-    monkeypatch.setattr(train, "StratifiedKFold", _FakeStratifiedKFold)
-    monkeypatch.setattr(train, "_train_domain_models", lambda *_args, **_kwargs: _dummy_domain_models())
-    monkeypatch.setattr(train, "_evaluate_domain_models", lambda *_args, **_kwargs: _make_eval_metrics(r=0.9, coverage=0.9))
-
-    result = train._run_cross_validation_robustness(
-        X=X,
-        y=y,
-        y_pct=y_pct,
-        item_info={},
-        config={"sparsity": {"enabled": False}, "training": {"random_state": 42}},
-        params=train.DEFAULT_PARAMS,
-        n_folds=2,
-        mini_ipip_items=None,
-        strata=strata,
-    )
-
-    assert result["n_folds"] == 2
-    assert captured["n_splits"] == 2
-    assert captured["shuffle"] is True
-    assert set(captured["y_split"]) == {0, 1}
-
-
 def test_train_main_defaults_cv_folds_from_constants_when_config_omits_it(
     tmp_path,
     monkeypatch,
@@ -2298,9 +2553,10 @@ def test_baselines_run_comparisons_routes_mini_ipip_to_standalone(
 
     captured: dict[str, Any] = {}
 
-    def _fake_standalone(X_arg, y_arg, mini_ipip_mapping, mini_ipip_norms):  # type: ignore[no-untyped-def]
+    def _fake_standalone(X_arg, y_arg, mini_ipip_mapping, mini_ipip_norms, n_bootstrap=0, seed=42):  # type: ignore[no-untyped-def]
         captured["mapping"] = mini_ipip_mapping
         captured["norms"] = mini_ipip_norms
+        captured["n_bootstrap"] = n_bootstrap
         return _fake_overall(0.77), fake_domain
 
     monkeypatch.setattr(baselines, "_evaluate_mini_ipip_standalone", _fake_standalone)
@@ -2332,20 +2588,6 @@ def test_baselines_run_comparisons_routes_mini_ipip_to_standalone(
     assert "mini_ipip" in per_domain
 
 
-def test_makefile_train_single_run_invocation() -> None:
-    repo_root = Path(__file__).resolve().parent.parent
-    result = subprocess.run(
-        ["make", "-n", "train", "4"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0
-    assert "configs/ablation_stratified.yaml" in result.stdout
-    assert "configs/reference.yaml" not in result.stdout
-
-
 def test_makefile_train_runs_reference_then_parallel_ablations() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     result = subprocess.run(
@@ -2360,9 +2602,8 @@ def test_makefile_train_runs_reference_then_parallel_ablations() -> None:
     assert "pipeline/07_train.py --config configs/reference.yaml" in out
     assert "pipeline/07_train.py --config configs/ablation_none.yaml" in out
     assert "pipeline/07_train.py --config configs/ablation_focused.yaml" in out
-    assert "pipeline/07_train.py --config configs/ablation_stratified.yaml" in out
     assert out.index("configs/reference.yaml") < out.index("configs/ablation_none.yaml")
-    assert "train-2 train-3 train-4" in out
+    assert "train-2 train-3" in out
 
 
 def test_makefile_research_eval_defaults_to_parallel_submake(tmp_path) -> None:
@@ -2443,19 +2684,6 @@ def test_makefile_train_invalid_run_reports_single_actionable_error() -> None:
     assert "No rule to make target" not in combined
 
 
-def test_makefile_auto_selects_stratified_data_dir_for_stratified_model() -> None:
-    repo_root = Path(__file__).resolve().parent.parent
-    result = subprocess.run(
-        ["make", "-n", "validate", "MODEL_DIR=models/ablation_stratified"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0
-    assert "--data-dir data/processed/ext_est_opn" in result.stdout
-
-
 def test_run_pipeline_omits_empty_make_overrides(tmp_path) -> None:
     repo_root = Path(__file__).resolve().parent.parent
     fake_bin = tmp_path / "bin"
@@ -2514,14 +2742,19 @@ def test_run_pipeline_writes_checkpoint_markers_for_major_stages(tmp_path) -> No
     assert result.returncode == 0
 
     checkpoint_dir = tmp_path / ".pipeline-checkpoints"
+    # Every stage that actually RUNS drops a marker (run-pipeline.sh marks every
+    # stage so --resume can skip any completed stage, incl. the expensive download
+    # — see the "marking every stage" change in commit 106db88, which replaced the
+    # old CHECKPOINT_STAGES allowlist). With --end-stage correlations, download
+    # through correlations run; tune (and everything after) does not.
+    assert (checkpoint_dir / "download.done").exists()
     assert (checkpoint_dir / "norms.done").exists()
     assert (checkpoint_dir / "prepare.done").exists()
     assert (checkpoint_dir / "correlations.done").exists()
-    assert not (checkpoint_dir / "download.done").exists()
     assert not (checkpoint_dir / "tune.done").exists()
 
 
-def test_run_pipeline_reference_only_uses_reference_targets_and_skips_notes(tmp_path) -> None:
+def test_run_pipeline_reference_only_uses_reference_targets_and_runs_notes(tmp_path) -> None:
     repo_root = Path(__file__).resolve().parent.parent
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir(parents=True)
@@ -2551,16 +2784,149 @@ def test_run_pipeline_reference_only_uses_reference_targets_and_skips_notes(tmp_
     )
     assert result.returncode == 0
     calls = calls_path.read_text(encoding="utf-8").splitlines()
-    assert any(line == "prepare-default" for line in calls)
-    assert any(line == "correlations-default" for line in calls)
+    assert any(line == "prepare" or line.startswith("prepare ") for line in calls)
+    assert any(line == "correlations" or line.startswith("correlations ") for line in calls)
     assert any(line.startswith("train 1") for line in calls)
     assert any(line.startswith("research-eval-reference") for line in calls)
     assert any(line.startswith("export-reference export-repo-readme") for line in calls)
-    assert not any(line == "prepare" or line.startswith("prepare ") for line in calls)
-    assert not any(line == "correlations" or line.startswith("correlations ") for line in calls)
+    assert not any(line == "prepare-default" for line in calls)
+    assert not any(line == "correlations-default" for line in calls)
     assert not any(line.startswith("research-eval ") for line in calls)
-    assert not any(line == "notes" or line.startswith("notes ") for line in calls)
-    assert "notes SKIPPED (reference-only mode requires all four variants)" in result.stdout
+    # Reference-only now RUNS notes scoped to the reference variant (was: skipped).
+    assert any(line.startswith("notes REFERENCE_ONLY=1") for line in calls)
+
+
+def test_build_research_summary_reference_only_filters_to_reference(tmp_path, monkeypatch) -> None:
+    """--reference-only iterates only the reference variant: the summary's variants and
+    provenance narrow to reference, and --strict still fails closed if reference is incomplete."""
+    brs = _load_paper_module("build_research_summary.py")
+
+    # Keep the real PACKAGE_ROOT so the variant configs resolve; an empty tmp
+    # variants dir (+ tmp output) makes every variant incomplete without touching
+    # or overwriting the committed artifacts/research_summary.json.
+    variants_dir = tmp_path / "artifacts" / "variants"
+    variants_dir.mkdir(parents=True)  # empty -> every variant is incomplete
+    out_full = tmp_path / "rs_full.json"
+    out_ref = tmp_path / "rs_ref.json"
+
+    # Full (default): the summary contains all three variant keys.
+    monkeypatch.setattr(sys, "argv", [
+        "build_research_summary.py", "--output", str(out_full),
+        "--artifacts-variants-dir", str(variants_dir),
+    ])
+    assert brs.main() == 0
+    full = json.loads(out_full.read_text())
+    assert set(full["variants"]) == set(brs.VARIANTS)
+    assert full["provenance"]["reference_only"] is False
+
+    # Reference-only: the summary contains ONLY reference; provenance records the mode.
+    monkeypatch.setattr(sys, "argv", [
+        "build_research_summary.py", "--reference-only", "--output", str(out_ref),
+        "--artifacts-variants-dir", str(variants_dir),
+    ])
+    assert brs.main() == 0
+    ref = json.loads(out_ref.read_text())
+    assert set(ref["variants"]) == {"reference"}
+    assert ref["provenance"]["variants_included"] == ["reference"]
+    assert ref["provenance"]["reference_only"] is True
+
+    # Fail-closed preserved: an INCOMPLETE reference still trips --strict under --reference-only.
+    monkeypatch.setattr(sys, "argv", [
+        "build_research_summary.py", "--reference-only", "--strict", "--output", str(out_ref),
+        "--artifacts-variants-dir", str(variants_dir),
+    ])
+    assert brs.main() == 2
+
+
+def test_generate_notes_reference_only_scopes_variant_iteration(tmp_path, monkeypatch) -> None:
+    """In reference-only mode the cross-variant iteration is scoped to ['reference'] so it does
+    NOT KeyError on absent ablation bundles, and the honesty disclosure is emitted."""
+    notes = _load_paper_module("generate_notes_data.py")
+    summary_path = tmp_path / "research_summary.json"
+    summary_path.write_text(
+        json.dumps({
+            "variants": {"reference": {"notes_inputs": {}}},  # ONLY reference present
+            "reference_notes_inputs": {},
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(notes, "RESEARCH_SUMMARY_PATH", summary_path)
+
+    # Default all-variants order hits the absent ablation keys -> KeyError; no disclosure.
+    monkeypatch.setattr(notes, "_ACTIVE_VARIANT_ORDER", list(notes.VARIANT_ORDER))
+    assert notes._reference_only_disclosure() == ""
+    with pytest.raises(KeyError):
+        notes._iter_variant_notes_inputs()
+
+    # Reference-only order iterates only reference -> single record, no KeyError; disclosure present.
+    monkeypatch.setattr(notes, "_ACTIVE_VARIANT_ORDER", [notes.REFERENCE_VARIANT])
+    records = notes._iter_variant_notes_inputs()
+    assert [r[0] for r in records] == ["reference"]
+    assert "were not run in this reference-only build" in notes._reference_only_disclosure()
+
+
+def test_update_notes_reference_only_writes_and_restores_active_order(tmp_path, monkeypatch) -> None:
+    """update_notes(reference_only=True) writes NOTES.md (no abort), threads the reference-only
+    signal into the generators, and ALWAYS restores _ACTIVE_VARIANT_ORDER afterward (finally)."""
+    notes = _load_paper_module("generate_notes_data.py")
+    template = tmp_path / "NOTES.template.md"
+    template.write_text("<!-- BEGIN:probe -->\nPLACEHOLDER\n<!-- END:probe -->\n", encoding="utf-8")
+    out = tmp_path / "NOTES.md"
+    monkeypatch.setattr(notes, "NOTES_TEMPLATE_PATH", template)
+    monkeypatch.setattr(notes, "NOTES_PATH", out)
+    monkeypatch.setattr(notes, "PACKAGE_ROOT", tmp_path)
+    monkeypatch.setattr(
+        notes,
+        "SECTION_GENERATORS",
+        {"probe": lambda: notes._reference_only_disclosure() + "PROBE_BODY"},
+    )
+
+    notes.update_notes(reference_only=True)
+    written = out.read_text()
+    assert "PROBE_BODY" in written
+    assert "were not run in this reference-only build" in written  # disclosure threaded through
+    assert notes._ACTIVE_VARIANT_ORDER == notes.VARIANT_ORDER  # restored in finally
+
+    notes.update_notes(reference_only=False)
+    assert "were not run in this reference-only build" not in out.read_text()
+
+
+def test_generate_notes_reference_only_renders_real_ablation_details(tmp_path, monkeypatch) -> None:
+    """End-to-end guard: the 6 cross-variant DETAIL generators (which the empty-notes_inputs
+    scoping test cannot exercise) render on the REAL reference bundle in reference-only mode —
+    disclosure first, Reference block present, no KeyError. Skips when the gitignored reference
+    bundle is absent (e.g. in CI)."""
+    repo_root = Path(__file__).resolve().parent.parent
+    if not (repo_root / "artifacts" / "variants" / "reference" / "validation_results.json").exists():
+        pytest.skip("reference bundle (artifacts/variants/reference) not present")
+
+    # Build a reference-only research_summary from the real bundle into tmp.
+    brs = _load_paper_module("build_research_summary.py")
+    summary_path = tmp_path / "research_summary.json"
+    monkeypatch.setattr(
+        sys, "argv",
+        ["build_research_summary.py", "--reference-only", "--output", str(summary_path)],
+    )
+    assert brs.main() == 0
+    assert summary_path.exists()
+
+    # Render the 6 detail generators in reference-only mode against it.
+    notes = _load_paper_module("generate_notes_data.py")
+    monkeypatch.setattr(notes, "RESEARCH_SUMMARY_PATH", summary_path)
+    monkeypatch.setattr(notes, "_ACTIVE_VARIANT_ORDER", [notes.REFERENCE_VARIANT])
+    detail_gens = [
+        notes.gen_ablation_validation_details,
+        notes.gen_ablation_baselines_details,
+        notes.gen_ablation_per_domain_k20_details,
+        notes.gen_ablation_domain_starvation_details,
+        notes.gen_ablation_ml_vs_averaging_details,
+        notes.gen_ablation_simulation_details,
+    ]
+    for gen in detail_gens:
+        out = gen()  # must not KeyError on the absent ablation variants
+        assert out.lstrip().startswith(">"), f"{gen.__name__} missing leading disclosure"
+        assert "were not run in this reference-only build" in out
+        assert "Reference" in out
 
 
 def test_run_pipeline_reference_only_accepts_export_stage_aliases(tmp_path) -> None:
@@ -2605,7 +2971,7 @@ def test_manage_reference_only_workspace_fails_closed_and_force_cleans(tmp_path,
         "artifacts/variants/ablation_none/validation_results.json",
         "notes/NOTES.md",
         "output/ablation_focused/model.onnx",
-        "logs/eval-ablation-stratified.log",
+        "logs/eval-ablation-focused.log",
     ]
     for rel in stale_paths:
         path = tmp_path / rel
@@ -2625,7 +2991,7 @@ def test_manage_reference_only_workspace_fails_closed_and_force_cleans(tmp_path,
     assert not (tmp_path / "artifacts/variants/ablation_none").exists()
     assert not (tmp_path / "notes/NOTES.md").exists()
     assert not (tmp_path / "output/ablation_focused").exists()
-    assert not (tmp_path / "logs/eval-ablation-stratified.log").exists()
+    assert not (tmp_path / "logs/eval-ablation-focused.log").exists()
 
 
 def test_manage_backup_clean_moves_outputs_and_writes_manifest(tmp_path, monkeypatch, capsys) -> None:
@@ -2771,7 +3137,7 @@ def test_makefile_remote_pull_reference_scopes_results() -> None:
     )
     assert result.returncode == 0
     out = result.stdout
-    assert "data/processed/ext_est/" in out
+    assert "data/processed/canonical_v1/" in out
     assert "models/reference/" in out
     assert "artifacts/variants/reference/" in out
     assert "output/reference/" in out
@@ -2824,55 +3190,22 @@ def test_makefile_remote_gpu_push_excludes_backup_dir() -> None:
     assert "--exclude='.backup/'" in out
 
 
-def test_makefile_auto_selects_stratified_data_dir_with_trailing_slash_model_dir() -> None:
-    repo_root = Path(__file__).resolve().parent.parent
-    result = subprocess.run(
-        ["make", "-n", "validate", "MODEL_DIR=models/ablation_stratified/"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0
-    assert "--data-dir data/processed/ext_est_opn" in result.stdout
+def _make_fake_onnxruntime(session_cls):
+    """Build a fake `onnxruntime` module for the parity tests.
 
-
-def test_makefile_pairing_guard_fails_closed_on_mismatch() -> None:
-    repo_root = Path(__file__).resolve().parent.parent
-    result = subprocess.run(
-        [
-            "make",
-            "check-model-data-pairing",
-            "MODEL_DIR=models/ablation_stratified",
-            "DATA_DIR=data/processed/ext_est",
-        ],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode != 0
-    combined = result.stdout + result.stderr
-    assert "Model/data mismatch" in combined
-
-
-def test_makefile_pairing_guard_fails_closed_on_mismatch_with_trailing_slash_model_dir() -> None:
-    repo_root = Path(__file__).resolve().parent.parent
-    result = subprocess.run(
-        [
-            "make",
-            "check-model-data-pairing",
-            "MODEL_DIR=models/ablation_stratified/",
-            "DATA_DIR=data/processed/ext_est",
-        ],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode != 0
-    combined = result.stdout + result.stderr
-    assert "Model/data mismatch" in combined
+    Stage 11 now creates single-threaded sessions via SessionOptions /
+    ExecutionMode (see `_deterministic_session`), so the stub must expose those
+    alongside InferenceSession.
+    """
+    return type(
+        "_Ort",
+        (),
+        {
+            "InferenceSession": session_cls,
+            "SessionOptions": type("_Opts", (), {}),
+            "ExecutionMode": type("_EM", (), {"ORT_SEQUENTIAL": 0}),
+        },
+    )()
 
 
 def test_export_validate_parity_allows_tiny_relative_drift(monkeypatch) -> None:
@@ -2887,7 +3220,7 @@ def test_export_validate_parity_allows_tiny_relative_drift(monkeypatch) -> None:
             return b"fake-onnx"
 
     class _FakeSession:
-        def __init__(self, _bytes):
+        def __init__(self, _bytes, sess_options=None, providers=None):
             pass
 
         def get_inputs(self):
@@ -2899,7 +3232,7 @@ def test_export_validate_parity_allows_tiny_relative_drift(monkeypatch) -> None:
             pred[71] = np.float32(4.413167953491211)
             return [pred]
 
-    monkeypatch.setitem(sys.modules, "onnxruntime", type("_Ort", (), {"InferenceSession": _FakeSession})())
+    monkeypatch.setitem(sys.modules, "onnxruntime", _make_fake_onnxruntime(_FakeSession))
 
     export.validate_parity({"agr_q50": _FakeJoblibModel()}, {"agr_q50": _FakeOnnxModel()})
 
@@ -2916,7 +3249,7 @@ def test_export_validate_parity_still_fails_on_material_drift(monkeypatch) -> No
             return b"fake-onnx"
 
     class _FakeSession:
-        def __init__(self, _bytes):
+        def __init__(self, _bytes, sess_options=None, providers=None):
             pass
 
         def get_inputs(self):
@@ -2928,7 +3261,7 @@ def test_export_validate_parity_still_fails_on_material_drift(monkeypatch) -> No
             pred[71] = np.float32(4.0005)
             return [pred]
 
-    monkeypatch.setitem(sys.modules, "onnxruntime", type("_Ort", (), {"InferenceSession": _FakeSession})())
+    monkeypatch.setitem(sys.modules, "onnxruntime", _make_fake_onnxruntime(_FakeSession))
 
     with pytest.raises(SystemExit) as exc_info:
         export.validate_parity({"agr_q50": _FakeJoblibModel()}, {"agr_q50": _FakeOnnxModel()})
@@ -3325,7 +3658,7 @@ def test_simulate_sem_sweep_writes_provenance(tmp_path, monkeypatch) -> None:
         domain: {"q05": object(), "q50": object(), "q95": object()}
         for domain in DOMAINS
     }
-    monkeypatch.setattr(simulate, "load_models", lambda *_args, **_kwargs: dummy_models)
+    monkeypatch.setattr(simulate, "load_domain_models", lambda *_args, **_kwargs: dummy_models)
     monkeypatch.setattr(simulate, "load_norms", lambda *_args, **_kwargs: {d: {"mean": 3.0, "sd": 0.8} for d in DOMAINS})
     monkeypatch.setattr(
         simulate,
@@ -3526,14 +3859,13 @@ def test_load_sqlite_main_writes_provenance_metadata(tmp_path, monkeypatch) -> N
 def test_prepare_write_metadata_embeds_provenance_and_split_hashes(tmp_path) -> None:
     prepare = _load_pipeline_module("04_prepare_data.py")
 
-    output_dir = tmp_path / "data" / "processed" / "ext_est"
+    output_dir = tmp_path / "data" / "processed" / "canonical_v1"
     output_dir.mkdir(parents=True)
     db_path = tmp_path / "data" / "processed" / "ipip_bffm.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     db_path.write_bytes(b"sqlite-bytes")
 
     df_all = _make_dataset(n_rows=20)
-    df_all["split_stratum"] = np.arange(len(df_all), dtype=np.int16) % 5
     train_df = df_all.iloc[:12].copy()
     val_df = df_all.iloc[12:16].copy()
     test_df = df_all.iloc[16:].copy()
@@ -3564,7 +3896,8 @@ def test_prepare_write_metadata_embeds_provenance_and_split_hashes(tmp_path) -> 
         seed=42,
         test_size=0.15,
         val_size=0.15,
-        stratification="ext-est",
+        norms_path=db_path,
+        norms_sha256=file_sha256(db_path),
         db_path=db_path,
         train_path=train_path,
         val_path=val_path,
@@ -3580,7 +3913,7 @@ def test_prepare_write_metadata_embeds_provenance_and_split_hashes(tmp_path) -> 
     val_sha = file_sha256(val_path)
     test_sha = file_sha256(test_path)
     expected_sig = hashlib.sha256(
-        f"train={train_sha}\nval={val_sha}\ntest={test_sha}\n".encode("utf-8")
+        f"train={train_sha}\nval={val_sha}\ntest={test_sha}\n".encode()
     ).hexdigest()
 
     assert payload["provenance"]["script"] == "04_prepare_data.py"
@@ -3593,6 +3926,16 @@ def test_prepare_write_metadata_embeds_provenance_and_split_hashes(tmp_path) -> 
     assert payload["val_sha256"] == val_sha
     assert payload["test_sha256"] == test_sha
     assert payload["total_valid"] == len(df_all)
+
+    # canonical_v1 schema: new split identity + train-only norms provenance.
+    assert payload["split_id"] == prepare.CANONICAL_SPLIT_ID == "canonical_v1"
+    assert payload["split_scheme"] == prepare.SPLIT_SCHEME == "random"
+    assert payload["norms_sha256"] == file_sha256(db_path)
+    assert payload["inputs"]["norms"]["sha256"] == file_sha256(db_path)
+    assert payload["norms_path"]
+    # Removed stratified-regime fields must not reappear.
+    assert "stratification_scheme" not in payload
+    assert "n_strata" not in payload
 
 
 def test_prepare_load_from_sqlite_enforces_stable_row_order(tmp_path, monkeypatch) -> None:
@@ -3830,10 +4173,68 @@ def test_upload_main_resolves_relative_output_dir_to_package_root(tmp_path, monk
     assert captured.get("output_dir") == tmp_path / "output" / "custom"
 
 
+def test_upload_revision_creates_branch_and_scopes_commit(tmp_path, monkeypatch) -> None:
+    """--revision <branch> creates the branch (if absent) and routes the commit + the
+    stale-file listing to that revision, so a release can be staged on e.g. `next`."""
+    import types
+
+    upload = _load_pipeline_module("13_upload_hf.py")
+    monkeypatch.setattr(upload, "PACKAGE_ROOT", tmp_path)
+    monkeypatch.setenv("HF_TOKEN", "test-token")
+
+    # A minimal on-disk reference variant so `--variant reference` resolves a real dir.
+    variant_path = tmp_path / "output" / "reference"
+    variant_path.mkdir(parents=True)
+    model_file = variant_path / "model.onnx"
+    model_file.write_text("onnx-bytes")
+
+    captured: dict[str, Any] = {}
+
+    class _FakeApi:
+        def __init__(self, token: str) -> None:
+            captured["token"] = token
+
+        def create_repo(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            captured["repo"] = kwargs.get("repo_id")
+
+        def create_branch(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            captured["branch"] = (kwargs.get("branch"), kwargs.get("exist_ok"))
+
+        def list_repo_files(self, **kwargs) -> list[str]:  # type: ignore[no-untyped-def]
+            captured["list_revision"] = kwargs.get("revision")
+            return []
+
+        def create_commit(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            captured["commit_revision"] = kwargs.get("revision")
+            captured["n_ops"] = len(kwargs.get("operations", []))
+
+    # CommitOperationAdd is constructed with kwargs (path_in_repo=, path_or_fileobj=) and
+    # later read via op.path_in_repo + isinstance(op, CommitOperationAdd) -> SimpleNamespace
+    # satisfies both (a SimpleNamespace built from those kwargs is an instance of the class).
+    monkeypatch.setitem(sys.modules, "huggingface_hub", types.SimpleNamespace(
+        HfApi=_FakeApi, CommitOperationAdd=types.SimpleNamespace,
+        CommitOperationDelete=types.SimpleNamespace,
+    ))
+    monkeypatch.setattr(upload, "_validate_output_bundle", lambda _p: [model_file])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["13_upload_hf.py", "--repo-id", "org/repo", "--variant", "reference", "--revision", "next"],
+    )
+
+    upload.main()
+    assert captured.get("branch") == ("next", True)
+    assert captured.get("list_revision") == "next"
+    assert captured.get("commit_revision") == "next"
+    assert captured.get("n_ops") == 1
+
+
 def _write_responses_sqlite(db_path: Path, df: pd.DataFrame) -> None:
     """Write synthetic responses table with *_score columns for norms stage tests."""
     df_out = df.copy()
     n_rows = len(df_out)
+    if "respondent_id" not in df_out.columns:
+        df_out.insert(0, "respondent_id", range(1, n_rows + 1))
     for item_idx, item_id in enumerate(ITEM_COLUMNS):
         if item_id not in df_out.columns:
             df_out[item_id] = [int(((row_idx + item_idx) % 5) + 1) for row_idx in range(n_rows)]
@@ -3884,13 +4285,14 @@ def test_norms_stage_main_writes_lock_and_meta(tmp_path, monkeypatch) -> None:
     norms_stage = _load_pipeline_module("03_compute_norms.py")
     monkeypatch.setattr(norms_stage, "PACKAGE_ROOT", tmp_path)
 
+    _b = np.linspace(1.0, 5.0, 24)
     df = pd.DataFrame(
         {
-            "ext_score": [2.0, 2.5, 3.0, 3.5],
-            "agr_score": [3.0, 3.5, 4.0, 4.5],
-            "csn_score": [2.5, 3.0, 3.5, 4.0],
-            "est_score": [2.0, 2.5, 3.0, 3.5],
-            "opn_score": [3.5, 4.0, 4.5, 5.0],
+            "ext_score": _b,
+            "agr_score": np.clip(_b + 0.3, 1.0, 5.0),
+            "csn_score": np.clip(5.3 - _b, 1.0, 5.0),
+            "est_score": np.clip(_b * 0.8 + 0.5, 1.0, 5.0),
+            "opn_score": np.clip(_b + 0.1, 1.0, 5.0),
         }
     )
     db_path = tmp_path / "data" / "processed" / "ipip_bffm.db"
@@ -3917,12 +4319,22 @@ def test_norms_stage_main_writes_lock_and_meta(tmp_path, monkeypatch) -> None:
 
     with open(output_path) as f:
         payload = json.load(f)
-    assert payload["n_respondents"] == len(df)
-    assert payload["schema_version"] == 2
+    from lib.splits import CANONICAL_SEED, CANONICAL_TEST_SIZE, CANONICAL_VAL_SIZE, assign_splits
+
+    labels = assign_splits(
+        np.arange(1, len(df) + 1),
+        seed=CANONICAL_SEED,
+        test_size=CANONICAL_TEST_SIZE,
+        val_size=CANONICAL_VAL_SIZE,
+    )
+    train_df = df.loc[labels == "train"].reset_index(drop=True)
+    assert payload["n_respondents"] == len(train_df)
+    assert payload["schema_version"] == 3
+    assert payload["split"]["fit_on"] == "train"
     for domain in DOMAINS:
         col = f"{domain}_score"
-        assert abs(payload["norms"][domain]["mean"] - float(df[col].mean())) < 1e-12
-        assert abs(payload["norms"][domain]["sd"] - float(df[col].std(ddof=1))) < 1e-12
+        assert abs(payload["norms"][domain]["mean"] - float(train_df[col].mean())) < 1e-12
+        assert abs(payload["norms"][domain]["sd"] - float(train_df[col].std(ddof=1))) < 1e-12
         assert payload["mini_ipip_norms"][domain]["sd"] > 0
 
     with open(meta_path) as f:
@@ -3933,17 +4345,383 @@ def test_norms_stage_main_writes_lock_and_meta(tmp_path, monkeypatch) -> None:
     assert meta["provenance"]["data_snapshot_id"] == f"norms_sha256:{norms_sha}"
 
 
+# ---------------------------------------------------------------------------
+# lib/splits.assign_splits — the leakage-critical shared split function.
+# ---------------------------------------------------------------------------
+
+def test_assign_splits_is_order_independent() -> None:
+    """Same id set in any order yields the same per-id label.
+
+    This is the property that lets stage 03 (norms) and stage 04 (prepare) agree
+    on which respondents are ``train`` even though they load rows independently.
+    """
+    from lib.splits import assign_splits
+
+    ids = np.arange(1, 101)
+    labels_sorted = assign_splits(ids, seed=42)
+
+    shuffled = ids.copy()
+    np.random.default_rng(0).shuffle(shuffled)
+    labels_shuffled = assign_splits(shuffled, seed=42)
+
+    mapping_sorted = dict(zip(ids.tolist(), labels_sorted.tolist()))
+    mapping_shuffled = dict(zip(shuffled.tolist(), labels_shuffled.tolist()))
+    assert mapping_sorted == mapping_shuffled
+
+
+def test_assign_splits_is_deterministic_for_fixed_seed() -> None:
+    from lib.splits import assign_splits
+
+    ids = np.arange(1, 101)
+    assert np.array_equal(assign_splits(ids, seed=42), assign_splits(ids, seed=42))
+
+
+def test_assign_splits_partitions_are_disjoint_and_cover_all_ids() -> None:
+    from lib.splits import assign_splits
+
+    ids = np.arange(1, 101)
+    labels = assign_splits(ids, seed=42)
+    assert set(labels.tolist()) == {"train", "val", "test"}
+    assert len(labels) == len(ids)
+
+
+def test_assign_splits_rejects_empty_id_set() -> None:
+    from lib.splits import assign_splits
+
+    with pytest.raises(ValueError):
+        assign_splits(np.array([], dtype=int))
+
+
+def test_assign_splits_rejects_non_unique_ids() -> None:
+    from lib.splits import assign_splits
+
+    with pytest.raises(ValueError):
+        assign_splits(np.array([1, 2, 2, 3, 4, 5, 6, 7]))
+
+
+def test_assign_splits_rejects_invalid_sizes() -> None:
+    from lib.splits import assign_splits
+
+    ids = np.arange(1, 101)
+    with pytest.raises(ValueError):
+        assign_splits(ids, test_size=0.6, val_size=0.6)
+    with pytest.raises(ValueError):
+        assign_splits(ids, test_size=0.0, val_size=0.15)
+
+
+def test_assign_splits_rejects_small_n_with_empty_partition() -> None:
+    from lib.splits import assign_splits
+
+    with pytest.raises(ValueError):
+        assign_splits(np.array([1, 2, 3]))
+
+
+def test_assign_splits_proportions_are_70_15_15_and_train_is_majority() -> None:
+    """Pin the split SIZES so a slice-swap regression (e.g. train collapsing to
+    15% / test ballooning to 70%) fails loudly instead of passing the suite."""
+    import collections
+
+    from lib.splits import assign_splits
+
+    ids = np.arange(1, 10001)
+    counts = collections.Counter(assign_splits(ids, seed=42).tolist())
+    n = len(ids)
+    assert abs(counts["train"] / n - 0.70) < 0.01
+    assert abs(counts["val"] / n - 0.15) < 0.01
+    assert abs(counts["test"] / n - 0.15) < 0.01
+    # Load-bearing: train must be the majority partition (catches a train/test swap).
+    assert counts["train"] > counts["val"] and counts["train"] > counts["test"]
+
+
+def test_population_signature_is_stable_and_population_sensitive() -> None:
+    """The population signature is order-independent, integer-only, and changes
+    when the respondent set changes (the binding stage 04 relies on)."""
+    from lib.splits import population_signature
+
+    ids = np.arange(1, 101)
+    sig = population_signature(ids)
+    assert sig == population_signature(ids[::-1])  # order-independent
+    assert sig != population_signature(np.arange(1, 100))  # dropping one id changes it
+    with pytest.raises(ValueError):
+        population_signature(np.array(["a", "b"]))  # integer ids required
+
+
+def _write_norms_with_split(tmp_path, **split_overrides):
+    """Write a minimal norms artifact whose 'split' block can be tampered per-test."""
+    from lib.splits import (
+        CANONICAL_SEED,
+        CANONICAL_SPLIT_ID,
+        CANONICAL_TEST_SIZE,
+        CANONICAL_VAL_SIZE,
+    )
+
+    split = {
+        "id": CANONICAL_SPLIT_ID,
+        "scheme": "random",
+        "seed": CANONICAL_SEED,
+        "test_size": CANONICAL_TEST_SIZE,
+        "val_size": CANONICAL_VAL_SIZE,
+        "fit_on": "train",
+    }
+    split.update(split_overrides)
+    path = tmp_path / "norms.json"
+    path.write_text(json.dumps({"split": split, "norms": {}}), encoding="utf-8")
+    return path
+
+
+def test_assert_norms_match_split_rejects_each_leaky_branch(tmp_path) -> None:
+    """Lock all rejection branches of the stage-04 leakage guard so a future
+    weakening (e.g. dropping the fit_on check) turns the suite red."""
+    prepare = _load_pipeline_module("04_prepare_data.py")
+    from lib.splits import CANONICAL_SEED, CANONICAL_TEST_SIZE, CANONICAL_VAL_SIZE
+
+    kw = dict(seed=CANONICAL_SEED, test_size=CANONICAL_TEST_SIZE, val_size=CANONICAL_VAL_SIZE)
+
+    # (a) no 'split' block at all
+    no_split = tmp_path / "no_split.json"
+    no_split.write_text(json.dumps({"norms": {}}), encoding="utf-8")
+    with pytest.raises(ValueError):
+        prepare.assert_norms_match_split(no_split, **kw)
+
+    # (b) fit_on != 'train'  (c) wrong split id  (d) each param mismatch
+    with pytest.raises(ValueError):
+        prepare.assert_norms_match_split(_write_norms_with_split(tmp_path, fit_on="full"), **kw)
+    with pytest.raises(ValueError):
+        prepare.assert_norms_match_split(_write_norms_with_split(tmp_path, id="ext_est"), **kw)
+    with pytest.raises(ValueError):
+        prepare.assert_norms_match_split(_write_norms_with_split(tmp_path, seed=CANONICAL_SEED + 1), **kw)
+    with pytest.raises(ValueError):
+        prepare.assert_norms_match_split(
+            _write_norms_with_split(tmp_path, test_size=CANONICAL_TEST_SIZE + 0.05), **kw
+        )
+
+    # Happy path: a matching split block does NOT raise.
+    prepare.assert_norms_match_split(_write_norms_with_split(tmp_path), **kw)
+
+
+def test_assert_norms_match_split_rejects_population_change(tmp_path) -> None:
+    """The population-signature binding rejects a norms artifact fit on a different
+    respondent set (the defense-in-depth leakage gap fix)."""
+    prepare = _load_pipeline_module("04_prepare_data.py")
+    from lib.splits import (
+        CANONICAL_SEED,
+        CANONICAL_TEST_SIZE,
+        CANONICAL_VAL_SIZE,
+        population_signature,
+    )
+
+    kw = dict(seed=CANONICAL_SEED, test_size=CANONICAL_TEST_SIZE, val_size=CANONICAL_VAL_SIZE)
+    pop_a = np.arange(1, 1001)
+    pop_b = np.arange(1, 996)  # 5 respondents removed (an upstream re-ingest)
+    artifact = _write_norms_with_split(tmp_path, population_signature=population_signature(pop_a))
+
+    # Same population -> passes; changed population -> fails closed.
+    prepare.assert_norms_match_split(artifact, respondent_ids=pop_a, **kw)
+    with pytest.raises(ValueError, match="population"):
+        prepare.assert_norms_match_split(artifact, respondent_ids=pop_b, **kw)
+
+    # Backward-compat: an older artifact with no signature skips the population check.
+    legacy = _write_norms_with_split(tmp_path)
+    prepare.assert_norms_match_split(legacy, respondent_ids=pop_b, **kw)
+
+
+def test_stage04_sample_relies_on_population_guard_not_a_hard_refusal(tmp_path) -> None:
+    """`make smoke` passes --sample to stage 04 (the old unconditional refusal was
+    removed). Leakage-safety now rests entirely on the population_signature guard:
+    a sampled split against FULL-population norms must still be rejected, while a
+    sample-matched smoke norms file is accepted. This locks the smoke relaxation."""
+    prepare = _load_pipeline_module("04_prepare_data.py")
+    from lib.splits import (
+        CANONICAL_SEED,
+        CANONICAL_TEST_SIZE,
+        CANONICAL_VAL_SIZE,
+        population_signature,
+    )
+
+    kw = dict(seed=CANONICAL_SEED, test_size=CANONICAL_TEST_SIZE, val_size=CANONICAL_VAL_SIZE)
+    full_pop = np.arange(1, 10001)  # stage 03 without --sample
+    sample_pop = np.arange(1, 801)  # stage 04 --sample 800 (first N respondents)
+
+    # Full-population norms vs a sampled split -> rejected (would be leaky/incoherent).
+    full_norms = _write_norms_with_split(
+        tmp_path, population_signature=population_signature(full_pop)
+    )
+    with pytest.raises(ValueError, match="population"):
+        prepare.assert_norms_match_split(full_norms, respondent_ids=sample_pop, **kw)
+
+    # Sample-matched smoke norms (stage 03 --sample 800) vs the same sampled split -> accepted.
+    smoke_norms = _write_norms_with_split(
+        tmp_path, population_signature=population_signature(sample_pop)
+    )
+    prepare.assert_norms_match_split(smoke_norms, respondent_ids=sample_pop, **kw)
+
+
+# ---------------------------------------------------------------------------
+# Stage 04 prepare — random_split / add_percentile_columns / main fail-closed.
+# ---------------------------------------------------------------------------
+
+def test_prepare_random_split_partitions_by_respondent_id() -> None:
+    """random_split must match assign_splits exactly and produce disjoint partitions."""
+    prepare = _load_pipeline_module("04_prepare_data.py")
+    from lib.splits import CANONICAL_SEED, CANONICAL_TEST_SIZE, CANONICAL_VAL_SIZE, assign_splits
+
+    df = _make_dataset(n_rows=40)
+    df.insert(0, "respondent_id", np.arange(1, len(df) + 1))
+
+    train_df, val_df, test_df = prepare.random_split(
+        df, test_size=CANONICAL_TEST_SIZE, val_size=CANONICAL_VAL_SIZE, seed=CANONICAL_SEED
+    )
+
+    labels = assign_splits(
+        df["respondent_id"].to_numpy(),
+        seed=CANONICAL_SEED,
+        test_size=CANONICAL_TEST_SIZE,
+        val_size=CANONICAL_VAL_SIZE,
+    )
+    expected_train = set(df.loc[labels == "train", "respondent_id"].tolist())
+    expected_val = set(df.loc[labels == "val", "respondent_id"].tolist())
+    expected_test = set(df.loc[labels == "test", "respondent_id"].tolist())
+
+    got_train = set(train_df["respondent_id"].tolist())
+    got_val = set(val_df["respondent_id"].tolist())
+    got_test = set(test_df["respondent_id"].tolist())
+
+    assert got_train == expected_train
+    assert got_val == expected_val
+    assert got_test == expected_test
+    # Disjoint and exhaustive.
+    assert got_train.isdisjoint(got_val)
+    assert got_train.isdisjoint(got_test)
+    assert got_val.isdisjoint(got_test)
+    assert got_train | got_val | got_test == set(df["respondent_id"].tolist())
+
+
+def test_prepare_random_split_requires_respondent_id() -> None:
+    prepare = _load_pipeline_module("04_prepare_data.py")
+    df = _make_dataset(n_rows=40)  # no respondent_id column
+    with pytest.raises(ValueError):
+        prepare.random_split(df, test_size=0.15, val_size=0.15, seed=42)
+
+
+def test_prepare_add_percentile_columns_uses_provided_norms() -> None:
+    prepare = _load_pipeline_module("04_prepare_data.py")
+    from lib.scoring import raw_score_to_percentile
+
+    df = _make_dataset(n_rows=20)
+    norms = {domain: {"mean": 3.0, "sd": 0.8} for domain in DOMAINS}
+
+    out = prepare.add_percentile_columns(df, norms)
+    for domain in DOMAINS:
+        expected = raw_score_to_percentile(df[f"{domain}_score"].values, domain, norms=norms)
+        assert np.allclose(out[f"{domain}_percentile"].values, expected)
+
+
+def test_prepare_main_fails_closed_without_norms(tmp_path, monkeypatch) -> None:
+    """Stage 04 returns 1 (not a leaky run) when the --norms artifact is absent."""
+    prepare = _load_pipeline_module("04_prepare_data.py")
+    monkeypatch.setattr(prepare, "PACKAGE_ROOT", tmp_path)
+
+    df = _make_dataset(n_rows=40)
+    db_path = tmp_path / "data" / "processed" / "ipip_bffm.db"
+    _write_responses_sqlite(db_path, df)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "04_prepare_data.py",
+            "--db-path",
+            "data/processed/ipip_bffm.db",
+            "--norms",
+            "artifacts/does_not_exist.json",
+            "--output-dir",
+            "data/processed/canonical_v1",
+        ],
+    )
+    assert prepare.main() == 1
+
+
+def test_stage03_train_set_equals_stage04_train_parquet(tmp_path, monkeypatch) -> None:
+    """End-to-end leakage guard: stage 03 fits norms on exactly the rows stage 04
+    writes as ``train``.
+
+    The redesign's headline invariant is that both stages compute the same train
+    set. The two stages load rows via independent queries and only agree because
+    they share :func:`lib.splits.assign_splits`. We run both against one db and
+    assert that the per-domain train means recorded by stage 03 equal the
+    train.parquet score means produced by stage 04 (train.parquet drops
+    respondent_id, so mean equality is the available proxy for row-set equality).
+    """
+    norms_stage = _load_pipeline_module("03_compute_norms.py")
+    monkeypatch.setattr(norms_stage, "PACKAGE_ROOT", tmp_path)
+
+    _b = np.linspace(1.0, 5.0, 40)
+    df = pd.DataFrame(
+        {
+            "ext_score": _b,
+            "agr_score": np.clip(_b + 0.3, 1.0, 5.0),
+            "csn_score": np.clip(5.3 - _b, 1.0, 5.0),
+            "est_score": np.clip(_b * 0.8 + 0.5, 1.0, 5.0),
+            "opn_score": np.clip(_b + 0.1, 1.0, 5.0),
+        }
+    )
+    db_path = tmp_path / "data" / "processed" / "ipip_bffm.db"
+    _write_responses_sqlite(db_path, df)
+    _write_mini_ipip_mapping(tmp_path / "artifacts" / "mini_ipip_mapping.json")
+
+    norms_output = tmp_path / "artifacts" / "ipip_bffm_norms.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "03_compute_norms.py",
+            "--db-path",
+            "data/processed/ipip_bffm.db",
+            "--output",
+            "artifacts/ipip_bffm_norms.json",
+        ],
+    )
+    assert norms_stage.main() == 0
+    with open(norms_output) as f:
+        norms_payload = json.load(f)
+
+    prepare = _load_pipeline_module("04_prepare_data.py")
+    monkeypatch.setattr(prepare, "PACKAGE_ROOT", tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "04_prepare_data.py",
+            "--db-path",
+            "data/processed/ipip_bffm.db",
+            "--norms",
+            "artifacts/ipip_bffm_norms.json",
+            "--output-dir",
+            "data/processed/canonical_v1",
+        ],
+    )
+    assert prepare.main() == 0
+
+    train_parquet = tmp_path / "data" / "processed" / "canonical_v1" / "train.parquet"
+    train = pd.read_parquet(train_parquet)
+    for domain in DOMAINS:
+        norm_mean = norms_payload["norms"][domain]["mean"]
+        parquet_mean = float(train[f"{domain}_score"].mean())
+        assert abs(norm_mean - parquet_mean) < 1e-9, domain
+
+
 def test_norms_stage_main_check_passes_against_existing_lock(tmp_path, monkeypatch) -> None:
     norms_stage = _load_pipeline_module("03_compute_norms.py")
     monkeypatch.setattr(norms_stage, "PACKAGE_ROOT", tmp_path)
 
+    _b = np.linspace(1.0, 5.0, 24)
     df = pd.DataFrame(
         {
-            "ext_score": [2.0, 2.5, 3.0, 3.5],
-            "agr_score": [3.0, 3.5, 4.0, 4.5],
-            "csn_score": [2.5, 3.0, 3.5, 4.0],
-            "est_score": [2.0, 2.5, 3.0, 3.5],
-            "opn_score": [3.5, 4.0, 4.5, 5.0],
+            "ext_score": _b,
+            "agr_score": np.clip(_b + 0.3, 1.0, 5.0),
+            "csn_score": np.clip(5.3 - _b, 1.0, 5.0),
+            "est_score": np.clip(_b * 0.8 + 0.5, 1.0, 5.0),
+            "opn_score": np.clip(_b + 0.1, 1.0, 5.0),
         }
     )
     db_path = tmp_path / "data" / "processed" / "ipip_bffm.db"
@@ -3984,13 +4762,14 @@ def test_norms_stage_main_check_fails_when_lock_missing(tmp_path, monkeypatch) -
     norms_stage = _load_pipeline_module("03_compute_norms.py")
     monkeypatch.setattr(norms_stage, "PACKAGE_ROOT", tmp_path)
 
+    _b = np.linspace(1.0, 5.0, 24)
     df = pd.DataFrame(
         {
-            "ext_score": [2.0, 2.5, 3.0, 3.5],
-            "agr_score": [3.0, 3.5, 4.0, 4.5],
-            "csn_score": [2.5, 3.0, 3.5, 4.0],
-            "est_score": [2.0, 2.5, 3.0, 3.5],
-            "opn_score": [3.5, 4.0, 4.5, 5.0],
+            "ext_score": _b,
+            "agr_score": np.clip(_b + 0.3, 1.0, 5.0),
+            "csn_score": np.clip(5.3 - _b, 1.0, 5.0),
+            "est_score": np.clip(_b * 0.8 + 0.5, 1.0, 5.0),
+            "opn_score": np.clip(_b + 0.1, 1.0, 5.0),
         }
     )
     db_path = tmp_path / "data" / "processed" / "ipip_bffm.db"
@@ -4016,13 +4795,14 @@ def test_norms_stage_main_check_fails_on_drift(tmp_path, monkeypatch) -> None:
     norms_stage = _load_pipeline_module("03_compute_norms.py")
     monkeypatch.setattr(norms_stage, "PACKAGE_ROOT", tmp_path)
 
+    _b = np.linspace(1.0, 5.0, 24)
     df = pd.DataFrame(
         {
-            "ext_score": [2.0, 2.5, 3.0, 3.5],
-            "agr_score": [3.0, 3.5, 4.0, 4.5],
-            "csn_score": [2.5, 3.0, 3.5, 4.0],
-            "est_score": [2.0, 2.5, 3.0, 3.5],
-            "opn_score": [3.5, 4.0, 4.5, 5.0],
+            "ext_score": _b,
+            "agr_score": np.clip(_b + 0.3, 1.0, 5.0),
+            "csn_score": np.clip(5.3 - _b, 1.0, 5.0),
+            "est_score": np.clip(_b * 0.8 + 0.5, 1.0, 5.0),
+            "opn_score": np.clip(_b + 0.1, 1.0, 5.0),
         }
     )
     db_path = tmp_path / "data" / "processed" / "ipip_bffm.db"
@@ -4102,6 +4882,158 @@ def test_notes_calibration_policy_parses_current_baselines_schema(
     assert "`sparse_20_balanced`" in table
 
 
+def test_notes_ml_vs_averaging_per_domain_decomposition() -> None:
+    """A4.2: per-domain matched-item table isolates the scoring gain and shows
+    Emotional Stability is a Mini-IPIP-item win under ML scoring."""
+    notes = _load_paper_module("generate_notes_data.py")
+    notes_inputs = {
+        "ml_vs_averaging_comparison": {
+            "comparisons": [
+                {
+                    "method": "domain_balanced",
+                    "n_items": 20,
+                    "ml_per_domain": {"ext": 0.947, "agr": 0.920, "csn": 0.919, "est": 0.9366, "opn": 0.910},
+                    "avg_per_domain": {"ext": 0.939, "agr": 0.911, "csn": 0.909, "est": 0.929, "opn": 0.842},
+                },
+                {
+                    "method": "mini_ipip",
+                    "n_items": 20,
+                    "ml_per_domain": {"ext": 0.945, "agr": 0.918, "csn": 0.915, "est": 0.9434, "opn": 0.860},
+                    "avg_per_domain": {"ext": 0.939, "agr": 0.911, "csn": 0.909, "est": 0.929, "opn": 0.842},
+                },
+            ]
+        }
+    }
+    table = notes._gen_ml_vs_averaging_per_domain_from_notes_inputs(notes_inputs)
+    assert "scoring" in table  # the scoring-gain columns are present
+    # EST: the Mini-IPIP item set under ML (0.9434) beats the domain-balanced set (0.9366).
+    assert "0.9434" in table and "0.9366" in table
+
+
+def test_notes_reliability_renders_and_degrades_gracefully() -> None:
+    """A4.5: the reliability table renders per-domain alpha, and degrades to a
+    placeholder (never raises) when reliability.json is absent from the bundle."""
+    notes = _load_paper_module("generate_notes_data.py")
+
+    rel = {
+        "full_50": {d: {"alpha": 0.80 + 0.01 * i} for i, d in enumerate(DOMAINS)},
+        "domain_balanced_20": {d: {"alpha": 0.70 + 0.01 * i} for i, d in enumerate(DOMAINS)},
+        "mini_ipip_20": {d: {"alpha": 0.65 + 0.01 * i} for i, d in enumerate(DOMAINS)},
+    }
+    table = notes._gen_reliability_from_notes_inputs({"reliability": rel})
+    assert "Full 50-item" in table and "Domain-balanced 20" in table and "Mini-IPIP 20" in table
+    assert "0.800" in table  # ext full-50 alpha
+
+    # Missing/absent reliability -> placeholder, no exception.
+    placeholder = notes._gen_reliability_from_notes_inputs({})
+    assert "not available" in placeholder.lower()
+
+
+def test_notes_data_splits_renders_current_split_schema(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    notes = _load_paper_module("generate_notes_data.py")
+    monkeypatch.setattr(notes, "PACKAGE_ROOT", tmp_path)
+    monkeypatch.setattr(notes, "ARTIFACTS_DIR", tmp_path / "artifacts")
+    monkeypatch.setattr(
+        notes, "RESEARCH_SUMMARY_PATH", tmp_path / "artifacts" / "research_summary.json"
+    )
+
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+
+    # gen_data_splits reads reference_notes_inputs.split_metadata from
+    # research_summary.json, exercising the canonical_v1 split schema.
+    with open(artifacts_dir / "research_summary.json", "w") as f:
+        json.dump(
+            {
+                "variants": {},
+                "reference_notes_inputs": {
+                    "split_metadata": {
+                        "split_id": "canonical_v1",
+                        "seed": 42,
+                        "total_valid": 1000,
+                        "train_rows": 700,
+                        "val_rows": 150,
+                        "test_rows": 150,
+                        "train_frac": 0.7,
+                        "val_frac": 0.15,
+                        "test_frac": 0.15,
+                    }
+                },
+            },
+            f,
+            indent=2,
+        )
+
+    table = notes.gen_data_splits()
+    assert "Split: canonical_v1 — plain random partition (70/15/15, seed=42)." in table
+    assert "700" in table
+    assert "150" in table
+
+
+# ── A6.9 generated-document drift guards ─────────────────────────────────────
+
+
+def test_notes_section_generators_match_template_markers() -> None:
+    """Every NOTES section generator must have matching BEGIN/END markers in the
+    committed template, and every marker pair must have a generator. A mismatch
+    means `make notes` silently SKIPs that section, so stale numbers survive a
+    regeneration — exactly the drift this guards against."""
+    notes = _load_paper_module("generate_notes_data.py")
+    template = notes.NOTES_TEMPLATE_PATH.read_text()
+
+    generator_names = set(notes.SECTION_GENERATORS)
+    # Only standalone marker LINES are real section markers (this matches what
+    # update_notes substitutes); an inline `<!-- BEGIN:section_name -->` in the
+    # header comment documenting the format is not a section.
+    begin_markers = set(re.findall(r"(?m)^<!-- BEGIN:([a-z0-9_]+) -->$", template))
+    end_markers = set(re.findall(r"(?m)^<!-- END:([a-z0-9_]+) -->$", template))
+
+    # Every generator has a complete marker pair in the template.
+    missing = sorted(n for n in generator_names if n not in begin_markers or n not in end_markers)
+    assert not missing, f"SECTION_GENERATORS without BEGIN/END markers in the template: {missing}"
+
+    # Every BEGIN marker has a matching END and a registered generator (no orphans).
+    assert begin_markers == end_markers, (
+        f"Unbalanced markers: BEGIN-only={begin_markers - end_markers}, "
+        f"END-only={end_markers - begin_markers}"
+    )
+    orphan_markers = sorted(begin_markers - generator_names)
+    assert not orphan_markers, f"Template markers with no SECTION_GENERATORS entry: {orphan_markers}"
+
+
+@pytest.mark.skipif(
+    os.environ.get("BFFM_STRICT_DRIFT") != "1",
+    reason=(
+        "Strict generated-document drift is checked in Part D after the re-run "
+        "regenerates the committed docs; the committed notes/NOTES.md is "
+        "disclosed-stale (pre-canonical_v1) until then. Set BFFM_STRICT_DRIFT=1 to run."
+    ),
+)
+def test_notes_md_has_no_drift_from_generators() -> None:
+    """Part-D gate: regenerating NOTES.md from the committed template + artifacts
+    must reproduce the committed notes/NOTES.md byte-for-byte (no stale sections)."""
+    notes = _load_paper_module("generate_notes_data.py")
+    # Regenerate the SAME way the committed NOTES.md was produced: a reference-only
+    # bundle (research_summary provenance.reference_only) must be rendered with the
+    # cross-variant sections scoped to the reference variant, else the ablation
+    # generators KeyError on the absent variants. Matches `make notes REFERENCE_ONLY=1`.
+    summary = notes.load_research_summary()
+    if summary.get("provenance", {}).get("reference_only"):
+        notes._ACTIVE_VARIANT_ORDER = [notes.REFERENCE_VARIANT]
+    template = notes.NOTES_TEMPLATE_PATH.read_text()
+    regenerated = template
+    for name, gen_fn in notes.SECTION_GENERATORS.items():
+        pattern = rf"(<!-- BEGIN:{name} -->\n).*?(\n<!-- END:{name} -->)"
+        if re.search(pattern, regenerated, flags=re.DOTALL):
+            regenerated = re.sub(
+                pattern, rf"\g<1>{gen_fn()}\g<2>", regenerated, flags=re.DOTALL
+            )
+    assert regenerated == notes.NOTES_PATH.read_text(), (
+        "notes/NOTES.md drifted from its generators — run `make notes`."
+    )
 
 
 def test_train_main_fails_closed_when_locked_params_lack_provenance(
@@ -4307,14 +5239,14 @@ def test_train_main_reference_lock_policy_fails_on_reference_hash_mismatch(
     assert rc == 1
 
 
-def test_train_main_reference_lock_policy_allows_stratified_data_with_matching_reference(
+def test_train_main_reference_lock_policy_allows_canonical_data_with_matching_reference(
     tmp_path,
     monkeypatch,
 ) -> None:
     train = _load_pipeline_module("07_train.py")
     monkeypatch.setattr(train, "PACKAGE_ROOT", tmp_path)
 
-    data_dir = tmp_path / "data" / "processed" / "ext_est_opn"
+    data_dir = tmp_path / "data" / "processed" / "canonical_v1"
     artifacts_dir = tmp_path / "artifacts"
     reference_dir = tmp_path / "models" / "reference"
     data_dir.mkdir(parents=True)
@@ -4353,7 +5285,7 @@ def test_train_main_reference_lock_policy_allows_stratified_data_with_matching_r
             [
                 "name: unit_reference_lock_success",
                 "output_dir: models/unit_reference_lock_success",
-                "data_dir: data/processed/ext_est_opn",
+                "data_dir: data/processed/canonical_v1",
                 "artifacts_dir: artifacts",
                 "sparsity:",
                 "  enabled: false",
@@ -4486,6 +5418,193 @@ def test_train_report_records_locked_params_provenance_chain(
     assert report["data"]["hyperparameters_source_sha256"] == file_sha256(tuned_path)
 
 
+def test_train_fails_closed_when_locked_params_edited_after_tune(tmp_path, monkeypatch) -> None:
+    """A5.1: editing tuned_params.json without re-running `make tune` (so the
+    .original.json sidecar disagrees) fails the strict_data_hash lock."""
+    train = _load_pipeline_module("07_train.py")
+    monkeypatch.setattr(train, "PACKAGE_ROOT", tmp_path)
+
+    data_dir = tmp_path / "data" / "processed"
+    artifacts_dir = tmp_path / "artifacts"
+    data_dir.mkdir(parents=True)
+    artifacts_dir.mkdir(parents=True)
+
+    frame = _make_dataset()
+    frame.to_parquet(data_dir / "train.parquet", index=False)
+    frame.to_parquet(data_dir / "val.parquet", index=False)
+    _write_item_info(data_dir / "item_info.json")
+
+    prov = {
+        "script": "06_tune.py",
+        "git_hash": "feedbeef",
+        "train_sha256": file_sha256(data_dir / "train.parquet"),
+        "val_sha256": file_sha256(data_dir / "val.parquet"),
+        "item_info_sha256": file_sha256(data_dir / "item_info.json"),
+    }
+    # Loaded params (edited) vs the tune-time witness (original) disagree.
+    tuned_payload = {"hyperparameters": {"n_estimators": 321, "max_depth": 7}, "provenance": prov}
+    with open(artifacts_dir / "tuned_params.json", "w") as f:
+        json.dump(tuned_payload, f, indent=2)
+    original_payload = {"hyperparameters": {"n_estimators": 999, "max_depth": 3}, "provenance": prov}
+    with open(artifacts_dir / "tuned_params.original.json", "w") as f:
+        json.dump(original_payload, f, indent=2)
+
+    cfg_path = tmp_path / "cfg_edited.yaml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "name: unit_edited",
+                "output_dir: models/unit_edited",
+                "sparsity:",
+                "  enabled: false",
+                "hyperparameters:",
+                "  locked_params: artifacts/tuned_params.json",
+                "  lock_policy: strict_data_hash",
+                "training:",
+                "  cv_folds: 0",
+                "  random_state: 42",
+                "validation:",
+                "  min_pearson_r: 0.0",
+                "  min_coverage_90: 0.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(sys, "argv", ["07_train.py", "--config", str(cfg_path)])
+    assert train.main() == 1
+
+
+def test_train_fails_closed_when_test_parquet_missing_in_publication_mode(tmp_path, monkeypatch) -> None:
+    """A5.6: require_test_split makes a missing test.parquet a hard error."""
+    train = _load_pipeline_module("07_train.py")
+    monkeypatch.setattr(train, "PACKAGE_ROOT", tmp_path)
+    data_dir = tmp_path / "data" / "processed"
+    data_dir.mkdir(parents=True)
+    frame = _make_dataset(n_rows=24)
+    frame.iloc[:14].to_parquet(data_dir / "train.parquet", index=False)
+    frame.iloc[14:].to_parquet(data_dir / "val.parquet", index=False)
+    _write_item_info(data_dir / "item_info.json")
+
+    cfg_path = tmp_path / "cfg_pub_no_test.yaml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "name: unit_pub_no_test",
+                "output_dir: models/unit_pub_no_test",
+                "require_test_split: true",
+                "sparsity:",
+                "  enabled: false",
+                "training:",
+                "  cv_folds: 0",
+                "  random_state: 42",
+                "validation:",
+                "  min_pearson_r: 0.0",
+                "  min_coverage_90: 0.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["07_train.py", "--config", str(cfg_path)])
+    assert train.main() == 1
+
+
+def test_train_fails_closed_when_split_metadata_missing_in_publication_mode(tmp_path, monkeypatch) -> None:
+    """A5.6: require_test_split makes a missing split_metadata.json a hard error."""
+    train = _load_pipeline_module("07_train.py")
+    monkeypatch.setattr(train, "PACKAGE_ROOT", tmp_path)
+    data_dir = tmp_path / "data" / "processed"
+    data_dir.mkdir(parents=True)
+    frame = _make_dataset(n_rows=24)
+    frame.iloc[:14].to_parquet(data_dir / "train.parquet", index=False)
+    frame.iloc[14:19].to_parquet(data_dir / "val.parquet", index=False)
+    frame.iloc[19:].to_parquet(data_dir / "test.parquet", index=False)
+    _write_item_info(data_dir / "item_info.json")
+
+    cfg_path = tmp_path / "cfg_pub_no_meta.yaml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "name: unit_pub_no_meta",
+                "output_dir: models/unit_pub_no_meta",
+                "require_test_split: true",
+                "sparsity:",
+                "  enabled: false",
+                "training:",
+                "  cv_folds: 0",
+                "  random_state: 42",
+                "validation:",
+                "  min_pearson_r: 0.0",
+                "  min_coverage_90: 0.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["07_train.py", "--config", str(cfg_path)])
+    assert train.main() == 1
+
+
+def test_train_report_records_test_rows_from_split_metadata(tmp_path, monkeypatch) -> None:
+    """A5.7: stage 07 writes data.test_rows from split_metadata.json."""
+    train = _load_pipeline_module("07_train.py")
+    monkeypatch.setattr(train, "PACKAGE_ROOT", tmp_path)
+    data_dir = tmp_path / "data" / "processed"
+    data_dir.mkdir(parents=True)
+    frame = _make_dataset(n_rows=24)
+    frame.iloc[:14].to_parquet(data_dir / "train.parquet", index=False)
+    frame.iloc[14:19].to_parquet(data_dir / "val.parquet", index=False)
+    frame.iloc[19:].to_parquet(data_dir / "test.parquet", index=False)
+    _write_item_info(data_dir / "item_info.json")
+    with open(data_dir / "split_metadata.json", "w") as f:
+        json.dump(
+            {
+                "train_sha256": file_sha256(data_dir / "train.parquet"),
+                "val_sha256": file_sha256(data_dir / "val.parquet"),
+                "test_sha256": file_sha256(data_dir / "test.parquet"),
+                "test_rows": 5,
+            },
+            f,
+        )
+
+    cfg_path = tmp_path / "cfg_test_rows.yaml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "name: unit_test_rows",
+                "output_dir: models/unit_test_rows",
+                "sparsity:",
+                "  enabled: false",
+                "training:",
+                "  cv_folds: 0",
+                "  random_state: 42",
+                "validation:",
+                "  min_pearson_r: 0.0",
+                "  min_coverage_90: 0.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(train, "_train_domain_models", lambda *_a, **_k: _dummy_domain_models())
+    monkeypatch.setattr(train, "_validate_model_outputs", lambda *_a, **_k: {"ok": {"passed": True}})
+    monkeypatch.setattr(train, "_evaluate_domain_models", lambda *_a, **_k: _make_eval_metrics(r=0.92, coverage=0.9))
+    monkeypatch.setattr(
+        train,
+        "_compute_calibration_params",
+        lambda *_a, **_k: {d: {"observed_coverage": 0.9, "scale_factor": 1.0} for d in DOMAINS},
+    )
+    monkeypatch.setattr(train.joblib, "dump", lambda *_a, **_k: None)
+    monkeypatch.setattr(sys, "argv", ["07_train.py", "--config", str(cfg_path)])
+    assert train.main() == 0
+
+    report_path = tmp_path / "models" / "unit_test_rows" / "training_report.json"
+    with open(report_path) as f:
+        report = json.load(f)
+    assert report["data"]["test_rows"] == 5
+    # A5.3: tree_method/device recorded in provenance.
+    assert report["provenance"]["tree_method"] == "hist"
+    assert report["provenance"]["device"] == "cpu"
+
+
 # ---------------------------------------------------------------------------
 # Provenance hardening tests
 # ---------------------------------------------------------------------------
@@ -4609,7 +5728,7 @@ def test_upload_bundle_requires_provenance_json(tmp_path) -> None:
 
 def test_figures_writes_manifest_json(tmp_path) -> None:
     """Verify manifest.json schema by building a synthetic manifest matching the pipeline shape."""
-    from lib.provenance import build_provenance, relative_to_root, file_sha256
+    from lib.provenance import build_provenance, file_sha256, relative_to_root
 
     fig_dir = tmp_path / "figures"
     fig_dir.mkdir(parents=True)
@@ -4992,7 +6111,7 @@ def test_export_readme_includes_variant_tag(tmp_path) -> None:
             artifact["overall"] = {
                 "20": {
                     "full_50": {"pearson_r": 0.95},
-                    "domain_balanced": {"pearson_r": 0.90},
+                    "domain_balanced": {"pearson_r": 0.90, "coverage_90": 0.895},
                     "mini_ipip": {"pearson_r": 0.85},
                     "adaptive_topk": {"pearson_r": 0.92},
                 },
@@ -5092,7 +6211,7 @@ def test_export_readme_reference_variant_note(tmp_path) -> None:
             artifact["overall"] = {
                 "20": {
                     "full_50": {"pearson_r": 0.95},
-                    "domain_balanced": {"pearson_r": 0.90},
+                    "domain_balanced": {"pearson_r": 0.90, "coverage_90": 0.895},
                     "mini_ipip": {"pearson_r": 0.85},
                     "adaptive_topk": {"pearson_r": 0.92},
                 },
@@ -5158,7 +6277,7 @@ def test_upload_main_multi_variant_flow(tmp_path, monkeypatch) -> None:
         def create_repo(self, **kwargs):
             pass
 
-        def upload_file(self, *, path_or_fileobj, path_in_repo, repo_id):
+        def upload_file(self, *, path_or_fileobj, path_in_repo, repo_id, revision=None):
             uploaded.append(path_in_repo)
 
     # Monkeypatch to inject FakeHfApi and skip .env / token checks
@@ -5225,7 +6344,7 @@ def test_upload_main_single_variant_flow(tmp_path, monkeypatch) -> None:
         def create_repo(self, **kwargs):
             pass
 
-        def list_repo_files(self, *, repo_id):
+        def list_repo_files(self, *, repo_id, revision=None):
             # Simulate stale files already in the repo
             return [
                 "config.json",
@@ -5237,7 +6356,7 @@ def test_upload_main_single_variant_flow(tmp_path, monkeypatch) -> None:
                 ".gitattributes",
             ]
 
-        def create_commit(self, *, repo_id, operations, commit_message):
+        def create_commit(self, *, repo_id, operations, commit_message, revision=None):
             committed["repo_id"] = repo_id
             committed["operations"] = operations
             committed["commit_message"] = commit_message
@@ -5354,11 +6473,11 @@ def test_upload_main_reset_single_variant(tmp_path, monkeypatch) -> None:
         def create_repo(self, **kwargs):
             calls.append(f"create_repo:{kwargs.get('repo_id')}")
 
-        def list_repo_files(self, *, repo_id):
+        def list_repo_files(self, *, repo_id, revision=None):
             # Fresh repo after reset — no stale files
             return [".gitattributes"]
 
-        def create_commit(self, *, repo_id, operations, commit_message):
+        def create_commit(self, *, repo_id, operations, commit_message, revision=None):
             committed["operations"] = operations
 
     monkeypatch.setattr("sys.argv", [
@@ -5419,7 +6538,7 @@ def test_upload_main_reset_multi_variant(tmp_path, monkeypatch) -> None:
         def create_repo(self, **kwargs):
             calls.append(f"create_repo:{kwargs.get('repo_id')}")
 
-        def upload_file(self, *, path_or_fileobj, path_in_repo, repo_id):
+        def upload_file(self, *, path_or_fileobj, path_in_repo, repo_id, revision=None):
             uploaded.append(path_in_repo)
 
     monkeypatch.setattr("sys.argv", [
@@ -5480,10 +6599,10 @@ def test_upload_main_reset_delete_repo_failure_logs(tmp_path, monkeypatch, caplo
         def create_repo(self, **kwargs):
             calls.append("create_repo")
 
-        def list_repo_files(self, *, repo_id):
+        def list_repo_files(self, *, repo_id, revision=None):
             return []
 
-        def create_commit(self, *, repo_id, operations, commit_message):
+        def create_commit(self, *, repo_id, operations, commit_message, revision=None):
             calls.append("create_commit")
 
     monkeypatch.setattr("sys.argv", [

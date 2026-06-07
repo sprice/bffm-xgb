@@ -9,7 +9,6 @@ from lib.bootstrap import (
     bootstrap_metric_deltas,
     paired_bootstrap_cis,
     respondent_bootstrap_multi_domain,
-    stratified_paired_bootstrap_cis,
     vectorized_pearsonr_bootstrap,
 )
 
@@ -199,51 +198,6 @@ class TestPairedBootstrapCIs:
         assert cis["coverage"]["lower"] <= cis["coverage"]["upper"]
         # Coverage should be reasonably high (most true values within +/-8)
         assert cis["coverage"]["lower"] > 0.3
-
-
-class TestStratifiedPairedBootstrapCIs:
-    def test_fallback_to_non_stratified(self, correlated_arrays):
-        """strata=None should produce exact same result as paired_bootstrap_cis."""
-        y_true, y_pred = correlated_arrays
-        plain = paired_bootstrap_cis(
-            _metric_fn, y_true, y_pred, n_bootstrap=1000, seed=42,
-        )
-        strat = stratified_paired_bootstrap_cis(
-            _metric_fn, y_true, y_pred, strata=None, n_bootstrap=1000, seed=42,
-        )
-        for key in plain:
-            assert plain[key]["lower"] == strat[key]["lower"]
-            assert plain[key]["upper"] == strat[key]["upper"]
-
-    def test_valid_cis_with_strata(self, correlated_arrays):
-        y_true, y_pred = correlated_arrays
-        strata = np.array([0] * 25 + [1] * 25)
-        cis = stratified_paired_bootstrap_cis(
-            _metric_fn, y_true, y_pred,
-            strata=strata, n_bootstrap=1000, seed=42,
-        )
-        for key, ci in cis.items():
-            assert ci["lower"] <= ci["upper"], f"{key}: lower > upper"
-            assert not np.isnan(ci["lower"])
-            assert not np.isnan(ci["upper"])
-
-    def test_stratified_narrows_pearson_r_ci(self, heterogeneous_strata_data):
-        """Stratified bootstrap should produce narrower CIs for Pearson r
-        when strata are heterogeneous (high-corr vs low-corr strata)."""
-        y_true, y_pred, strata = heterogeneous_strata_data
-        plain = paired_bootstrap_cis(
-            _metric_fn, y_true, y_pred, n_bootstrap=2000, seed=42,
-        )
-        strat = stratified_paired_bootstrap_cis(
-            _metric_fn, y_true, y_pred, strata=strata, n_bootstrap=2000, seed=42,
-        )
-        # Stratification should narrow the Pearson r CI width
-        plain_width = plain["pearson_r"]["upper"] - plain["pearson_r"]["lower"]
-        strat_width = strat["pearson_r"]["upper"] - strat["pearson_r"]["lower"]
-        assert strat_width <= plain_width, (
-            f"Stratified CI width ({strat_width:.4f}) should be <= "
-            f"non-stratified ({plain_width:.4f}) for heterogeneous strata"
-        )
 
 
 class TestBootstrapMetricDeltas:

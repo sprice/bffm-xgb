@@ -1,0 +1,13 @@
+{
+  "_comment": "Small hyperparameters for `make smoke` only (passed via 07_train.py --params, mode cli_params_override, which skips the strict-data-hash lock). ~80 trees x depth 4 x 15 models trains in well under a minute on CPU. Sized so predictions are non-degenerate (varied even on small random item subsets) — a 12-tree model produces constant predictions that the strict Pearson guard in stage 09 correctly rejects. NOT the tuned production params.",
+  "hyperparameters": {
+    "n_estimators": 80,
+    "max_depth": 4,
+    "learning_rate": 0.3,
+    "reg_alpha": 0.1,
+    "reg_lambda": 1.0,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "min_child_weight": 1
+  }
+}

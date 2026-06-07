@@ -2,9 +2,9 @@
 """Compute item-domain correlations, cross-domain info, and select universal first item."""
 
 import argparse
-import sys
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -17,8 +17,9 @@ from tqdm import tqdm
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from lib.constants import DOMAINS, DOMAIN_LABELS, ITEMS_PER_DOMAIN, REVERSE_KEYED
+from lib.constants import DOMAIN_LABELS, DOMAINS, ITEMS_PER_DOMAIN, REVERSE_KEYED
 from lib.item_info import file_sha256
+from lib.mini_ipip import load_mini_ipip_mapping
 from lib.provenance import add_provenance_args, build_provenance, relative_to_root
 
 logging.basicConfig(
@@ -28,7 +29,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-DEFAULT_DATA_DIR = Path("data/processed/ext_est")
+DEFAULT_DATA_DIR = Path("data/processed/canonical_v1")
 
 ITEM_COLUMNS = [f"{d}{i}" for d in DOMAINS for i in range(1, ITEMS_PER_DOMAIN + 1)]
 SCORE_COLUMNS = [f"{d}_score" for d in DOMAINS]
@@ -103,7 +104,7 @@ def parse_args() -> argparse.Namespace:
         "--data-dir",
         type=Path,
         default=DEFAULT_DATA_DIR,
-        help="Directory with train.parquet; outputs written here (default: data/processed/ext_est)",
+        help="Directory with train.parquet; outputs written here (default: data/processed/canonical_v1)",
     )
     add_provenance_args(parser)
     return parser.parse_args()
@@ -244,6 +245,120 @@ def compute_inter_item_correlations(df: pd.DataFrame) -> dict[str, float]:
         r_bars[domain] = float(np.mean(upper_tri)) if len(upper_tri) > 0 else 0.0
 
     return r_bars
+
+
+# ---------------------------------------------------------------------------
+# Internal-consistency reliability (Cronbach's alpha, McDonald's omega)
+# ---------------------------------------------------------------------------
+
+def _mcdonald_omega(sub: pd.DataFrame) -> float | None:
+    """Unidimensional McDonald's omega from a single-factor model.
+
+    Returns None if scikit-learn is unavailable or the fit is degenerate, so the
+    pipeline never fails on the optional omega coefficient.
+    """
+    try:
+        from sklearn.decomposition import FactorAnalysis
+
+        fa = FactorAnalysis(n_components=1, random_state=42)
+        fa.fit(sub.to_numpy(dtype=np.float64))
+        loadings = np.asarray(fa.components_[0], dtype=np.float64)
+        uniqueness = np.asarray(fa.noise_variance_, dtype=np.float64)
+        sum_load_sq = float(np.sum(loadings)) ** 2
+        denom = sum_load_sq + float(np.sum(uniqueness))
+        if denom <= 0 or not np.isfinite(denom):
+            return None
+        return float(sum_load_sq / denom)
+    except Exception:
+        return None
+
+
+def cronbach_alpha(df: pd.DataFrame, items: list[str]) -> dict[str, float | int | None]:
+    """Cronbach's alpha (raw + standardized) and omega for the given item columns.
+
+    Computed on the TRAIN split (the caller passes train data), matching the
+    train-only norms invariant. The items in train.parquet are ALREADY
+    reverse-keyed in place (see pipeline/02_load_sqlite.py apply_reverse_scoring),
+    so alpha is computed directly on the stored columns with no re-keying.
+    Returns None for any coefficient that is undefined (too few items/rows or a
+    degenerate variance) so the JSON stays strictly valid.
+    """
+    cols = [c for c in items if c in df.columns]
+    sub = df[cols].dropna()
+    n, k = int(len(sub)), int(len(cols))
+    if k < 2 or n < 100:
+        return {"alpha": None, "alpha_std": None, "r_bar": None, "omega": None, "n": n, "k": k}
+
+    item_var = sub.var(ddof=1)
+    total_var = float(sub.sum(axis=1).var(ddof=1))
+    alpha = (
+        float((k / (k - 1)) * (1.0 - float(item_var.sum()) / total_var))
+        if total_var > 0
+        else None
+    )
+
+    corr = sub.corr().to_numpy()
+    tri = corr[np.triu_indices(k, k=1)]
+    tri = tri[~np.isnan(tri)]
+    r_bar = float(np.mean(tri)) if len(tri) > 0 else None
+
+    if r_bar is not None and np.isfinite(r_bar):
+        denom = 1.0 + (k - 1) * r_bar
+        alpha_std = float((k * r_bar) / denom) if denom != 0 else None
+    else:
+        alpha_std = None
+
+    return {
+        "alpha": alpha,
+        "alpha_std": alpha_std,
+        "r_bar": r_bar,
+        "omega": _mcdonald_omega(sub),
+        "n": n,
+        "k": k,
+    }
+
+
+def _top_items_by_own_domain_r(
+    item_pool: list[dict], n_per_domain: int = 4
+) -> dict[str, list[str]]:
+    """Replicate stage-09 _select_domain_balanced: top-N items per domain by
+    |own-domain r| (the deployed domain-balanced short form)."""
+    by_domain: dict[str, list[dict]] = {d: [] for d in DOMAINS}
+    for item in item_pool:
+        home = item["home_domain"]
+        if home in by_domain:
+            by_domain[home].append(item)
+    selected: dict[str, list[str]] = {}
+    for d in DOMAINS:
+        ranked = sorted(by_domain[d], key=lambda x: abs(x.get("own_domain_r", 0.0)), reverse=True)
+        selected[d] = [it["id"] for it in ranked[:n_per_domain]]
+    return selected
+
+
+def compute_reliability(
+    df: pd.DataFrame,
+    item_pool: list[dict],
+    mini_ipip_mapping: dict[str, list[str]],
+) -> dict[str, Any]:
+    """Per-domain internal-consistency reliability for the three forms of interest:
+    the full 10-item domains, the deployed domain-balanced 20-item form (4/domain),
+    and the Mini-IPIP 4-item form. Train split only."""
+    full_50 = {
+        d: cronbach_alpha(df, [f"{d}{i}" for i in range(1, ITEMS_PER_DOMAIN + 1)])
+        for d in DOMAINS
+    }
+    db_items = _top_items_by_own_domain_r(item_pool, n_per_domain=4)
+    domain_balanced_20 = {d: cronbach_alpha(df, db_items[d]) for d in DOMAINS}
+    mini_ipip_20 = {d: cronbach_alpha(df, mini_ipip_mapping.get(d, [])) for d in DOMAINS}
+    return {
+        "method": {
+            "cronbach_alpha": "(k/(k-1)) * (1 - sum(item_var)/var(rowsum)); alpha_std from mean inter-item r",
+            "omega": "unidimensional single-factor (sklearn FactorAnalysis); null if unavailable",
+        },
+        "full_50": full_50,
+        "domain_balanced_20": domain_balanced_20,
+        "mini_ipip_20": mini_ipip_20,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +566,31 @@ def write_first_item(
 # Main
 # ---------------------------------------------------------------------------
 
+def write_reliability(
+    output_path: Path,
+    reliability: dict[str, Any],
+    source_path: Path,
+    *,
+    provenance: dict | None = None,
+) -> None:
+    """Write per-form internal-consistency reliability to reliability.json."""
+    provenance_payload = (
+        dict(provenance) if provenance is not None else build_provenance(Path(__file__).name)
+    )
+    provenance_payload.setdefault("source", relative_to_root(source_path))
+    provenance_payload.setdefault("source_sha256", file_sha256(source_path))
+    payload = {
+        "provenance": provenance_payload,
+        "source": relative_to_root(source_path),
+        "source_sha256": file_sha256(source_path),
+        "split": "train",
+        **reliability,
+    }
+    with open(output_path, "w") as f:
+        json.dump(payload, f, indent=2)
+    log.info("  Wrote %s", relative_to_root(output_path))
+
+
 def main() -> int:
     args = parse_args()
     data_dir = args.data_dir if args.data_dir.is_absolute() else PACKAGE_ROOT / args.data_dir
@@ -470,6 +610,10 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Step 1: Load training data
+    # Leakage-avoidance invariant: all correlations, item ranking, first-item
+    # selection, and reliability below are computed on the TRAIN split ONLY, so
+    # they never leak information from the held-out val/test rows.
+    assert train_path.name == "train.parquet", f"expected train split, got {train_path.name}"
     log.info("Step 1: Loading training data...")
     df = pd.read_parquet(train_path)
     log.info("  Loaded %s rows, %d columns", f"{len(df):,}", len(df.columns))
@@ -573,6 +717,27 @@ def main() -> int:
 
     first_path = output_dir / "first_item.json"
     write_first_item(first_path, first_item, item_pool)
+
+    # Step 10: Internal-consistency reliability (Cronbach alpha + omega), train split
+    log.info("Step 10: Computing internal-consistency reliability...")
+    mini_ipip_path = PACKAGE_ROOT / "artifacts" / "mini_ipip_mapping.json"
+    mini_ipip_mapping = (
+        load_mini_ipip_mapping(mini_ipip_path) if mini_ipip_path.exists() else {}
+    )
+    reliability = compute_reliability(df, item_pool, mini_ipip_mapping)
+    for domain in DOMAINS:
+        full_a = reliability["full_50"][domain]["alpha"]
+        db_a = reliability["domain_balanced_20"][domain]["alpha"]
+        log.info(
+            "    %s: full-50 alpha=%s, balanced-20 alpha=%s",
+            DOMAIN_LABELS[domain],
+            f"{full_a:.3f}" if isinstance(full_a, float) else "n/a",
+            f"{db_a:.3f}" if isinstance(db_a, float) else "n/a",
+        )
+    reliability_path = output_dir / "reliability.json"
+    write_reliability(
+        reliability_path, reliability, train_path, provenance=artifact_provenance
+    )
 
     log.info("=" * 60)
     log.info("Correlation analysis complete.")

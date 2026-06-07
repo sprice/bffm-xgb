@@ -12,9 +12,19 @@ function readJson<T>(relativePath: string): T {
   return JSON.parse(readFileSync(fullPath, "utf-8")) as T;
 }
 
-const hasArtifacts = existsSync(
-  resolve(repoRoot, "data/processed/load_metadata.json"),
-);
+// These small artifacts are force-tracked in the release bundle (see .gitignore),
+// so they are present in every clone and CI checkout — this tripwire runs (not
+// skips) and guards the hand-maintained data.ts against drift from the bundle. The
+// guard covers EVERY file the suite reads, so a partial/missing state skips loudly
+// rather than erroring mid-test.
+const hasArtifacts = [
+  "data/processed/load_metadata.json",
+  "data/processed/canonical_v1/split_metadata.json",
+  "data/processed/canonical_v1/first_item.json",
+  "artifacts/research_summary.json",
+  "artifacts/variants/reference/ml_vs_averaging_comparison.json",
+  "artifacts/tuned_params.json",
+].every((p) => existsSync(resolve(repoRoot, p)));
 
 describe.skipIf(!hasArtifacts)("repo facts used by the course", () => {
   it("matches cleaned-row and split metadata artifacts", () => {
@@ -26,21 +36,21 @@ describe.skipIf(!hasArtifacts)("repo facts used by the course", () => {
       train_rows: number;
       val_rows: number;
       test_rows: number;
-      stratification_scheme: string;
-    }>("data/processed/ext_est/split_metadata.json");
+      split_scheme: string;
+    }>("data/processed/canonical_v1/split_metadata.json");
 
     expect(repoFacts.totalValidRespondents).toBe(loadMetadata.row_counts.n_valid);
     expect(repoFacts.totalValidRespondents).toBe(splitMetadata.total_valid);
     expect(repoFacts.trainRows).toBe(splitMetadata.train_rows);
     expect(repoFacts.valRows).toBe(splitMetadata.val_rows);
     expect(repoFacts.testRows).toBe(splitMetadata.test_rows);
-    expect(repoFacts.splitScheme).toBe(splitMetadata.stratification_scheme);
+    expect(repoFacts.splitScheme).toBe(splitMetadata.split_scheme);
   });
 
   it("matches the first-item artifact", () => {
     const firstItem = readJson<{
       selected_item: { id: string; text: string; cross_domain_info: number };
-    }>("data/processed/ext_est/first_item.json");
+    }>("data/processed/canonical_v1/first_item.json");
 
     expect(repoFacts.firstItemId).toBe(firstItem.selected_item.id);
     expect(repoFacts.firstItemText).toBe(firstItem.selected_item.text);
@@ -72,9 +82,19 @@ describe.skipIf(!hasArtifacts)("repo facts used by the course", () => {
           };
         };
       };
+      reference_notes_inputs: {
+        norms: {
+          norms: Record<string, { mean: number; sd: number }>;
+        };
+        reliability: {
+          full_50: Record<string, { r_bar: number }>;
+        };
+      };
     }>("artifacts/research_summary.json");
 
     const reference = researchSummary.variants.reference;
+    const sourceNorms = researchSummary.reference_notes_inputs.norms.norms;
+    const sourceReliability = researchSummary.reference_notes_inputs.reliability.full_50;
 
     expect(repoFacts.validation.full50R).toBeCloseTo(reference.validation.full_50.pearson_r, 4);
     expect(repoFacts.validation.full50Mae).toBeCloseTo(reference.validation.full_50.mae, 2);
@@ -110,6 +130,15 @@ describe.skipIf(!hasArtifacts)("repo facts used by the course", () => {
     expect(repoFacts.simulation.meanItemsPerDomain).toBe(
       reference.simulation.domain_metrics.ext.mean_items_used,
     );
+    expect(repoFacts.simulation.meanItemsTotal).toBe(
+      5 * repoFacts.simulation.meanItemsPerDomain,
+    );
+
+    for (const domain of ["ext", "agr", "csn", "est", "opn"] as const) {
+      expect(repoFacts.norms[domain].mean).toBeCloseTo(sourceNorms[domain].mean, 4);
+      expect(repoFacts.norms[domain].sd).toBeCloseTo(sourceNorms[domain].sd, 4);
+      expect(repoFacts.interItemRBar[domain]).toBeCloseTo(sourceReliability[domain].r_bar, 4);
+    }
   });
 
   it("matches the current tuned-params artifact and the ML-vs-averaging comparison artifact", () => {
@@ -154,5 +183,31 @@ describe.skipIf(!hasArtifacts)("repo facts used by the course", () => {
     expect(repoFacts.mlVsAveragingK20.miniIpip.mlR).toBeCloseTo(miniIpip!.ml_r, 4);
     expect(repoFacts.mlVsAveragingK20.miniIpip.avgR).toBeCloseTo(miniIpip!.avg_r, 4);
     expect(repoFacts.mlVsAveragingK20.miniIpip.deltaR).toBeCloseTo(miniIpip!.delta_r, 4);
+  });
+
+  it("exposes sane reference quality-gate floors (sourced from configs/reference.yaml)", () => {
+    // The exact values are sourced from configs/reference.yaml by the generator
+    // and guarded against drift by `make check-docs` (which regenerates
+    // repo-facts.generated.ts and git-diffs it; the web suite has no YAML
+    // parser). Here we assert the gates are present, are well-formed
+    // probabilities, and are internally consistent so a corrupted regeneration
+    // is also caught in the web suite.
+    const { full50, sparse20 } = repoFacts.gates;
+    for (const floor of [
+      full50.overallR,
+      full50.overallCoverage,
+      full50.perDomainR,
+      full50.perDomainCoverage,
+      sparse20.overallR,
+      sparse20.overallCoverage,
+      sparse20.perDomainR,
+      sparse20.perDomainCoverage,
+    ]) {
+      expect(floor).toBeGreaterThan(0.5);
+      expect(floor).toBeLessThanOrEqual(1);
+    }
+    // sparse-20 runs below nominal, so its floors are no stricter than full-50.
+    expect(sparse20.overallR).toBeLessThanOrEqual(full50.overallR);
+    expect(sparse20.perDomainR).toBeLessThanOrEqual(full50.perDomainR);
   });
 });

@@ -1,34 +1,39 @@
-"""Tests for IPIP-BFFM inference module."""
+"""Tests for IPIP-BFFM inference module.
+
+Runs against the committed tiny fixture bundle (tests/fixtures/golden) by
+default, so these real-inference tests execute in CI without the gitignored
+137 MB reference model. Override with the BFFM_FIXTURE_DIR env var.
+"""
 
 import json
+import os
 from pathlib import Path
 
 import numpy as np
 import onnxruntime as ort
 import pytest
 
-_OUTPUT_CONFIG = Path(__file__).resolve().parent.parent / "output" / "reference" / "config.json"
+FIXTURE_DIR = Path(
+    os.environ.get("BFFM_FIXTURE_DIR")
+    or Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "golden"
+)
+_CONFIG = FIXTURE_DIR / "config.json"
+
+# REQUIRE_ARTIFACTS=1 (set in CI) turns a missing fixture into a hard error so
+# these tests can never silently vanish into a green skip.
+if os.environ.get("REQUIRE_ARTIFACTS") == "1" and not _CONFIG.exists():
+    raise RuntimeError(
+        f"REQUIRE_ARTIFACTS=1 but the golden fixture config is missing at {_CONFIG}"
+    )
 
 pytestmark = pytest.mark.skipif(
-    not _OUTPUT_CONFIG.exists(),
-    reason="output/config.json not found (run `make export` first)",
+    not _CONFIG.exists(),
+    reason=f"golden fixture config.json not found at {_CONFIG} (run `make fixtures`)",
 )
 
 from inference import IPIPBFFMPredictor
 
 # ── Test vectors ─────────────────────────────────────────────────────────
-
-# Input A: Full 50-item response, repeating 1-5 pattern
-INPUT_A_VALUES = [float((i % 5) + 1) for i in range(50)]
-
-# Input B: 20-item sparse response, top-4 per domain
-INPUT_B_ITEMS = {
-    "ext3": 3.0, "ext5": 4.0, "ext7": 5.0, "ext4": 2.0,
-    "agr10": 3.0, "agr7": 4.0, "agr2": 5.0, "agr9": 2.0,
-    "csn4": 3.0, "csn8": 4.0, "csn1": 5.0, "csn5": 2.0,
-    "est10": 3.0, "est9": 4.0, "est8": 5.0, "est6": 2.0,
-    "opn5": 3.0, "opn10": 4.0, "opn7": 5.0, "opn2": 2.0,
-}
 
 DOMAINS = ["ext", "agr", "csn", "est", "opn"]
 QUANTILES = ["q05", "q50", "q95"]
@@ -36,10 +41,25 @@ QUANTILES = ["q05", "q50", "q95"]
 # Feature names in order
 FEATURE_NAMES = [f"{d}{i}" for d in DOMAINS for i in range(1, 11)]
 
+# Input A: Full 50-item response, repeating 1-5 pattern
+INPUT_A_VALUES = [float((i % 5) + 1) for i in range(50)]
+
+# Input B: the canonical deployed balanced-20 set (top-4 per domain), loaded
+# from the committed fixture so it cannot drift from the pipeline's selection.
+if _CONFIG.exists():
+    _CANONICAL_20 = json.loads(
+        (FIXTURE_DIR / "canonical_items.json").read_text()
+    )["domain_balanced_20"]
+else:
+    _CANONICAL_20 = []
+INPUT_B_ITEMS = {
+    iid: float((i % 5) + 1) for i, iid in enumerate(_CANONICAL_20)
+}
+
 
 @pytest.fixture(scope="module")
 def predictor():
-    return IPIPBFFMPredictor()
+    return IPIPBFFMPredictor(model_dir=FIXTURE_DIR)
 
 
 class TestDictInput:
@@ -115,9 +135,35 @@ class TestPercentileRange:
                 )
 
 
+# ── Calibration regime boundary ──────────────────────────────────────────
+
+
+class TestCalibrationRegime:
+    """Lock the count-only regime dispatch and its K=49/K=50 boundary.
+
+    The regime selects which scale_factor multiplies the prediction interval,
+    so a boundary regression (>=50 -> >=49 / >50) would change deployed coverage.
+    """
+
+    def test_50_answered_is_full_50(self, predictor):
+        arr = np.full(50, 3.0, dtype=np.float32)
+        assert predictor._calibration_regime(arr) == "full_50"
+
+    def test_49_answered_is_sparse(self, predictor):
+        arr = np.full(50, np.nan, dtype=np.float32)
+        arr[:49] = 3.0
+        assert predictor._calibration_regime(arr) == "sparse_20_balanced"
+
+    def test_nan_not_counted_as_answered(self, predictor):
+        # 49 real answers + 1 NaN must stay sparse, not flip to full_50.
+        arr = np.full(50, np.nan, dtype=np.float32)
+        arr[:49] = 3.0
+        assert predictor._calibration_regime(arr) == "sparse_20_balanced"
+
+
 # ── Config schema ────────────────────────────────────────────────────────
 
-OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output" / "reference"
+OUTPUT_DIR = FIXTURE_DIR
 EXPECTED_OUTPUTS = [f"{d}_{q}" for d in DOMAINS for q in QUANTILES]
 
 

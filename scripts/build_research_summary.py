@@ -11,14 +11,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from lib.constants import VARIANTS
+from lib.config import load_config_with_base
+from lib.constants import VARIANTS, reference_only_variants
 from lib.provenance import build_provenance, file_sha256, relative_to_root, sanitize_paths
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,14 +41,6 @@ def _load_json(path: Path) -> dict[str, Any]:
         payload = json.load(f)
     if not isinstance(payload, dict):
         raise ValueError(f"Expected JSON object at {path}")
-    return payload
-
-
-def _load_yaml(path: Path) -> dict[str, Any]:
-    with open(path) as f:
-        payload = yaml.safe_load(f)
-    if not isinstance(payload, dict):
-        raise ValueError(f"Expected YAML object at {path}")
     return payload
 
 
@@ -92,13 +82,10 @@ def _variant_paths(
     model_dir = _resolve(meta["model_dir"])
     artifact_dir = artifacts_variants_dir / variant
 
-    config_payload = _load_yaml(config_path)
+    config_payload = load_config_with_base(config_path)
     data_dir_raw = config_payload.get("data_dir")
     if not isinstance(data_dir_raw, str) or not data_dir_raw.strip():
-        if meta["default_data_regime"] == "ext_est_opn":
-            data_dir_raw = "data/processed/ext_est_opn"
-        else:
-            data_dir_raw = "data/processed/ext_est"
+        data_dir_raw = f"data/processed/{meta['default_data_regime']}"
     data_dir = _resolve(data_dir_raw)
 
     return {
@@ -114,6 +101,7 @@ def _variant_paths(
         "simulation_results": artifact_dir / "simulation_results.json",
         "split_metadata": data_dir / "split_metadata.json",
         "item_info": data_dir / "item_info.json",
+        "reliability": data_dir / "reliability.json",
     }
 
 
@@ -157,6 +145,14 @@ def _collect_variant_summary(
         except (OSError, csv.Error) as exc:
             errors.append(f"parse:baseline_comparison_per_domain_csv:{type(exc).__name__}:{exc}")
 
+    # reliability.json is OPTIONAL (added after some bundles were built), so it is not
+    # in `required` and a parse failure never flips a variant to incomplete.
+    if paths["reliability"].exists():
+        try:
+            loaded["reliability"] = _load_json(paths["reliability"])
+        except (OSError, json.JSONDecodeError, ValueError):
+            loaded["reliability"] = None
+
     # Provenance consistency checks (split/test hash must agree across pipeline artifacts).
     # NOTE: split_metadata.json is excluded because it is a prepare-stage build artifact
     # that can become stale when data/ is overwritten by rsync (remote-push).  The
@@ -181,8 +177,8 @@ def _collect_variant_summary(
     if len(test_sha_values) > 1:
         errors.append("provenance:test_sha256_mismatch")
 
-    config_payload = _load_yaml(paths["config"])
-    data_regime = "ext_est_opn" if str(paths["data_dir"]).endswith("ext_est_opn") else "ext_est"
+    config_payload = load_config_with_base(paths["config"])
+    data_regime = paths["data_dir"].name
 
     training = loaded.get("training_report", {})
     validation = loaded.get("validation_results", {})
@@ -252,6 +248,7 @@ def _collect_variant_summary(
             "simulation_results": loaded.get("simulation_results"),
             "split_metadata": loaded.get("split_metadata"),
             "item_info": loaded.get("item_info"),
+            "reliability": loaded.get("reliability"),
         }),
         "errors": errors,
     }
@@ -285,6 +282,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Exit non-zero if any variant is incomplete, has parse errors, or has provenance mismatch.",
     )
+    parser.add_argument(
+        "--reference-only",
+        action="store_true",
+        help=(
+            "Build a single-variant (reference-only) summary: iterate only the "
+            "reference variant so --strict does not demand the absent ablation "
+            "bundles. The reference bundle is still validated (fail-closed preserved)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -299,7 +305,11 @@ def main() -> int:
     loaded_by_variant: dict[str, dict[str, Any]] = {}
     incomplete: list[str] = []
 
-    for variant, meta in VARIANTS.items():
+    # In reference-only mode iterate only the reference variant, so a single-variant
+    # tree is not held to (and --strict does not abort on) the absent ablations.
+    variants_registry = reference_only_variants() if args.reference_only else VARIANTS
+
+    for variant, meta in variants_registry.items():
         summary, loaded = _collect_variant_summary(
             variant=variant,
             meta=meta,
@@ -321,6 +331,7 @@ def main() -> int:
         "simulation_results": reference_loaded.get("simulation_results"),
         "split_metadata": reference_loaded.get("split_metadata"),
         "item_info": reference_loaded.get("item_info"),
+        "reliability": reference_loaded.get("reliability"),
     })
 
     # Global reference artifacts used by NOTES.
@@ -353,6 +364,7 @@ def main() -> int:
             "input_artifacts": input_artifacts,
             "n_variants": len(variants_summary),
             "variants_included": sorted(variants_summary.keys()),
+            "reference_only": bool(args.reference_only),
         },
     )
 

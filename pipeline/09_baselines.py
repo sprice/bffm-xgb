@@ -28,45 +28,49 @@ Output files:
   - artifacts/adaptive_item_order_analysis.json
 
 Usage:
-    python pipeline/09_baselines.py --data-dir data/processed/ext_est
-    python pipeline/09_baselines.py --data-dir data/processed/ext_est --model-dir models/reference --bootstrap-n 2000
+    python pipeline/09_baselines.py --data-dir data/processed/canonical_v1
+    python pipeline/09_baselines.py --data-dir data/processed/canonical_v1 --model-dir models/reference --bootstrap-n 2000
 """
 
-import sys
+import argparse
 import json
 import logging
+import sys
 import time
-import argparse
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-import joblib
 import numpy as np
 import pandas as pd
 from scipy import stats
 from tqdm import tqdm
 
+from lib.bootstrap import (
+    bootstrap_metric_deltas,
+    respondent_bootstrap_multi_domain,
+    vectorized_pearsonr_bootstrap,
+)
 from lib.constants import (
-    DOMAINS,
     DOMAIN_LABELS,
+    DOMAINS,
     ITEM_COLUMNS,
     ITEMS_PER_DOMAIN,
 )
-from lib.bootstrap import respondent_bootstrap_multi_domain, vectorized_pearsonr_bootstrap
-from lib.mini_ipip import flatten_mini_ipip_items, load_mini_ipip_mapping
-from lib.norms import load_mini_ipip_norms
-from lib.scoring import raw_score_to_percentile
-from lib.provenance import build_provenance, add_provenance_args, relative_to_root
 from lib.item_info import (
     file_sha256,
     load_item_info_for_model,
 )
+from lib.mini_ipip import flatten_mini_ipip_items, load_mini_ipip_mapping
+from lib.models import load_domain_models, missing_models
+from lib.norms import load_mini_ipip_norms
+from lib.provenance import add_provenance_args, build_provenance, relative_to_root
 from lib.provenance_checks import (
     verify_model_data_split_provenance as _verify_model_data_split_provenance,
 )
+from lib.scoring import raw_score_to_percentile
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,28 +87,6 @@ DEFAULT_ARTIFACTS_DIR = Path("artifacts")
 # ============================================================================
 # Data and model loading
 # ============================================================================
-
-def _load_models(models_dir: Path) -> dict[str, dict[str, Any]]:
-    """Load trained domain models from .joblib files."""
-    domain_models: dict[str, dict[str, Any]] = {}
-    for domain in DOMAINS:
-        domain_models[domain] = {}
-        for q_name in ["q05", "q50", "q95"]:
-            model_path = models_dir / f"adaptive_{domain}_{q_name}.joblib"
-            if model_path.exists():
-                domain_models[domain][q_name] = joblib.load(model_path)
-    return domain_models
-
-
-def _check_models_complete(domain_models: dict[str, dict[str, Any]]) -> list[str]:
-    """Return list of missing model keys."""
-    missing: list[str] = []
-    for domain in DOMAINS:
-        for q_name in ["q05", "q50", "q95"]:
-            if q_name not in domain_models.get(domain, {}):
-                missing.append(f"{domain}_{q_name}")
-    return missing
-
 
 def _load_calibration_params(
     models_dir: Path,
@@ -171,7 +153,7 @@ def _choose_calibration_for_budget(
     n_items: int,
     sparse_calibration: dict[str, dict[str, float]],
     full_calibration: dict[str, dict[str, float]],
-) -> tuple[Optional[dict[str, dict[str, float]]], str]:
+) -> tuple[dict[str, dict[str, float]] | None, str]:
     """Select calibration regime for a given item budget."""
     if n_items >= 50 and full_calibration:
         return full_calibration, "full_50"
@@ -186,6 +168,48 @@ def _load_test_data(data_dir: Path) -> pd.DataFrame:
     if not test_path.exists():
         raise FileNotFoundError(f"Test data not found: {test_path}")
     return pd.read_parquet(test_path)
+
+
+def _load_train_data(data_dir: Path) -> pd.DataFrame:
+    """Load the TRAIN split's item columns only.
+
+    Used to fit subset-appropriate norms for the simple-averaging baseline
+    (see _compute_subset_norms). Train-only, never val/test, to preserve the
+    leakage invariant; only the item columns are needed.
+    """
+    train_path = data_dir / "train.parquet"
+    if not train_path.exists():
+        raise FileNotFoundError(f"Train data not found: {train_path}")
+    return pd.read_parquet(train_path, columns=list(ITEM_COLUMNS))
+
+
+def _compute_subset_norms(
+    train_df: pd.DataFrame,
+    item_cols_by_domain: dict[str, list[str]],
+) -> dict[str, dict[str, float]]:
+    """Norms (mean/sd) of each domain's SUBSET-average over the TRAIN split.
+
+    A K-item subset average has a different SD than the full 10-item domain
+    average, so the simple-averaging baseline must z-transform a subset average
+    with norms fit on that SAME subset (exactly as the Mini-IPIP baseline uses
+    mini_ipip_norms). Using the full-domain norms compresses the percentile
+    toward 50 and biases the averaging baseline's MAE. Fit on train only.
+    """
+    norms: dict[str, dict[str, float]] = {}
+    for domain, items in item_cols_by_domain.items():
+        cols = [c for c in items if c in train_df.columns]
+        if not cols:
+            continue
+        subset_avg = train_df[cols].mean(axis=1)
+        mean = float(subset_avg.mean())
+        sd = float(subset_avg.std(ddof=1))
+        if not np.isfinite(mean) or not np.isfinite(sd) or sd <= 0:
+            raise ValueError(
+                f"Subset-average norm for domain {domain!r} is degenerate "
+                f"(mean={mean}, sd={sd}); cannot z-transform."
+            )
+        norms[domain] = {"mean": mean, "sd": sd}
+    return norms
 
 
 def _validate_test_schema(df: pd.DataFrame) -> None:
@@ -245,9 +269,9 @@ def _select_domain_balanced(item_pool: list[dict], n_per_domain: int) -> list[st
 def _select_domain_constrained_adaptive(item_pool: list[dict], n_per_domain: int) -> list[str]:
     """Select N items per domain, highest cross-domain info score each.
 
-    This represents the best possible adaptive strategy with domain balance
-    constraints (round-robin + info-ranked), contrasted with domain_balanced
-    which uses own-domain correlation for ranking within each domain.
+    This is a domain-balanced variant of the greedy info-ranked selection
+    (round-robin + info-ranked), used as a comparison baseline, contrasted with
+    domain_balanced which uses own-domain correlation for ranking within each domain.
     """
     selected: list[str] = []
     for domain in DOMAINS:
@@ -341,7 +365,7 @@ def _predict_all_domains(
     X_sparse: np.ndarray,
     all_columns: list[str],
     y_test: pd.DataFrame,
-    calibration_params: Optional[dict[str, dict[str, float]]] = None,
+    calibration_params: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, dict[str, np.ndarray]]:
     """Run predictions for all domains and return per-domain arrays.
 
@@ -551,6 +575,129 @@ def _bootstrap_per_domain_r(
     return cis
 
 
+def _averaging_metrics_fn(
+    all_true: np.ndarray,
+    all_pred: np.ndarray,
+    all_lower: np.ndarray,
+    all_upper: np.ndarray,
+) -> dict[str, float]:
+    """Overall metrics for the simple-averaging arm. No intervals -> no coverage;
+    the lower/upper args are unused placeholders (the shared bootstrap signature)."""
+    errors = all_true - all_pred
+    abs_errors = np.abs(errors)
+    r = _pearsonr_strict(all_true, all_pred, label="baselines-averaging-bootstrap")
+    return {
+        "pearson_r": float(r),
+        "mae": float(np.mean(abs_errors)),
+        "rmse": float(np.sqrt(np.mean(errors ** 2))),
+        "within_5_pct": float(np.mean(abs_errors <= 5)),
+        "within_10_pct": float(np.mean(abs_errors <= 10)),
+    }
+
+
+def _bootstrap_averaging_cis(
+    per_domain_arrays: dict[str, dict[str, np.ndarray]],
+    n_bootstrap: int,
+    seed: int = 42,
+) -> tuple[dict[str, list[float]], dict[str, list[float]]]:
+    """Respondent-level bootstrap CIs for the simple-averaging arm (A4.1).
+
+    Gives the Mini-IPIP comparator the same CIs every XGBoost method already has.
+    Returns ``(overall_cis, per_domain_r_cis)``. Averaging has no prediction
+    intervals, so no coverage CI is produced; placeholder bounds (= pred) are
+    passed only to satisfy the shared multi-domain bootstrap signature.
+    """
+    valid_domains = [d for d in DOMAINS if d in per_domain_arrays]
+    if not valid_domains or n_bootstrap <= 0:
+        return {}, {}
+
+    per_domain_data: dict[str, dict[str, np.ndarray]] = {}
+    for d in valid_domains:
+        true = np.asarray(per_domain_arrays[d]["true"], dtype=np.float64)
+        pred = np.asarray(per_domain_arrays[d]["pred"], dtype=np.float64)
+        per_domain_data[d] = {"true": true, "pred": pred, "lower": pred, "upper": pred}
+
+    result = respondent_bootstrap_multi_domain(
+        per_domain_data=per_domain_data,
+        domains=valid_domains,
+        percentile_metric_fn=_averaging_metrics_fn,
+        raw_metric_fn=_noop_raw_metric_fn,
+        n_bootstrap=n_bootstrap,
+        seed=seed,
+    )
+
+    overall_cis: dict[str, list[float]] = {}
+    for k, bounds in result.get("overall_cis", {}).items():
+        overall_cis[f"{k}_ci"] = [bounds["lower"], bounds["upper"]]
+
+    per_domain_r_cis: dict[str, list[float]] = {}
+    for d, metrics in result.get("per_domain_cis", {}).items():
+        r_ci = metrics.get("pearson_r")
+        if isinstance(r_ci, dict):
+            per_domain_r_cis[d] = [r_ci["lower"], r_ci["upper"]]
+    return overall_cis, per_domain_r_cis
+
+
+def _paired_arm_metric_fn(true_2d: np.ndarray, pred_2d: np.ndarray) -> dict[str, float]:
+    """Respondent-pooled overall metrics on stacked (respondent x domain) arrays.
+
+    Flattening preserves the respondent-pooled "overall r" definition; the shared
+    bootstrap indices keep the two arms paired on the same respondents.
+    """
+    t = np.asarray(true_2d).reshape(-1)
+    p = np.asarray(pred_2d).reshape(-1)
+    return {
+        "pearson_r": float(_pearsonr_strict(t, p, label="baselines-xgb-vs-mini-paired")),
+        "mae": float(np.mean(np.abs(t - p))),
+    }
+
+
+def _paired_xgb_vs_mini_ipip(
+    db_ml_arrays: dict[str, dict[str, np.ndarray]],
+    mi_avg_arrays: dict[str, dict[str, np.ndarray]],
+    n_bootstrap: int,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """Paired (domain-balanced ML minus Mini-IPIP averaging) bootstrap on the
+    SHARED test respondents -- the headline .927-vs-.906 contrast with a 95% CI
+    (A4.1). Both arms are scored on the same held-out respondents (same row order),
+    so resampling respondent indices keeps the comparison paired.
+    """
+    active = [d for d in DOMAINS if d in db_ml_arrays and d in mi_avg_arrays]
+    if not active:
+        raise ValueError("Paired XGBoost-vs-Mini-IPIP bootstrap requires shared domains.")
+    n_resp = len(db_ml_arrays[active[0]]["true"])
+    for d in active:
+        if len(db_ml_arrays[d]["true"]) != n_resp or len(mi_avg_arrays[d]["pred"]) != n_resp:
+            raise ValueError(
+                "Paired bootstrap requires equal respondent counts across arms/domains."
+            )
+
+    # Ground truth is shared across arms (both use the same y_test percentiles).
+    true_2d = np.column_stack([db_ml_arrays[d]["true"] for d in active])
+    db_pred_2d = np.column_stack([db_ml_arrays[d]["pred"] for d in active])
+    mi_pred_2d = np.column_stack([mi_avg_arrays[d]["pred"] for d in active])
+
+    boot = bootstrap_metric_deltas(
+        metric_fn=_paired_arm_metric_fn,
+        reference_arrays=(true_2d, mi_pred_2d),
+        comparison_arrays=(true_2d, db_pred_2d),
+        n_bootstrap=n_bootstrap,
+        seed=seed,
+    )
+    deltas = boot["point_deltas"]
+    cis = boot["delta_cis"]
+    return {
+        "n_items": 20,
+        "comparison": "domain_balanced_ml",
+        "reference": "mini_ipip_averaging",
+        "delta_pearson_r": deltas["pearson_r"],
+        "delta_pearson_r_ci": [cis["pearson_r"]["lower"], cis["pearson_r"]["upper"]],
+        "delta_mae": deltas["mae"],
+        "delta_mae_ci": [cis["mae"]["lower"], cis["mae"]["upper"]],
+    }
+
+
 # ============================================================================
 # Single method evaluation
 # ============================================================================
@@ -561,7 +708,7 @@ def _evaluate_method(
     all_columns: list[str],
     y_test: pd.DataFrame,
     selected_items: list[str],
-    calibration_params: Optional[dict[str, dict[str, float]]],
+    calibration_params: dict[str, dict[str, float]] | None,
     n_bootstrap: int = 0,
     seed: int = 42,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
@@ -632,7 +779,7 @@ def _evaluate_random_aggregated(
     available_items: list[str],
     n_items: int,
     n_random_trials: int,
-    calibration_params: Optional[dict[str, dict[str, float]]],
+    calibration_params: dict[str, dict[str, float]] | None,
     n_bootstrap: int = 0,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     """Evaluate random selection averaged over multiple trials."""
@@ -738,7 +885,7 @@ def _compute_simple_averaging_scores(
     X_test: pd.DataFrame,
     y_test: pd.DataFrame,
     selected_items: list[str],
-    norms: Optional[dict[str, dict[str, float]]] = None,
+    norms: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, Any]:
     """Score using simple domain averaging (traditional psychometrics)."""
     missing_pct_cols = [f"{d}_percentile" for d in DOMAINS if f"{d}_percentile" not in y_test.columns]
@@ -758,6 +905,7 @@ def _compute_simple_averaging_scores(
     all_true: list[np.ndarray] = []
     all_pred: list[np.ndarray] = []
     per_domain_results: dict[str, dict[str, Any]] = {}
+    per_domain_arrays: dict[str, dict[str, np.ndarray]] = {}
 
     for domain in DOMAINS:
         domain_items = item_cols_by_domain[domain]
@@ -773,6 +921,10 @@ def _compute_simple_averaging_scores(
 
         all_true.append(y_true)
         all_pred.append(y_pred)
+        per_domain_arrays[domain] = {
+            "true": np.asarray(y_true, dtype=np.float64),
+            "pred": np.asarray(y_pred, dtype=np.float64),
+        }
 
         r_val = _pearsonr_strict(
             y_true,
@@ -800,7 +952,11 @@ def _compute_simple_averaging_scores(
         "coverage_90": None,
     }
 
-    return {"overall": overall, "per_domain": per_domain_results}
+    return {
+        "overall": overall,
+        "per_domain": per_domain_results,
+        "per_domain_arrays": per_domain_arrays,
+    }
 
 
 def _evaluate_mini_ipip_standalone(
@@ -808,8 +964,15 @@ def _evaluate_mini_ipip_standalone(
     y_test: pd.DataFrame,
     mini_ipip_mapping: dict[str, list[str]],
     mini_ipip_norms: dict[str, dict[str, float]],
+    n_bootstrap: int = 0,
+    seed: int = 42,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-    """Evaluate standalone Mini-IPIP scoring with Mini-IPIP-specific norms."""
+    """Evaluate standalone Mini-IPIP scoring with Mini-IPIP-specific norms.
+
+    When ``n_bootstrap > 0``, attaches respondent-level bootstrap CIs (overall
+    metric ``*_ci`` and per-domain ``pearson_r_ci``) so the headline Mini-IPIP
+    comparator carries the same uncertainty as every XGBoost method (A4.1).
+    """
     selected_items = flatten_mini_ipip_items(mini_ipip_mapping)
     missing_items = [item_id for item_id in selected_items if item_id not in X_test.columns]
     if missing_items:
@@ -834,7 +997,18 @@ def _evaluate_mini_ipip_standalone(
                 f"expected {expected_n} items."
             )
 
-    return result["overall"], result["per_domain"]
+    overall = result["overall"]
+    per_domain = result["per_domain"]
+    if n_bootstrap > 0:
+        overall_cis, per_domain_r_cis = _bootstrap_averaging_cis(
+            result["per_domain_arrays"], n_bootstrap, seed=seed,
+        )
+        overall.update(overall_cis)
+        for domain, r_ci in per_domain_r_cis.items():
+            if domain in per_domain:
+                per_domain[domain]["pearson_r_ci"] = r_ci
+
+    return overall, per_domain
 
 
 # ============================================================================
@@ -852,7 +1026,7 @@ def _run_comparisons_at_k(
     n_items: int,
     mini_ipip_mapping: dict[str, list[str]],
     mini_ipip_norms: dict[str, dict[str, float]],
-    calibration_params: Optional[dict[str, dict[str, float]]],
+    calibration_params: dict[str, dict[str, float]] | None,
     calibration_regime: str,
     n_bootstrap: int,
     n_random_trials: int,
@@ -942,6 +1116,7 @@ def _run_comparisons_at_k(
             y_test,
             mini_ipip_mapping=mini_ipip_mapping,
             mini_ipip_norms=mini_ipip_norms,
+            n_bootstrap=n_bootstrap,
         )
         overall_results["mini_ipip"] = ov
         per_domain_results["mini_ipip"] = pd_res
@@ -952,9 +1127,20 @@ def _run_comparisons_at_k(
         overall_results["full_50"] = ov
         per_domain_results["full_50"] = pd_res
 
-    # Add calibration regime to all results
-    for method_metrics in overall_results.values():
-        method_metrics["calibration_regime"] = calibration_regime
+    # Tag each method's scoring method and calibration regime. Mini-IPIP is the
+    # one standalone simple-averaging arm; every other strategy is XGBoost (ML).
+    # The averaging arm applies no ML interval calibration (its coverage_90 is
+    # null), so its calibration_regime is "none" rather than the ML regime label
+    # used by the XGBoost methods.
+    # NOTE (deferred regen): the published baseline_comparison_results.json
+    # predates this edit -- it has no `scoring` field and still records
+    # mini_ipip calibration_regime="sparse_20_balanced". The new "scoring" tag
+    # and the "none" regime only materialize after a stage-09 rerun
+    # (`make baselines` + `make research-summary`); no retrain is required.
+    for method, method_metrics in overall_results.items():
+        is_averaging = method == "mini_ipip"
+        method_metrics["scoring"] = "averaging" if is_averaging else "ml"
+        method_metrics["calibration_regime"] = "none" if is_averaging else calibration_regime
 
     return overall_results, per_domain_results
 
@@ -975,10 +1161,12 @@ def _run_ml_vs_averaging_comparison(
     mini_ipip_norms: dict[str, dict[str, float]],
     sparse_calibration: dict[str, dict[str, float]],
     full_calibration: dict[str, dict[str, float]],
+    train_df: pd.DataFrame,
     n_bootstrap: int = 0,
 ) -> dict:
     """Compare ML scoring vs simple averaging for domain_balanced and mini_ipip."""
     results: list[dict[str, Any]] = []
+    paired_result: dict[str, Any] | None = None
 
     for n_items in [10, 15, 20, 25]:
         strategies: dict[str, list[str]] = {}
@@ -1007,6 +1195,10 @@ def _run_ml_vs_averaging_comparison(
             n_items, sparse_calibration, full_calibration,
         )
 
+        # Captured at K=20 for the paired cross-arm bootstrap (A4.1, part B).
+        db_ml_arrays: dict[str, dict[str, np.ndarray]] | None = None
+        mi_avg_arrays: dict[str, dict[str, np.ndarray]] | None = None
+
         for method, selected_items in strategies.items():
             # ML scoring
             X_sparse = _create_sparse_numpy(X_values, all_columns, selected_items)
@@ -1028,8 +1220,16 @@ def _run_ml_vs_averaging_comparison(
                     )
                     ml_per_domain[domain] = float(r_val)
 
-            # Simple averaging
-            avg_norms = mini_ipip_norms if method == "mini_ipip" else None
+            # Simple averaging. Mini-IPIP keeps its own subset norms; other
+            # methods need subset-appropriate TRAIN norms (A4.7) -- using
+            # full-domain norms (norms=None) mis-scales a K-item subset average.
+            if method == "mini_ipip":
+                avg_norms: dict[str, dict[str, float]] | None = mini_ipip_norms
+            else:
+                subset_cols = {
+                    d: [it for it in selected_items if it.startswith(d)] for d in DOMAINS
+                }
+                avg_norms = _compute_subset_norms(train_df, subset_cols)
             avg_result = _compute_simple_averaging_scores(
                 X_test,
                 y_test,
@@ -1149,9 +1349,33 @@ def _run_ml_vs_averaging_comparison(
                     float(np.percentile(arr_mae, 97.5)),
                 ]
 
+            if n_items == 20 and method == "domain_balanced":
+                db_ml_arrays = {
+                    d: {
+                        "true": np.asarray(per_domain_preds[d]["true"], dtype=np.float64),
+                        "pred": np.asarray(per_domain_preds[d]["pred"], dtype=np.float64),
+                    }
+                    for d in per_domain_preds
+                }
+            elif n_items == 20 and method == "mini_ipip":
+                mi_avg_arrays = avg_result["per_domain_arrays"]
+
             results.append(row_result)
 
-    return {"comparisons": results}
+        if (
+            n_items == 20
+            and n_bootstrap > 0
+            and db_ml_arrays is not None
+            and mi_avg_arrays is not None
+        ):
+            paired_result = _paired_xgb_vs_mini_ipip(
+                db_ml_arrays, mi_avg_arrays, n_bootstrap, seed=42,
+            )
+
+    output: dict[str, Any] = {"comparisons": results}
+    if paired_result is not None:
+        output["xgb_vs_mini_ipip_paired"] = paired_result
+    return output
 
 
 # ============================================================================
@@ -1232,7 +1456,7 @@ def _print_summary(
                 continue
             m = results[method]
             r_str = f"r={m['pearson_r']:.3f}"
-            if f"pearson_r_ci" in m:
+            if "pearson_r_ci" in m:
                 ci = m["pearson_r_ci"]
                 r_str += f" [{ci[0]:.3f},{ci[1]:.3f}]"
             coverage_raw = m.get("coverage_90")
@@ -1394,8 +1618,8 @@ def main() -> int:
 
     # Load models
     log.info("Step 1: Loading models and data...")
-    domain_models = _load_models(model_dir)
-    missing = _check_models_complete(domain_models)
+    domain_models = load_domain_models(model_dir)
+    missing = missing_models(domain_models)
     if missing:
         log.error("Missing models: %s", ", ".join(missing))
         return 1
@@ -1436,12 +1660,13 @@ def main() -> int:
     if split_signature is not None:
         log.info("  Full split signature verified against training report")
 
-    # Load test data
+    # Load test data (+ train item columns for subset-appropriate averaging norms)
     try:
         test_df = _load_test_data(data_dir)
         _validate_test_schema(test_df)
+        train_df = _load_train_data(data_dir)
     except (FileNotFoundError, ValueError) as e:
-        log.error("Invalid test data for baselines: %s", e)
+        log.error("Invalid test/train data for baselines: %s", e)
         return 1
     log.info("  Test data: %d respondents", len(test_df))
 
@@ -1532,7 +1757,7 @@ def main() -> int:
     ml_vs_avg = _run_ml_vs_averaging_comparison(
         domain_models, X_values, all_columns, X_test, y_test,
         item_pool, available_items, mini_ipip_mapping, mini_ipip_norms,
-        sparse_calibration, full_calibration,
+        sparse_calibration, full_calibration, train_df,
         n_bootstrap=args.bootstrap_n,
     )
     _print_ml_vs_avg_summary(ml_vs_avg)

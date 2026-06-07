@@ -1,0 +1,220 @@
+{
+  "model_name": "bffm-xgb",
+  "model_display_name": "IPIP-BFFM Sparse Quantile Model",
+  "model_type": "xgboost-quantile-regression",
+  "framework": "onnx",
+  "assessment": "ipip-bffm-50",
+  "version": "1.0.0",
+  "domains": [
+    "ext",
+    "agr",
+    "csn",
+    "est",
+    "opn"
+  ],
+  "domain_labels": {
+    "ext": "Extraversion",
+    "agr": "Agreeableness",
+    "csn": "Conscientiousness",
+    "est": "EmotionalStability",
+    "opn": "Intellect"
+  },
+  "quantiles": [
+    0.05,
+    0.5,
+    0.95
+  ],
+  "model_file": "model.onnx",
+  "outputs": [
+    "ext_q05",
+    "ext_q50",
+    "ext_q95",
+    "agr_q05",
+    "agr_q50",
+    "agr_q95",
+    "csn_q05",
+    "csn_q50",
+    "csn_q95",
+    "est_q05",
+    "est_q50",
+    "est_q95",
+    "opn_q05",
+    "opn_q50",
+    "opn_q95"
+  ],
+  "scores_output": "scores",
+  "input": {
+    "shape": [
+      null,
+      50
+    ],
+    "dtype": "float32",
+    "feature_names": [
+      "ext1",
+      "ext2",
+      "ext3",
+      "ext4",
+      "ext5",
+      "ext6",
+      "ext7",
+      "ext8",
+      "ext9",
+      "ext10",
+      "agr1",
+      "agr2",
+      "agr3",
+      "agr4",
+      "agr5",
+      "agr6",
+      "agr7",
+      "agr8",
+      "agr9",
+      "agr10",
+      "csn1",
+      "csn2",
+      "csn3",
+      "csn4",
+      "csn5",
+      "csn6",
+      "csn7",
+      "csn8",
+      "csn9",
+      "csn10",
+      "est1",
+      "est2",
+      "est3",
+      "est4",
+      "est5",
+      "est6",
+      "est7",
+      "est8",
+      "est9",
+      "est10",
+      "opn1",
+      "opn2",
+      "opn3",
+      "opn4",
+      "opn5",
+      "opn6",
+      "opn7",
+      "opn8",
+      "opn9",
+      "opn10"
+    ],
+    "missing_value": "NaN",
+    "value_range": [
+      1,
+      5
+    ]
+  },
+  "output": {
+    "shape": [
+      null,
+      1
+    ],
+    "dtype": "float32",
+    "scale": "raw_score",
+    "scale_basis": "per_item_mean_1_to_5",
+    "value_range": [
+      1,
+      5
+    ],
+    "value_range_is_nominal": true
+  },
+  "norms": {
+    "ext": {
+      "mean": 2.9146164337502305,
+      "sd": 0.911158974670893
+    },
+    "agr": {
+      "mean": 3.7589838181878457,
+      "sd": 0.7365659197651669
+    },
+    "csn": {
+      "mean": 3.342639098705739,
+      "sd": 0.7390359186597035
+    },
+    "est": {
+      "mean": 2.918995752096721,
+      "sd": 0.8610764182500696
+    },
+    "opn": {
+      "mean": 3.9387115640524146,
+      "sd": 0.6182717542790234
+    }
+  },
+  "hyperparameters": {
+    "n_estimators": 9056,
+    "max_depth": 5,
+    "learning_rate": 0.010650800669570068,
+    "reg_alpha": 4.612409189436812,
+    "reg_lambda": 4.564386465772608,
+    "subsample": 0.6507981007390146,
+    "colsample_bytree": 0.5291846507889049,
+    "min_child_weight": 4
+  },
+  "calibration": {
+    "sparse_20_balanced": {
+      "ext": {
+        "observed_coverage": 0.9043293774448055,
+        "scale_factor": 1.0
+      },
+      "agr": {
+        "observed_coverage": 0.8970828084598554,
+        "scale_factor": 1.0
+      },
+      "csn": {
+        "observed_coverage": 0.8932992994320317,
+        "scale_factor": 1.0
+      },
+      "est": {
+        "observed_coverage": 0.8978784061526222,
+        "scale_factor": 1.0
+      },
+      "opn": {
+        "observed_coverage": 0.8937368781630532,
+        "scale_factor": 1.0
+      }
+    },
+    "full_50": {
+      "ext": {
+        "observed_coverage": 0.9284956573625937,
+        "scale_factor": 1.0
+      },
+      "agr": {
+        "observed_coverage": 0.9171362903047581,
+        "scale_factor": 1.0
+      },
+      "csn": {
+        "observed_coverage": 0.9317001480695706,
+        "scale_factor": 1.0
+      },
+      "est": {
+        "observed_coverage": 0.9189926849212138,
+        "scale_factor": 1.0
+      },
+      "opn": {
+        "observed_coverage": 0.9358217861168202,
+        "scale_factor": 1.0
+      }
+    }
+  },
+  "provenance": {
+    "source": "ipip-bffm-sparse-quantile-v1-reference",
+    "training_script": "07_train.py",
+    "git_hash": "2c59dcc34f0989ba8d647714ced9e54c9e9e12fc",
+    "preprocessing_version": "2c59dcc34f0989ba8d647714ced9e54c9e9e12fc",
+    "data_snapshot_id": "norms_sha256:a8c7c1a0dac762bc47b5a36094ffb101696fcda45aae6a8c4f46c14fb2502bf5",
+    "rng_seed": 42,
+    "model_dir": "models/reference",
+    "n_train_original": 422326,
+    "n_train_augmented": 1076931,
+    "n_test": 90498,
+    "train_sha256": "858fd9123edd94b256553e94c2280b8592ecde9fba0d88912b75fc74ba39674a",
+    "val_sha256": "d4d2583ed1088a3bd5cb040d7fb1189b9b1e36d1b8e5267e2aa44d9d9cc158f5",
+    "test_sha256": "81daefb09ffaf94e981f6f67b37d563ee88d265bafed560892853ea17c0b4701",
+    "split_signature": "f688d5f439e89d28f2a886ab113f7011b33ffeb94440da269a4173c0cf7c23dc",
+    "split_metadata_sha256": "ed7f5c3c13f5caaeee0ca3e2e9d2e2e37d38a17d1956f121f65225fe46c03257"
+  },
+  "variant": "reference"
+}

@@ -1,0 +1,108 @@
+{
+  "selected_item": {
+    "id": "ext3",
+    "text": "I feel comfortable around people.",
+    "home_domain": "ext",
+    "home_domain_label": "Extraversion",
+    "is_reverse_keyed": false,
+    "cross_domain_info": 1.5456525896575974,
+    "own_domain_r": 0.6369467809655415,
+    "domain_correlations": {
+      "ext": 0.6369467809655415,
+      "agr": 0.36167872041696325,
+      "csn": 0.15028180197087063,
+      "est": 0.3345476698301577,
+      "opn": 0.0621976164740643
+    },
+    "composite_score": 1.8373809380473518
+  },
+  "top_candidates": [
+    {
+      "id": "ext3",
+      "text": "I feel comfortable around people.",
+      "home_domain": "ext",
+      "cross_domain_info": 1.5456525896575974,
+      "own_domain_r": 0.6369467809655415,
+      "composite_score": 1.8373809380473518
+    },
+    {
+      "id": "ext5",
+      "text": "I start conversations.",
+      "home_domain": "ext",
+      "cross_domain_info": 1.4646002725948288,
+      "own_domain_r": 0.7073199823213029,
+      "composite_score": 1.7512169562868403
+    },
+    {
+      "id": "ext7",
+      "text": "I talk to a lot of different people at parties.",
+      "home_domain": "ext",
+      "cross_domain_info": 1.3039598107998254,
+      "own_domain_r": 0.6892761494329606,
+      "composite_score": 1.596355187557013
+    },
+    {
+      "id": "est10",
+      "text": "I often feel blue.",
+      "home_domain": "est",
+      "cross_domain_info": 1.2761142537299037,
+      "own_domain_r": 0.6195866235568692,
+      "composite_score": 1.5825044696426906
+    },
+    {
+      "id": "ext4",
+      "text": "I keep in the background.",
+      "home_domain": "ext",
+      "cross_domain_info": 1.2533939871345268,
+      "own_domain_r": 0.7183254840789706,
+      "composite_score": 1.5458781379127637
+    },
+    {
+      "id": "ext6",
+      "text": "I have little to say.",
+      "home_domain": "ext",
+      "cross_domain_info": 1.2859285116398285,
+      "own_domain_r": 0.5491511750180547,
+      "composite_score": 1.527156908228396
+    },
+    {
+      "id": "agr10",
+      "text": "I make people feel at ease.",
+      "home_domain": "agr",
+      "cross_domain_info": 1.2512057093835929,
+      "own_domain_r": 0.4156549596858474,
+      "composite_score": 1.4899352726118387
+    },
+    {
+      "id": "agr7",
+      "text": "I am not really interested in others.",
+      "home_domain": "agr",
+      "cross_domain_info": 1.274573803009026,
+      "own_domain_r": 0.6265072496587175,
+      "composite_score": 1.4845541502102704
+    },
+    {
+      "id": "ext10",
+      "text": "I am quiet around strangers.",
+      "home_domain": "ext",
+      "cross_domain_info": 1.2378549411193893,
+      "own_domain_r": 0.6659984556886875,
+      "composite_score": 1.4843558058370372
+    },
+    {
+      "id": "est9",
+      "text": "I get irritated easily.",
+      "home_domain": "est",
+      "cross_domain_info": 1.1745501847286017,
+      "own_domain_r": 0.6224025521108683,
+      "composite_score": 1.4749406028550571
+    }
+  ],
+  "selection_criteria": {
+    "primary": "Cross-domain information score (sum |r| across all domains)",
+    "filters": [
+      "|skew| < 1.0",
+      "entropy > 1.3"
+    ]
+  }
+}

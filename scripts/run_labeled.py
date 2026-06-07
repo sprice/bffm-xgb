@@ -8,7 +8,7 @@ import os
 import shlex
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -21,7 +21,7 @@ def _emit(prefix: str, message: str, log_handle: object | None) -> None:
 
 
 def _utc_timestamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def main() -> int:

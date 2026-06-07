@@ -40,7 +40,7 @@ export function DomainBar({ label, description, result, color, textColor, index 
             {roundedQ50}<span className="text-lg">{ordinalSuffix(roundedQ50)}</span>
           </span>
           <span className="sr-only">
-            {ordinal(roundedQ50)} percentile. 90 percent confidence interval: {ordinal(roundedQ05)} to {ordinal(roundedQ95)}.
+            {ordinal(roundedQ50)} percentile. 90% prediction interval: {ordinal(roundedQ05)} to {ordinal(roundedQ95)}.
           </span>
         </div>
 
@@ -48,7 +48,7 @@ export function DomainBar({ label, description, result, color, textColor, index 
           className="col-span-full row-start-2 h-4 bg-border/30 rounded-md relative overflow-visible"
           aria-hidden="true"
         >
-          {/* CI range bar – sweeps in from left */}
+          {/* prediction-interval range bar – sweeps in from left */}
           <div
             className="absolute top-0 h-full rounded-md opacity-30 animate-scale-x-in"
             style={{

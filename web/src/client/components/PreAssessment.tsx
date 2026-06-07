@@ -28,7 +28,7 @@ export function PreAssessment({ onBegin }: PreAssessmentProps) {
           </p>
           <p>
             <strong className="text-text font-semibold">
-              Not a clinical or diagnostic tool.
+              Not validated for clinical diagnosis or high-stakes selection.
             </strong>{" "}
             A snapshot for personal insight and curiosity, not a verdict.
           </p>

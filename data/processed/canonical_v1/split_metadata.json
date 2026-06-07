@@ -1,0 +1,202 @@
+{
+  "provenance": {
+    "data_snapshot_id": "norms_sha256:a8c7c1a0dac762bc47b5a36094ffb101696fcda45aae6a8c4f46c14fb2502bf5",
+    "preprocessing_version": "2c59dcc34f0989ba8d647714ced9e54c9e9e12fc",
+    "script": "04_prepare_data.py",
+    "git_hash": "2c59dcc34f0989ba8d647714ced9e54c9e9e12fc",
+    "rng_seed": 42,
+    "environment": {
+      "python_version": "3.14.3",
+      "python_implementation": "CPython",
+      "platform": "macOS-26.4.1-arm64-arm-64bit-Mach-O",
+      "libraries": {
+        "xgboost": "3.1.3",
+        "numpy": "2.4.2",
+        "scipy": "1.17.0",
+        "scikit-learn": "1.8.0",
+        "pandas": "3.0.0",
+        "onnx": "1.20.0",
+        "onnxmltools": "1.14.0",
+        "onnxruntime": "1.24.1",
+        "optuna": "4.3.0",
+        "matplotlib": "3.10.8"
+      }
+    },
+    "db_path": "data/processed/ipip_bffm.db",
+    "output_dir": "data/processed/canonical_v1",
+    "split_id": "canonical_v1",
+    "split_scheme": "random",
+    "split_signature": "f688d5f439e89d28f2a886ab113f7011b33ffeb94440da269a4173c0cf7c23dc"
+  },
+  "split_id": "canonical_v1",
+  "split_scheme": "random",
+  "seed": 42,
+  "test_size": 0.15,
+  "val_size": 0.15,
+  "total_valid": 603322,
+  "train_rows": 422326,
+  "val_rows": 90498,
+  "test_rows": 90498,
+  "train_frac": 0.7,
+  "val_frac": 0.15,
+  "test_frac": 0.15,
+  "item_columns": [
+    "ext1",
+    "ext2",
+    "ext3",
+    "ext4",
+    "ext5",
+    "ext6",
+    "ext7",
+    "ext8",
+    "ext9",
+    "ext10",
+    "agr1",
+    "agr2",
+    "agr3",
+    "agr4",
+    "agr5",
+    "agr6",
+    "agr7",
+    "agr8",
+    "agr9",
+    "agr10",
+    "csn1",
+    "csn2",
+    "csn3",
+    "csn4",
+    "csn5",
+    "csn6",
+    "csn7",
+    "csn8",
+    "csn9",
+    "csn10",
+    "est1",
+    "est2",
+    "est3",
+    "est4",
+    "est5",
+    "est6",
+    "est7",
+    "est8",
+    "est9",
+    "est10",
+    "opn1",
+    "opn2",
+    "opn3",
+    "opn4",
+    "opn5",
+    "opn6",
+    "opn7",
+    "opn8",
+    "opn9",
+    "opn10"
+  ],
+  "score_columns": [
+    "ext_score",
+    "agr_score",
+    "csn_score",
+    "est_score",
+    "opn_score"
+  ],
+  "percentile_columns": [
+    "ext_percentile",
+    "agr_percentile",
+    "csn_percentile",
+    "est_percentile",
+    "opn_percentile"
+  ],
+  "norms_path": "artifacts/ipip_bffm_norms.json",
+  "norms_sha256": "a8c7c1a0dac762bc47b5a36094ffb101696fcda45aae6a8c4f46c14fb2502bf5",
+  "validation": {
+    "ext": {
+      "train_mean": 2.9146164337502305,
+      "val_mean": 2.91600145859577,
+      "test_mean": 2.907937191982143,
+      "max_mean_diff": 0.008064266613626803,
+      "train_std": 0.911158974670893,
+      "val_std": 0.911492799892646,
+      "test_std": 0.9112972970289468,
+      "ks_statistic": 0.0038066957238411248,
+      "ks_pvalue": 0.2297244063086099
+    },
+    "agr": {
+      "train_mean": 3.7589838181878457,
+      "val_mean": 3.760757143804283,
+      "test_mean": 3.756717275519901,
+      "max_mean_diff": 0.004039868284381853,
+      "train_std": 0.7365659197651669,
+      "val_std": 0.734775589494648,
+      "test_std": 0.7367853884126038,
+      "ks_statistic": 0.0028415479544882938,
+      "ks_pvalue": 0.5830596996217886
+    },
+    "csn": {
+      "train_mean": 3.342639098705739,
+      "val_mean": 3.3429788503613342,
+      "test_mean": 3.341803133770912,
+      "max_mean_diff": 0.001175716590422038,
+      "train_std": 0.7390359186597035,
+      "val_std": 0.7383384301832304,
+      "test_std": 0.7398574353615205,
+      "ks_statistic": 0.003606712303518389,
+      "ks_pvalue": 0.2861633072020997
+    },
+    "est": {
+      "train_mean": 2.918995752096721,
+      "val_mean": 2.913139516895401,
+      "test_mean": 2.922762933987491,
+      "max_mean_diff": 0.009623417092090136,
+      "train_std": 0.8610764182500696,
+      "val_std": 0.8589585061248644,
+      "test_std": 0.8605125660098952,
+      "ks_statistic": 0.0034061995221056907,
+      "ks_pvalue": 0.35202310080560295
+    },
+    "opn": {
+      "train_mean": 3.9387115640524146,
+      "val_mean": 3.9374295564542865,
+      "test_mean": 3.9410926208313994,
+      "max_mean_diff": 0.0036630643771129456,
+      "train_std": 0.6182717542790234,
+      "val_std": 0.6182178221436306,
+      "test_std": 0.6182167487868934,
+      "ks_statistic": 0.002494965997125065,
+      "ks_pvalue": 0.7413942003506607
+    }
+  },
+  "split_signature": "f688d5f439e89d28f2a886ab113f7011b33ffeb94440da269a4173c0cf7c23dc",
+  "inputs": {
+    "sqlite_db": {
+      "path": "data/processed/ipip_bffm.db",
+      "sha256": "da8beacff0727ead84f462c347d84c98135d6a14fe2856a03396589b4026139e"
+    },
+    "norms": {
+      "path": "artifacts/ipip_bffm_norms.json",
+      "sha256": "a8c7c1a0dac762bc47b5a36094ffb101696fcda45aae6a8c4f46c14fb2502bf5"
+    }
+  },
+  "outputs": {
+    "train": {
+      "path": "data/processed/canonical_v1/train.parquet",
+      "sha256": "858fd9123edd94b256553e94c2280b8592ecde9fba0d88912b75fc74ba39674a",
+      "rows": 422326
+    },
+    "val": {
+      "path": "data/processed/canonical_v1/val.parquet",
+      "sha256": "d4d2583ed1088a3bd5cb040d7fb1189b9b1e36d1b8e5267e2aa44d9d9cc158f5",
+      "rows": 90498
+    },
+    "test": {
+      "path": "data/processed/canonical_v1/test.parquet",
+      "sha256": "81daefb09ffaf94e981f6f67b37d563ee88d265bafed560892853ea17c0b4701",
+      "rows": 90498
+    },
+    "split_metadata": {
+      "path": "data/processed/canonical_v1/split_metadata.json"
+    }
+  },
+  "train_sha256": "858fd9123edd94b256553e94c2280b8592ecde9fba0d88912b75fc74ba39674a",
+  "val_sha256": "d4d2583ed1088a3bd5cb040d7fb1189b9b1e36d1b8e5267e2aa44d9d9cc158f5",
+  "test_sha256": "81daefb09ffaf94e981f6f67b37d563ee88d265bafed560892853ea17c0b4701"
+}

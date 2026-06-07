@@ -8,6 +8,19 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import * as ort from "onnxruntime-node";
+import { standardNormalCDF } from "./erf.js";
+
+// Single-threaded, sequential CPU session so percentiles are a deterministic
+// function of the input. Multi-threaded ONNX Runtime sums partial results in a
+// host-dependent order, which can perturb raw scores enough to flip a percentile
+// that rounds to one decimal place. Inference here is batch-1, so single-threaded
+// has no real cost.
+const SESSION_OPTIONS: ort.InferenceSession.SessionOptions = {
+  intraOpNumThreads: 1,
+  interOpNumThreads: 1,
+  executionMode: "sequential",
+  executionProviders: ["cpu"],
+};
 
 const DOMAINS = ["ext", "agr", "csn", "est", "opn"] as const;
 const QUANTILES = ["q05", "q50", "q95"] as const;
@@ -37,26 +50,17 @@ interface ModelConfig {
 }
 
 /**
- * Abramowitz & Stegun (1964) approximation of the standard normal CDF.
- * Same implementation as packages/web/lib/utils.ts.
+ * Select the calibration regime by answered-item count: 50+ answered →
+ * `full_50`, otherwise `sparse_20_balanced`. NaN entries are unanswered and are
+ * not counted. Exported so the K=49/K=50 boundary can be locked by a test; the
+ * three runtimes must agree on this dispatch.
  */
-function standardNormalCDF(z: number): number {
-  if (!Number.isFinite(z)) return Number.NaN;
-
-  const absZ = Math.abs(z);
-  const t = 1 / (1 + 0.2316419 * absZ);
-  const d = Math.exp(-0.5 * absZ * absZ) / Math.sqrt(2 * Math.PI);
-
-  const poly =
-    t *
-    (0.31938153 +
-      t *
-        (-0.356563782 +
-          t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
-
-  const cnd = 1 - d * poly;
-  const p = z >= 0 ? cnd : 1 - cnd;
-  return Math.min(1, Math.max(0, p));
+export function calibrationRegime(responses: Float32Array): string {
+  let nAnswered = 0;
+  for (const v of responses) {
+    if (!Number.isNaN(v)) nAnswered++;
+  }
+  return nAnswered >= 50 ? "full_50" : "sparse_20_balanced";
 }
 
 export class IPIPBFFMPredictor {
@@ -88,7 +92,8 @@ export class IPIPBFFMPredictor {
 
     const predictor = new IPIPBFFMPredictor(config);
     predictor.session = await ort.InferenceSession.create(
-      join(dir, config.model_file)
+      join(dir, config.model_file),
+      SESSION_OPTIONS
     );
 
     return predictor;
@@ -136,14 +141,6 @@ export class IPIPBFFMPredictor {
     return this.predictArray(arr);
   }
 
-  private calibrationRegime(responses: Float32Array): string {
-    let nAnswered = 0;
-    for (const v of responses) {
-      if (!Number.isNaN(v)) nAnswered++;
-    }
-    return nAnswered >= 50 ? "full_50" : "sparse_20_balanced";
-  }
-
   /**
    * Predict from a raw Float32Array of length 50.
    * NaN for unanswered items.
@@ -161,7 +158,7 @@ export class IPIPBFFMPredictor {
     const tensor = new ort.Tensor("float32", responses, [1, n]);
     const output = await this.session.run({ input: tensor });
 
-    const regime = this.calibrationRegime(responses);
+    const regime = calibrationRegime(responses);
     const regimeCal = this.config.calibration?.[regime] ?? {};
 
     const results: Partial<PredictionResult> = {};

@@ -1,7 +1,7 @@
-PYTHON := python3
 VENV := .venv
-PIP := $(VENV)/bin/pip
-PY := $(VENV)/bin/python
+# All Python execution goes through uv (never a bare `python`); `uv run` uses
+# the project's .venv, synced from pyproject.toml + uv.lock by `uv sync`.
+PY := uv run python
 
 PARAMS ?=
 _PARAMS_FLAG := $(if $(PARAMS),--params $(PARAMS),)
@@ -19,69 +19,80 @@ RESEARCH_EVAL_PARALLEL ?= 4
 _RESEARCH_EVAL_PARALLEL_FLAG := $(if $(RESEARCH_EVAL_PARALLEL),-j$(RESEARCH_EVAL_PARALLEL),)
 GPU ?=
 _GPU_FLAG := $(if $(GPU),--gpu,)
-# train-1 runs alone before train-2/3/4, so give it all cores (N_JOBS × TRAIN_PARALLEL)
+# NO_GATE=1 -> stage 07 records the quality-gate outcome but saves the bundle even
+# on a threshold miss (don't discard multi-day compute on a near-miss; inspect after).
+NO_GATE ?=
+_NO_GATE_FLAG := $(if $(filter 1,$(NO_GATE)),--no-gate,)
+# REFERENCE_ONLY=1 -> scope research-summary / notes / provenance-check to the
+# reference variant only, so a single-variant (reference-only) run can regenerate
+# research_summary.json + a single-variant NOTES.md and pass provenance-check.
+REFERENCE_ONLY ?=
+_REFERENCE_ONLY_FLAG := $(if $(filter 1,$(REFERENCE_ONLY)),--reference-only,)
+# STRICT_HEAD=1 -> verify-release enforces git-freshness (bundle commit must be HEAD,
+# or an ancestor of HEAD with no pipeline/lib/configs drift) instead of warning.
+STRICT_HEAD ?=
+_STRICT_HEAD_FLAG := $(if $(filter 1,$(STRICT_HEAD)),--strict-head,)
+# train-1 runs alone before train-2/3, so give it all cores (N_JOBS × TRAIN_PARALLEL)
 _TRAIN1_NJOBS = $(if $(and $(TRAIN_PARALLEL),$(N_JOBS)),$(shell echo $$(( $(N_JOBS) * $(TRAIN_PARALLEL) ))),$(N_JOBS))
 MODEL_DIR ?= models/reference
 MODEL_DIR_NORM := $(patsubst %/,%,$(MODEL_DIR))
 MODEL_NAME := $(notdir $(MODEL_DIR_NORM))
 DATA_ROOT ?= data/processed
-DATA_DIR_DEFAULT ?= $(DATA_ROOT)/ext_est
-DATA_DIR_STRATIFIED ?= $(DATA_ROOT)/ext_est_opn
-DATA_DIR ?=
+DATA_DIR ?= $(DATA_ROOT)/canonical_v1
 ARTIFACTS_DIR ?= artifacts
 SKIP_PROVENANCE ?=
 FORCE ?=
 RESET ?=
+# HF_BRANCH=<name> -> upload-hf / upload-hf-reference push to that HuggingFace
+# branch (created if absent) instead of the default branch (main). Lets a release
+# be staged on e.g. `next` for validation before promoting it to main.
+HF_BRANCH ?=
 _UPLOAD_HF_DEPS := $(if $(SKIP_PROVENANCE),,provenance-check)
 _RESET_FLAG := $(if $(RESET),--reset,)
+_HF_REVISION_FLAG := $(if $(HF_BRANCH),--revision $(HF_BRANCH),)
 ARTIFACTS_VARIANTS_DIR ?= $(ARTIFACTS_DIR)/variants
 EVAL_DIR = $(ARTIFACTS_VARIANTS_DIR)/$(MODEL_NAME)
 RESEARCH_SUMMARY_PATH ?= $(ARTIFACTS_DIR)/research_summary.json
+# Markdown files with GENERATED fences, used by the check-docs git-diff guard.
+# Single-sourced from the generator's MARKDOWN_TARGETS via its `list-targets` mode
+# so the two can never drift (a hand-maintained literal would silently un-guard a
+# file if a 6th fence were added on the Python side only). Override-able for tests.
+MARKDOWN_DOC_TARGETS ?= $(shell $(PY) scripts/generate_doc_data.py list-targets)
 LOGS_DIR ?= logs
 
-TRAIN_DATA_DIR ?=
-TRAIN_DATA_DIR_STRATIFIED ?=
+# --- Smoke run (tiny sampled end-to-end; isolated tree, never clobbers real artifacts) ---
+SMOKE_SAMPLE ?= 8000
+SMOKE_DATA_DIR := $(DATA_ROOT)/smoke_v1
+SMOKE_NORMS := $(ARTIFACTS_DIR)/smoke_norms.json
+SMOKE_MODEL_DIR := models/smoke
+SMOKE_EVAL_DIR := $(ARTIFACTS_VARIANTS_DIR)/smoke
+SMOKE_OUTPUT_DIR := output/smoke
 
-ifeq ($(strip $(DATA_DIR)),)
-ifeq ($(MODEL_NAME),ablation_stratified)
-DATA_DIR := $(DATA_DIR_STRATIFIED)
-else
-DATA_DIR := $(DATA_DIR_DEFAULT)
-endif
-endif
-
-ifeq ($(strip $(TRAIN_DATA_DIR)),)
-TRAIN_DATA_DIR := $(DATA_DIR)
-endif
-
-ifeq ($(strip $(TRAIN_DATA_DIR_STRATIFIED)),)
-ifneq ($(strip $(TRAIN_DATA_DIR)),)
-ifneq ($(TRAIN_DATA_DIR),$(DATA_DIR_DEFAULT))
-TRAIN_DATA_DIR_STRATIFIED := $(TRAIN_DATA_DIR)
-else
-TRAIN_DATA_DIR_STRATIFIED := $(DATA_DIR_STRATIFIED)
-endif
-else
-TRAIN_DATA_DIR_STRATIFIED := $(DATA_DIR_STRATIFIED)
-endif
-endif
+TRAIN_DATA_DIR ?= $(DATA_DIR)
 
 TRAIN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 TRAIN_RUN := $(firstword $(TRAIN_ARGS))
 TRAIN_EXTRA_ARGS := $(wordlist 2,$(words $(TRAIN_ARGS)),$(TRAIN_ARGS))
-VALID_TRAIN_RUNS := 1 2 3 4
-RESEARCH_EVAL_TARGETS := research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-eval-ablation-stratified
+VALID_TRAIN_RUNS := 1 2 3
+RESEARCH_EVAL_TARGETS := research-eval-reference research-eval-ablation-none research-eval-ablation-focused
 _CALLER_PARALLEL_MAKEFLAGS = $(filter -j% -j --jobserver-auth=% --jobserver-fds=%,$(MAKEFLAGS))
 
-.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full prepare prepare-default prepare-stratified correlations correlations-default correlations-stratified tune train train-1 train-2 train-3 train-4 check-model-data-pairing validate baselines simulate export export-all export-repo-readme export-reference export-ablation-none export-ablation-focused export-ablation-stratified figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-eval-ablation-stratified research-summary research-summary-strict notes upload-hf upload-hf-reference test test-lib test-inference test-web archive clean restore web-setup web-dev web-build deploy-web
+.PHONY: all setup setup-python setup-typescript setup-web download load norms norms-check provenance-check provenance-check-full verify-release pull-reference prepare correlations tune train train-1 train-2 train-3 validate baselines simulate export export-all export-repo-readme export-readme export-reference export-ablation-none export-ablation-focused figures research-eval research-eval-reference research-eval-ablation-none research-eval-ablation-focused research-summary research-summary-strict notes gen-docs check-docs refresh-docs upload-hf upload-hf-reference lint format typecheck ci test test-lib test-inference test-web fixtures smoke smoke-clean archive clean restore web-setup web-dev web-build deploy-web
 
-all: download load norms norms-check prepare correlations tune train research-eval export-all notes figures
+# Full pipeline, delegated to scripts/run-pipeline.sh -- the single source of
+# truth for the stage sequence, so `make all` and the script cannot drift (the
+# bug that once dropped gen-docs from this recipe). The script runs each stage as
+# a sub-make in order (parallelism stays inside train / research-eval) and adds
+# per-stage logging/timing, completed-stage checkpoints, and --resume. For a tuned
+# or partial run (thread counts, --reference-only, --start-stage, --resume), call
+# the script directly with its env vars/flags; plain `make all` is the full run.
+all:
+	bash scripts/run-pipeline.sh
 
 setup: setup-python setup-typescript setup-web
 
 setup-python:
-	$(PYTHON) -m venv $(VENV)
-	$(PIP) install -r requirements.txt
+	uv sync
 
 setup-typescript:
 	cd typescript && npm ci
@@ -103,108 +114,110 @@ norms-check:
 
 provenance-check:
 	$(MAKE) norms-check
-	$(PY) scripts/check_provenance.py --strict
+	$(PY) scripts/check_provenance.py --strict $(_REFERENCE_ONLY_FLAG)
 
 provenance-check-full:
 	$(MAKE) norms-check
-	$(PY) scripts/check_provenance.py --strict --full
+	$(PY) scripts/check_provenance.py --strict --full $(_REFERENCE_ONLY_FLAG)
 
-prepare: prepare-default prepare-stratified
+# Clone-side release verification: runs ONLY the provenance checker (NO norms-check,
+# so no SQLite DB / no retrain needed on a fresh clone). Auto-detects reference-only
+# from the published summary. STRICT_HEAD=1 enforces git-freshness.
+#
+# Reconciling a WARN without retraining (the bundle legitimately predates HEAD when
+# release/refresh commits sit on top of the generation commit):
+#   - model card (README only):                  make export-readme MODEL_DIR=models/reference
+#   - provenance.json:                           make export-reference  (full export re-runs
+#                                                build_provenance + rewrites provenance.json;
+#                                                export-readme writes ONLY README.md)
+#   - item_info lock (cosmetic re-stamp WARN):   restore data/processed/<variant>/item_info.json
+#                                                to the locked training-time bytes (the lock SHA
+#                                                is written by stage 07 into training_report.json;
+#                                                export-readme does NOT re-stamp it)
+#   - notes / research_summary:                  make notes
+#   - figures:                                   make figures
+# Only a FULL pipeline run (`make all`) changes model.onnx. See the check_provenance.py
+# module docstring for the per-WARN reconcile mapping.
+verify-release:
+	$(PY) scripts/check_provenance.py --strict $(_STRICT_HEAD_FLAG) $(_REFERENCE_ONLY_FLAG)
 
-prepare-default:
-	$(PY) pipeline/04_prepare_data.py --stratification ext-est --output-dir $(DATA_DIR_DEFAULT)
+# Fetch the published model.onnx from HF into output/reference/ (sha256-verified,
+# fail-closed) so a fresh clone can verify the model bytes too.
+pull-reference:
+	$(PY) scripts/pull_reference.py
 
-prepare-stratified:
-	$(PY) pipeline/04_prepare_data.py --stratification ext-est-opn --output-dir $(DATA_DIR_STRATIFIED)
+prepare:
+	$(PY) pipeline/04_prepare_data.py --output-dir $(DATA_DIR)
 
-correlations: correlations-default correlations-stratified
-
-correlations-default:
-	$(PY) pipeline/05_compute_correlations.py --data-dir $(DATA_DIR_DEFAULT)
-
-correlations-stratified:
-	$(PY) pipeline/05_compute_correlations.py --data-dir $(DATA_DIR_STRATIFIED)
+correlations:
+	$(PY) pipeline/05_compute_correlations.py --data-dir $(DATA_DIR)
 
 tune:
-	$(PY) pipeline/06_tune.py --config configs/reference.yaml --data-dir $(DATA_DIR_DEFAULT) --artifacts-dir $(ARTIFACTS_DIR) $(_N_JOBS_FLAG) $(_PARALLEL_TRIALS_FLAG) $(_GPU_FLAG)
+	$(PY) pipeline/06_tune.py --config configs/reference.yaml --data-dir $(DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_N_JOBS_FLAG) $(_PARALLEL_TRIALS_FLAG) $(_GPU_FLAG)
 
 train:
 ifneq ($(strip $(TRAIN_EXTRA_ARGS)),)
-	@echo "Too many train run arguments: $(TRAIN_ARGS). Use: make train [1|2|3|4]"
+	@echo "Too many train run arguments: $(TRAIN_ARGS). Use: make train [1|2|3]"
 	@exit 2
 else ifeq ($(TRAIN_RUN),)
 	@$(MAKE) train-1 PARAMS="$(PARAMS)" N_JOBS="$(_TRAIN1_NJOBS)"
-	@$(MAKE) $(_TRAIN_PARALLEL_FLAG) train-2 train-3 train-4 PARAMS="$(PARAMS)" N_JOBS="$(N_JOBS)"
+	@$(MAKE) $(_TRAIN_PARALLEL_FLAG) train-2 train-3 PARAMS="$(PARAMS)" N_JOBS="$(N_JOBS)"
 else ifeq ($(filter $(TRAIN_RUN),$(VALID_TRAIN_RUNS)),$(TRAIN_RUN))
 	@$(MAKE) train-$(TRAIN_RUN) PARAMS="$(PARAMS)" N_JOBS="$(N_JOBS)"
 else
-	@echo "Invalid train run index: $(TRAIN_RUN). Use: make train [1|2|3|4]"
+	@echo "Invalid train run index: $(TRAIN_RUN). Use: make train [1|2|3]"
 	@exit 2
 endif
 
 train-1:
 	@mkdir -p $(LOGS_DIR)
 	@$(PY) scripts/run_labeled.py --label "train reference" --log-file "$(LOGS_DIR)/train-reference.log" -- \
-		$(PY) pipeline/07_train.py --config configs/reference.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG)
+		$(PY) pipeline/07_train.py --config configs/reference.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG) $(_NO_GATE_FLAG)
 
 train-2:
 	@mkdir -p $(LOGS_DIR)
 	@$(PY) scripts/run_labeled.py --label "train ablation_none" --log-file "$(LOGS_DIR)/train-ablation-none.log" -- \
-		$(PY) pipeline/07_train.py --config configs/ablation_none.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG)
+		$(PY) pipeline/07_train.py --config configs/ablation_none.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG) $(_NO_GATE_FLAG)
 
 train-3:
 	@mkdir -p $(LOGS_DIR)
 	@$(PY) scripts/run_labeled.py --label "train ablation_focused" --log-file "$(LOGS_DIR)/train-ablation-focused.log" -- \
-		$(PY) pipeline/07_train.py --config configs/ablation_focused.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG)
+		$(PY) pipeline/07_train.py --config configs/ablation_focused.yaml --data-dir $(TRAIN_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG) $(_NO_GATE_FLAG)
 
-train-4:
-	@mkdir -p $(LOGS_DIR)
-	@$(PY) scripts/run_labeled.py --label "train ablation_stratified" --log-file "$(LOGS_DIR)/train-ablation-stratified.log" -- \
-		$(PY) pipeline/07_train.py --config configs/ablation_stratified.yaml --data-dir $(TRAIN_DATA_DIR_STRATIFIED) --artifacts-dir $(ARTIFACTS_DIR) $(_PARAMS_FLAG) $(_N_JOBS_FLAG) $(_PARALLEL_DOMAINS_FLAG) $(_CV_PARALLEL_FOLDS_FLAG) $(_GPU_FLAG)
-
-check-model-data-pairing:
-	@expected=""; \
-	case "$(MODEL_NAME)" in \
-		reference|ablation_none|ablation_focused) expected="$(DATA_DIR_DEFAULT)" ;; \
-		ablation_stratified) expected="$(DATA_DIR_STRATIFIED)" ;; \
-	esac; \
-	if [ -n "$$expected" ] && [ "$(DATA_DIR)" != "$$expected" ]; then \
-		echo "Model/data mismatch: MODEL_DIR=$(MODEL_DIR_NORM) expects DATA_DIR=$$expected but got DATA_DIR=$(DATA_DIR)"; \
-		echo "Override MODEL_DIR or DATA_DIR to a matching regime."; \
-		exit 2; \
-	fi
-
-validate: check-model-data-pairing
+validate:
 	@mkdir -p $(EVAL_DIR)
 	$(PY) pipeline/08_validate.py --model-dir $(MODEL_DIR_NORM) --data-dir $(DATA_DIR) --artifacts-dir $(EVAL_DIR)
 
-baselines: check-model-data-pairing
+baselines:
 	@mkdir -p $(EVAL_DIR)
 	$(PY) pipeline/09_baselines.py --model-dir $(MODEL_DIR_NORM) --data-dir $(DATA_DIR) --artifacts-dir $(EVAL_DIR) --bootstrap-n 1000
 
-simulate: check-model-data-pairing
+simulate:
 	@mkdir -p $(EVAL_DIR)
 	$(PY) pipeline/10_simulate.py --model-dir $(MODEL_DIR_NORM) --data-dir $(DATA_DIR) --artifacts-dir $(EVAL_DIR) --n-sample 5000
 
-export: check-model-data-pairing
+export:
 	$(PY) pipeline/11_export_onnx.py --model-dir $(MODEL_DIR_NORM) --data-dir $(DATA_DIR) --artifacts-dir $(EVAL_DIR) --output-dir output/$(MODEL_NAME)
 
-export-all: export-reference export-ablation-none export-ablation-focused export-ablation-stratified export-repo-readme
+export-all: export-reference export-ablation-none export-ablation-focused export-repo-readme
 
 export-repo-readme:
 	$(PY) pipeline/11_export_onnx.py --repo-readme --output-dir output
 
+# Regenerate only the per-variant model card (README.md) from the existing
+# config.json -- no ONNX re-export. Use after editing the card generator in
+# 11_export_onnx.py (e.g. prose/provenance fixes) to avoid rewriting model.onnx.
+export-readme:
+	$(PY) pipeline/11_export_onnx.py --readme-only --model-dir $(MODEL_DIR_NORM) --artifacts-dir $(EVAL_DIR) --output-dir output/$(MODEL_NAME)
+
 export-reference:
-	$(MAKE) export MODEL_DIR=models/reference DATA_DIR=$(DATA_DIR_DEFAULT)
+	$(MAKE) export MODEL_DIR=models/reference DATA_DIR=$(DATA_DIR)
 
 export-ablation-none:
-	$(MAKE) export MODEL_DIR=models/ablation_none DATA_DIR=$(DATA_DIR_DEFAULT)
+	$(MAKE) export MODEL_DIR=models/ablation_none DATA_DIR=$(DATA_DIR)
 
 export-ablation-focused:
-	$(MAKE) export MODEL_DIR=models/ablation_focused DATA_DIR=$(DATA_DIR_DEFAULT)
-
-export-ablation-stratified:
-	$(MAKE) export MODEL_DIR=models/ablation_stratified DATA_DIR=$(DATA_DIR_STRATIFIED)
+	$(MAKE) export MODEL_DIR=models/ablation_focused DATA_DIR=$(DATA_DIR)
 
 figures:
 	$(PY) pipeline/12_generate_figures.py --artifacts-dir $(EVAL_DIR)
@@ -219,38 +232,110 @@ research-eval:
 research-eval-reference:
 	@mkdir -p $(LOGS_DIR)
 	@$(PY) scripts/run_labeled.py --label "eval reference" --log-file "$(LOGS_DIR)/eval-reference.log" -- \
-		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/reference DATA_DIR=$(DATA_DIR_DEFAULT)
+		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/reference DATA_DIR=$(DATA_DIR)
 
 research-eval-ablation-none:
 	@mkdir -p $(LOGS_DIR)
 	@$(PY) scripts/run_labeled.py --label "eval ablation_none" --log-file "$(LOGS_DIR)/eval-ablation-none.log" -- \
-		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/ablation_none DATA_DIR=$(DATA_DIR_DEFAULT)
+		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/ablation_none DATA_DIR=$(DATA_DIR)
 
 research-eval-ablation-focused:
 	@mkdir -p $(LOGS_DIR)
 	@$(PY) scripts/run_labeled.py --label "eval ablation_focused" --log-file "$(LOGS_DIR)/eval-ablation-focused.log" -- \
-		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/ablation_focused DATA_DIR=$(DATA_DIR_DEFAULT)
-
-research-eval-ablation-stratified:
-	@mkdir -p $(LOGS_DIR)
-	@$(PY) scripts/run_labeled.py --label "eval ablation_stratified" --log-file "$(LOGS_DIR)/eval-ablation-stratified.log" -- \
-		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/ablation_stratified DATA_DIR=$(DATA_DIR_STRATIFIED)
+		"$${MAKE:-make}" validate baselines simulate MODEL_DIR=models/ablation_focused DATA_DIR=$(DATA_DIR)
 
 research-summary:
-	$(PY) scripts/build_research_summary.py --output $(RESEARCH_SUMMARY_PATH) --artifacts-variants-dir $(ARTIFACTS_VARIANTS_DIR)
+	$(PY) scripts/build_research_summary.py --output $(RESEARCH_SUMMARY_PATH) --artifacts-variants-dir $(ARTIFACTS_VARIANTS_DIR) $(_REFERENCE_ONLY_FLAG)
 
 research-summary-strict:
-	$(PY) scripts/build_research_summary.py --strict --output $(RESEARCH_SUMMARY_PATH) --artifacts-variants-dir $(ARTIFACTS_VARIANTS_DIR)
+	$(PY) scripts/build_research_summary.py --strict --output $(RESEARCH_SUMMARY_PATH) --artifacts-variants-dir $(ARTIFACTS_VARIANTS_DIR) $(_REFERENCE_ONLY_FLAG)
 
 notes:
-	$(MAKE) research-summary-strict
-	$(PY) scripts/generate_notes_data.py
+	$(MAKE) research-summary-strict REFERENCE_ONLY=$(REFERENCE_ONLY)
+	$(PY) scripts/generate_notes_data.py $(_REFERENCE_ONLY_FLAG)
+
+# Regenerate the doc-data surfaces (reference variant) from the source-of-truth
+# artifacts: web/.../repo-facts.generated.ts (MECHANISM 1) + GENERATED markdown
+# fences (MECHANISM 2). research-summary-strict refreshes the single source of
+# truth first so the generated outputs can never lag behind the artifacts.
+gen-docs:
+	$(MAKE) research-summary-strict REFERENCE_ONLY=$(REFERENCE_ONLY)
+	$(PY) scripts/generate_doc_data.py all
+
+# Fail if the committed generated docs are stale relative to the artifacts.
+# All gates run against committed/force-tracked artifacts only — no retrain, no
+# rebuild of research_summary.json — so this is cheap and safe in CI:
+#   1. Non-destructive `--check` gates: re-derive each generated surface from the
+#      tracked artifacts and report STALE *without writing*. Covers
+#      repo-facts.generated.ts + the GENERATED markdown fences (generate_doc_data)
+#      and notes/NOTES.md (generate_notes_data). This catches hand-edits to a
+#      generated surface even when no artifact changed — the write-then-diff gate
+#      alone would silently self-heal such edits by overwriting them.
+#   2. Model-card tripwire: the reference card + repo readme are generated by
+#      pipeline/11 from per-variant artifacts that are GITIGNORED, so they cannot
+#      be regenerated-and-diffed here. tests/test_model_card_consistency.py instead
+#      asserts their committed headline numbers still match research_summary.json
+#      (the tracked SoT), catching a retrain that skipped `make refresh-docs`.
+#   3. git-diff gate: diffs working tree vs HEAD for the regenerable surfaces
+#      (repo-facts.generated.ts + GENERATED fences + notes/NOTES.md) so a
+#      staged-but-stale output is caught locally; in CI the index equals HEAD.
+# MARKDOWN_DOC_TARGETS MUST list every injected .md.
+check-docs:
+	@$(PY) scripts/generate_doc_data.py all --check \
+		|| { echo "ERROR: generated docs are stale or hand-edited (do not match the artifacts). Run 'make gen-docs' and commit the result." >&2; exit 1; }
+	@$(PY) scripts/generate_notes_data.py --check \
+		|| { echo "ERROR: notes/NOTES.md is stale or hand-edited (does not match the artifacts). Run 'make notes' and commit the result." >&2; exit 1; }
+	@$(PY) -m pytest tests/test_model_card_consistency.py -q \
+		|| { echo "ERROR: committed model cards (output/reference/README.md, output/README.md) disagree with the tracked artifacts. Run 'make refresh-docs' and commit the result." >&2; exit 1; }
+	@git diff --exit-code HEAD -- web/src/client/learn/content/repo-facts.generated.ts $(MARKDOWN_DOC_TARGETS) notes/NOTES.md \
+		|| { echo "ERROR: generated docs are stale (or the regenerated refactor is uncommitted). Run 'make gen-docs' and commit the result." >&2; exit 1; }
+
+# One-shot regeneration of EVERY model-derived output from the CURRENT artifacts:
+# per-variant model cards (re-rendered via --readme-only, NO ONNX re-export),
+# the repo readme, NOTES.md, the README/docs GENERATED fences + web repoFacts,
+# and figures. NO retrain, NO re-eval (08/09/10), NO data prep. Run this after a
+# pipeline re-run, after pulling fresh artifacts, or after editing a generator, to
+# auto-update all model values everywhere. A full `make all` already performs the
+# equivalent regeneration at the end, so this is for partial/standalone refreshes.
+# Use REFERENCE_ONLY=1 when only the reference variant has been trained (the
+# ablation cards require their config.json to exist).
+#   make refresh-docs                   # reference + both ablations
+#   make refresh-docs REFERENCE_ONLY=1  # reference only
+# Then `git diff` and commit; `make check-docs` (CI) fails if you forget.
+# NOTE: figures regenerate from the artifacts; matplotlib embeds non-deterministic
+# PDF metadata, so figures/manifest.json PDF SHAs can change even when no data did.
+ifeq ($(strip $(REFERENCE_ONLY)),1)
+refresh-docs:
+	$(MAKE) export-readme MODEL_DIR=models/reference
+	$(MAKE) export-repo-readme
+	$(MAKE) notes REFERENCE_ONLY=1
+	$(MAKE) gen-docs REFERENCE_ONLY=1
+	$(MAKE) figures
+else
+refresh-docs:
+	$(MAKE) export-readme MODEL_DIR=models/reference
+	$(MAKE) export-readme MODEL_DIR=models/ablation_none
+	$(MAKE) export-readme MODEL_DIR=models/ablation_focused
+	$(MAKE) export-repo-readme
+	$(MAKE) notes
+	$(MAKE) gen-docs
+	$(MAKE) figures
+endif
 
 upload-hf: $(_UPLOAD_HF_DEPS)
-	$(PY) pipeline/13_upload_hf.py $(_RESET_FLAG)
+	$(PY) pipeline/13_upload_hf.py $(_RESET_FLAG) $(_HF_REVISION_FLAG)
 
 upload-hf-reference: $(_UPLOAD_HF_DEPS)
-	$(PY) pipeline/13_upload_hf.py --variant reference $(_RESET_FLAG)
+	$(PY) pipeline/13_upload_hf.py --variant reference $(_RESET_FLAG) $(_HF_REVISION_FLAG)
+
+lint:
+	uv run ruff check .
+
+format:
+	uv run ruff format pipeline lib scripts python
+
+typecheck:
+	uv run basedpyright --outputjson | $(PY) scripts/typecheck_gate.py
 
 test: test-lib test-inference test-web
 
@@ -258,11 +343,59 @@ test-lib:
 	$(PY) -m pytest tests/ -v --tb=short
 
 test-inference:
-	cd python && ../$(PY) -m pytest -v
+	$(PY) -m pytest python/ -v
 	cd typescript && npx vitest run
 
 test-web:
 	cd web && npx vitest run
+
+# Run every check that CI (.github/workflows/ci.yml) runs, in one shot, fail-fast
+# (make aborts on the first failing step). Assumes deps are installed (`make setup`);
+# CI installs them in each job, so `make ci` runs the CHECKS, not the installs. Mirrors
+# the lint, typecheck, check-docs, provenance, Python (incl. the 3.11 floor job), and
+# TypeScript/web jobs, including the REQUIRE_ARTIFACTS / MODEL_DIR env CI sets.
+ci:
+	$(MAKE) lint
+	$(MAKE) typecheck
+	$(MAKE) check-docs
+	$(MAKE) verify-release
+	REQUIRE_ARTIFACTS=1 $(PY) -m pytest tests/ python/ --tb=short
+	REQUIRE_ARTIFACTS=1 uv run --python 3.11 python -m pytest tests/ python/ --tb=short
+	cd typescript && npm run build && REQUIRE_ARTIFACTS=1 npx vitest run
+	cd web && npm run typecheck && npm run build && \
+		MODEL_DIR=$(CURDIR)/tests/fixtures/golden REQUIRE_ARTIFACTS=1 npx vitest run
+
+# Regenerate the committed test-fixture bundle (tests/fixtures/golden/): a tiny
+# deterministic ONNX model + config + golden vectors used by the tri-runtime
+# parity tests. Run after an intentional xgboost/onnx/onnxmltools bump.
+fixtures:
+	$(PY) scripts/build_test_fixture.py
+
+# Tiny sampled end-to-end run that exercises stages 03-12 + all the A4 analysis
+# code (reliability, raw_crossing_rate, paired/subset bootstraps, SEM sim, export,
+# figures) locally in minutes, to de-risk the real run. Everything is namespaced
+# under *smoke* / smoke_v1 so it NEVER touches the canonical artifacts. Tune runs
+# (tiny trials) to exercise stage 06; train uses tiny --params (cli_params_override,
+# so the strict-data-hash lock is bypassed). Requires the sqlite DB (`make load`).
+smoke:
+	$(PY) pipeline/03_compute_norms.py --sample $(SMOKE_SAMPLE) --output $(SMOKE_NORMS)
+	$(PY) pipeline/04_prepare_data.py --sample $(SMOKE_SAMPLE) --norms $(SMOKE_NORMS) --output-dir $(SMOKE_DATA_DIR)
+	$(PY) pipeline/05_compute_correlations.py --data-dir $(SMOKE_DATA_DIR)
+	$(PY) pipeline/06_tune.py --config configs/smoke.yaml --data-dir $(SMOKE_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR) --trials 3 --output $(ARTIFACTS_DIR)/smoke_tuned_params.json
+	$(PY) pipeline/07_train.py --config configs/smoke.yaml --params configs/smoke_params.json --data-dir $(SMOKE_DATA_DIR) --artifacts-dir $(ARTIFACTS_DIR)
+	@mkdir -p $(SMOKE_EVAL_DIR)
+	$(PY) pipeline/08_validate.py --model-dir $(SMOKE_MODEL_DIR) --data-dir $(SMOKE_DATA_DIR) --artifacts-dir $(SMOKE_EVAL_DIR) --bootstrap-n 50
+	$(PY) pipeline/09_baselines.py --model-dir $(SMOKE_MODEL_DIR) --data-dir $(SMOKE_DATA_DIR) --artifacts-dir $(SMOKE_EVAL_DIR) --bootstrap-n 50 --random-trials 2
+	$(PY) pipeline/10_simulate.py --model-dir $(SMOKE_MODEL_DIR) --data-dir $(SMOKE_DATA_DIR) --artifacts-dir $(SMOKE_EVAL_DIR) --n-sample 500
+	$(PY) pipeline/11_export_onnx.py --model-dir $(SMOKE_MODEL_DIR) --data-dir $(SMOKE_DATA_DIR) --artifacts-dir $(SMOKE_EVAL_DIR) --output-dir $(SMOKE_OUTPUT_DIR)
+	$(PY) pipeline/12_generate_figures.py --artifacts-dir $(SMOKE_EVAL_DIR) --output-dir figures/smoke
+	@echo "make smoke OK — stages 03-12 + A4 analysis ran on a $(SMOKE_SAMPLE)-respondent sample"
+
+# $(ARTIFACTS_DIR)/smoke_*.json mirrors the .gitignore pattern so every smoke
+# sidecar (smoke_norms.json + .meta.json, smoke_tuned_params.json + .original.json)
+# is removed, not just the two primary files.
+smoke-clean:
+	rm -rf $(SMOKE_DATA_DIR) $(SMOKE_MODEL_DIR) $(SMOKE_EVAL_DIR) $(SMOKE_OUTPUT_DIR) figures/smoke $(ARTIFACTS_DIR)/smoke_*.json
 
 archive:
 	git archive --format=zip HEAD -o data/bffm-xgb-src.zip -- . ':!output/*.onnx'
@@ -489,7 +622,7 @@ remote-pull-reference:
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/raw/ ./data/raw/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/processed/ipip_bffm.db ./data/processed/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/processed/load_metadata.json ./data/processed/ 2>/dev/null || true
-	$(RSYNC_DELETE) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/processed/ext_est/ ./data/processed/ext_est/ 2>/dev/null || true
+	$(RSYNC_DELETE) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/data/processed/canonical_v1/ ./data/processed/canonical_v1/ 2>/dev/null || true
 	$(RSYNC_DELETE) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/models/reference/ ./models/reference/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/tuned_params.json ./artifacts/ 2>/dev/null || true
 	$(RSYNC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/artifacts/tuned_params.original.json ./artifacts/ 2>/dev/null || true
@@ -521,13 +654,13 @@ remote-tune:
 			"make tune N_JOBS=$(REMOTE_NJOBS) PARALLEL_TRIALS=$(REMOTE_PARALLEL_TRIALS) 2>&1; \
 			 echo; echo \">>> Done. Press Enter to close.\"; read"'
 
-REMOTE_TRAIN_PARALLEL ?= 3
+REMOTE_TRAIN_PARALLEL ?= 2
 REMOTE_TRAIN_NJOBS = $(shell echo $$(( $(REMOTE_NJOBS) / $(REMOTE_TRAIN_PARALLEL) )) )
 
 remote-train:
 	@echo "==> Running 'make train' on $(REMOTE_HOST)..."
-	@echo "    Config 1 first, then 2-4 in parallel. Domains train concurrently."
-	@echo "    train-1: $(REMOTE_NJOBS) cores (all), train-2/3/4: $(REMOTE_TRAIN_NJOBS) each ($(REMOTE_NJOBS)/$(REMOTE_TRAIN_PARALLEL)), $(REMOTE_PARALLEL_DOMAINS) parallel domains, $(REMOTE_CV_PARALLEL_FOLDS) parallel CV folds"
+	@echo "    Config 1 first, then 2-3 in parallel. Domains train concurrently."
+	@echo "    train-1: $(REMOTE_NJOBS) cores (all), train-2/3: $(REMOTE_TRAIN_NJOBS) each ($(REMOTE_NJOBS)/$(REMOTE_TRAIN_PARALLEL)), $(REMOTE_PARALLEL_DOMAINS) parallel domains, $(REMOTE_CV_PARALLEL_FOLDS) parallel CV folds"
 	@echo "    If disconnected, run: make remote-attach"
 	$(SSH) -t 'tmux kill-session -t pipeline 2>/dev/null; \
 		cd $(REMOTE_DIR) && \
@@ -614,7 +747,7 @@ remote-reference: remote-reference-preflight remote-push remote-setup
 	$(SSH) 'rm -f $(REMOTE_DIR)/.pipeline-exit-code && rm -rf $(REMOTE_DIR)/.pipeline-checkpoints && \
 		rm -rf $(REMOTE_DIR)/models/reference $(REMOTE_DIR)/artifacts/variants/reference $(REMOTE_DIR)/output/reference $(REMOTE_DIR)/figures && \
 		rm -f $(REMOTE_DIR)/output/README.md $(REMOTE_DIR)/artifacts/research_summary.json $(REMOTE_DIR)/notes/NOTES.md $(REMOTE_DIR)/$(LOGS_DIR)/train-reference.log $(REMOTE_DIR)/$(LOGS_DIR)/eval-reference.log && \
-		mkdir -p $(REMOTE_DIR)/models/reference $(REMOTE_DIR)/artifacts/variants/reference $(REMOTE_DIR)/output/reference $(REMOTE_DIR)/figures $(REMOTE_DIR)/$(LOGS_DIR) $(REMOTE_DIR)/data/processed/ext_est && \
+		mkdir -p $(REMOTE_DIR)/models/reference $(REMOTE_DIR)/artifacts/variants/reference $(REMOTE_DIR)/output/reference $(REMOTE_DIR)/figures $(REMOTE_DIR)/$(LOGS_DIR) $(REMOTE_DIR)/data/processed/canonical_v1 && \
 		: > $(REMOTE_DIR)/output/README.md && : > $(REMOTE_DIR)/$(LOGS_DIR)/train-reference.log && : > $(REMOTE_DIR)/$(LOGS_DIR)/eval-reference.log && \
 		tmux kill-session -t pipeline 2>/dev/null || true && \
 		tmux new-session -d -s pipeline \

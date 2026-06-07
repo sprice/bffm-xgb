@@ -15,9 +15,32 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import * as ort from "onnxruntime-node";
+import { standardNormalCDF } from "./erf.js";
 
-const DOMAINS = ["ext", "agr", "csn", "est", "opn"] as const;
-const QUANTILES = ["q05", "q50", "q95"] as const;
+// Single-threaded, sequential CPU session so the user-facing percentiles are a
+// deterministic function of the input. Multi-threaded ONNX Runtime sums partial
+// results in a host-dependent order, which can perturb raw scores enough to flip
+// a percentile that rounds to one decimal place. Inference here is batch-1, so
+// single-threaded is free.
+const SESSION_OPTIONS: ort.InferenceSession.SessionOptions = {
+  intraOpNumThreads: 1,
+  interOpNumThreads: 1,
+  executionMode: "sequential",
+  executionProviders: ["cpu"],
+};
+
+// Fixed model architecture. These are the canonical lib/constants.py DOMAINS
+// order and QUANTILE_NAME_LIST; the merged ONNX model's outputs are exactly
+// their cross-product (`${domain}_${q}`). They are intentionally inline (not
+// read from config.json) because they are structural invariants of the model
+// family, but predictor-config-parity.test.ts locks them against the deployed
+// config.json so a divergent model fails CI instead of mis-keying outputs.
+export const DOMAINS = ["ext", "agr", "csn", "est", "opn"] as const;
+export const QUANTILES = ["q05", "q50", "q95"] as const;
+
+// Answered-item count at/above which the full-50 calibration regime applies.
+// Must match a key in config.json `calibration` (locked by the parity test).
+export const FULL_REGIME_MIN_ANSWERED = 50;
 
 type Domain = (typeof DOMAINS)[number];
 type Quantile = (typeof QUANTILES)[number];
@@ -44,25 +67,17 @@ interface ModelConfig {
 }
 
 /**
- * Abramowitz & Stegun (1964) approximation of the standard normal CDF.
+ * Select the calibration regime by answered-item count: 50+ answered →
+ * `full_50`, otherwise `sparse_20_balanced`. NaN entries are unanswered and are
+ * not counted. Exported so the K=49/K=50 boundary can be locked by a test; the
+ * three runtimes must agree on this dispatch.
  */
-function standardNormalCDF(z: number): number {
-  if (!Number.isFinite(z)) return Number.NaN;
-
-  const absZ = Math.abs(z);
-  const t = 1 / (1 + 0.2316419 * absZ);
-  const d = Math.exp(-0.5 * absZ * absZ) / Math.sqrt(2 * Math.PI);
-
-  const poly =
-    t *
-    (0.31938153 +
-      t *
-        (-0.356563782 +
-          t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
-
-  const cnd = 1 - d * poly;
-  const p = z >= 0 ? cnd : 1 - cnd;
-  return Math.min(1, Math.max(0, p));
+export function calibrationRegime(responses: Float32Array): string {
+  let nAnswered = 0;
+  for (const v of responses) {
+    if (!Number.isNaN(v)) nAnswered++;
+  }
+  return nAnswered >= FULL_REGIME_MIN_ANSWERED ? "full_50" : "sparse_20_balanced";
 }
 
 export class IPIPBFFMPredictor {
@@ -87,7 +102,8 @@ export class IPIPBFFMPredictor {
 
     const predictor = new IPIPBFFMPredictor(config);
     predictor.session = await ort.InferenceSession.create(
-      join(modelDir, config.model_file)
+      join(modelDir, config.model_file),
+      SESSION_OPTIONS
     );
 
     return predictor;
@@ -129,14 +145,6 @@ export class IPIPBFFMPredictor {
     return this.predictArray(arr);
   }
 
-  private calibrationRegime(responses: Float32Array): string {
-    let nAnswered = 0;
-    for (const v of responses) {
-      if (!Number.isNaN(v)) nAnswered++;
-    }
-    return nAnswered >= 50 ? "full_50" : "sparse_20_balanced";
-  }
-
   async predictArray(responses: Float32Array): Promise<PredictionResult> {
     const n = this.config.input.feature_names.length;
     if (responses.length !== n) {
@@ -148,7 +156,7 @@ export class IPIPBFFMPredictor {
     const tensor = new ort.Tensor("float32", responses, [1, n]);
     const output = await this.session.run({ input: tensor });
 
-    const regime = this.calibrationRegime(responses);
+    const regime = calibrationRegime(responses);
     const regimeCal = this.config.calibration?.[regime] ?? {};
 
     const results: Partial<PredictionResult> = {};
@@ -275,11 +283,39 @@ async function resolveModelDir(): Promise<string> {
     return process.env.MODEL_DIR;
   }
 
-  // 2. Download from HuggingFace
+  // 2. Download from HuggingFace — fail closed: a pinned commit revision and
+  // both file checksums are MANDATORY, so the deployed app can never silently
+  // pull from the mutable `main` branch or serve an unverified model.
   const repoId = process.env.HF_REPO_ID;
   if (repoId) {
     const variant = process.env.HF_VARIANT || "reference";
-    const revision = process.env.HF_REVISION || "main";
+    const revision = process.env.HF_REVISION;
+    const configSha = process.env.HF_SHA256_CONFIG;
+    const modelSha = process.env.HF_SHA256_MODEL;
+
+    if (!revision || !configSha || !modelSha) {
+      const missing: string[] = [];
+      if (!revision) missing.push("HF_REVISION (pin a commit sha, not a branch)");
+      if (!configSha) missing.push("HF_SHA256_CONFIG");
+      if (!modelSha) missing.push("HF_SHA256_MODEL");
+      throw new Error(
+        `HF_REPO_ID is set but the integrity pins are missing: ${missing.join(", ")}. ` +
+          "Refusing to download an unpinned/unverified model. Set these in the " +
+          "deploy environment (see .env.example), or use MODEL_DIR for a local model."
+      );
+    }
+
+    // The two file checksums still pin the bytes we serve, so a branch name is
+    // not fatal — but it can silently drift to new commits between deploys.
+    // Warn (do not fail) unless HF_REVISION is a 40-hex commit sha.
+    if (!/^[0-9a-f]{40}$/.test(revision)) {
+      console.warn(
+        `WARNING: HF_REVISION="${revision}" is a branch/tag name, not a 40-hex commit sha. ` +
+          "The integrity pins still verify the downloaded bytes, but a mutable ref can " +
+          "drift between deploys. Pin a full commit sha for reproducibility."
+      );
+    }
+
     const safeRepoId = repoId.replace(/\//g, "--");
     const cacheDir = join(tmpdir(), "bffm-xgb-model", safeRepoId, revision, variant);
 
@@ -287,12 +323,9 @@ async function resolveModelDir(): Promise<string> {
     const modelPath = join(cacheDir, "model.onnx");
 
     if (existsSync(configPath) && existsSync(modelPath)) {
-      const configSha = process.env.HF_SHA256_CONFIG;
-      const modelSha = process.env.HF_SHA256_MODEL;
-      if (configSha || modelSha) {
-        if (configSha) verifySha256(configPath, configSha);
-        if (modelSha) verifySha256(modelPath, modelSha);
-      }
+      // Always re-verify the cached files against the pinned checksums.
+      verifySha256(configPath, configSha);
+      verifySha256(modelPath, modelSha);
       console.log(`Using cached model from ${cacheDir}`);
       return cacheDir;
     }
@@ -307,9 +340,6 @@ async function resolveModelDir(): Promise<string> {
       console.log(`Downloading model from HF: ${repoId} (root layout, revision: ${revision})`);
     }
     mkdirSync(cacheDir, { recursive: true });
-
-    const configSha = process.env.HF_SHA256_CONFIG || undefined;
-    const modelSha = process.env.HF_SHA256_MODEL || undefined;
 
     await downloadHfFile(repoId, revision, `${variantPrefix}config.json`, configPath, configSha);
     await downloadHfFile(repoId, revision, `${variantPrefix}model.onnx`, modelPath, modelSha);

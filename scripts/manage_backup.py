@@ -7,9 +7,8 @@ import argparse
 import json
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 BACKUP_ROOT = PACKAGE_ROOT / ".backup"
@@ -91,7 +90,7 @@ def _confirm_or_abort(*, force: bool) -> None:
 def _write_manifest(paths: list[Path]) -> None:
     payload = {
         "version": 1,
-        "created_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "created_at_utc": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "paths": [path.as_posix() for path in paths],
     }
     MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)

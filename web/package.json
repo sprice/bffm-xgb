@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "concurrently -n vite,api -c cyan,green \"vite\" \"tsx watch src/server/index.ts\"",
     "build": "vite build && tsc -p tsconfig.server.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.server.test.json --noEmit",
     "start": "node dist/server/index.js",
     "test": "vitest run"
   },
@@ -14,7 +15,7 @@
     "clsx": "2.1.1",
     "hono": "4.12.12",
     "lucide-react": "^1.8.0",
-    "onnxruntime-node": "1.24.3",
+    "onnxruntime-node": "1.24.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-router-dom": "7.13.1",

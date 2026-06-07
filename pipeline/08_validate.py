@@ -10,41 +10,38 @@ Computes per-domain and overall metrics with bootstrap 95% CIs.
 Optionally generates validation plots (scatter, residual, calibration).
 
 Usage:
-    python pipeline/08_validate.py --data-dir data/processed/ext_est
-    python pipeline/08_validate.py --data-dir data/processed/ext_est --model-dir models/reference --plots --bootstrap-n 2000
+    python pipeline/08_validate.py --data-dir data/processed/canonical_v1
+    python pipeline/08_validate.py --data-dir data/processed/canonical_v1 --model-dir models/reference --plots --bootstrap-n 2000
 """
 
-import sys
+import argparse
 import json
 import logging
+import sys
 import time
-import argparse
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-import joblib
 import numpy as np
 import pandas as pd
 from scipy import stats
 
-from lib.constants import (
-    DOMAINS,
-    DOMAIN_LABELS,
-    ITEM_COLUMNS,
-    ITEMS_PER_DOMAIN,
-    QUANTILES,
-    QUANTILE_NAMES,
-)
 from lib.bootstrap import respondent_bootstrap_multi_domain
-from lib.scoring import raw_score_to_percentile
-from lib.provenance import build_provenance, add_provenance_args, relative_to_root
+from lib.constants import (
+    DOMAIN_LABELS,
+    DOMAINS,
+    ITEM_COLUMNS,
+)
 from lib.item_info import load_item_info_for_model
+from lib.models import load_domain_models, missing_models
+from lib.provenance import add_provenance_args, build_provenance, relative_to_root
 from lib.provenance_checks import (
     verify_model_data_split_provenance as _verify_model_data_split_provenance,
 )
+from lib.scoring import raw_score_to_percentile
 from lib.sparsity import apply_adaptive_sparsity_balanced as apply_sparse_balanced
 
 logging.basicConfig(
@@ -60,30 +57,6 @@ DEFAULT_ARTIFACTS_DIR = Path("artifacts")
 # ============================================================================
 # Data and model loading
 # ============================================================================
-
-def _load_models(models_dir: Path) -> dict[str, dict[str, Any]]:
-    """Load trained domain models from .joblib files."""
-    domain_models: dict[str, dict[str, Any]] = {}
-
-    for domain in DOMAINS:
-        domain_models[domain] = {}
-        for q_name in ["q05", "q50", "q95"]:
-            model_path = models_dir / f"adaptive_{domain}_{q_name}.joblib"
-            if model_path.exists():
-                domain_models[domain][q_name] = joblib.load(model_path)
-
-    return domain_models
-
-
-def _check_models_complete(domain_models: dict[str, dict[str, Any]]) -> list[str]:
-    """Return list of missing model keys."""
-    missing: list[str] = []
-    for domain in DOMAINS:
-        for q_name in ["q05", "q50", "q95"]:
-            if q_name not in domain_models.get(domain, {}):
-                missing.append(f"{domain}_{q_name}")
-    return missing
-
 
 def _load_calibration_params(path: Path) -> dict[str, dict[str, float]]:
     """Load a calibration params file.
@@ -199,7 +172,7 @@ def _apply_adaptive_sparsity_balanced(
     min_items_per_domain: int = 4,
     min_total_items: int = 20,
     max_total_items: int = 20,
-    rng: Optional[np.random.Generator] = None,
+    rng: np.random.Generator | None = None,
 ) -> pd.DataFrame:
     """Apply domain-balanced sparsity (delegates to lib.sparsity canonical impl)."""
     return apply_sparse_balanced(
@@ -249,7 +222,7 @@ def _predict_all_domains(
     domain_models: dict[str, dict[str, Any]],
     X: pd.DataFrame,
     y: pd.DataFrame,
-    calibration_params: Optional[dict[str, dict[str, float]]] = None,
+    calibration_params: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, dict[str, np.ndarray]]:
     """Run predictions for all domains and return per-domain arrays."""
     per_domain: dict[str, dict[str, np.ndarray]] = {}
@@ -366,8 +339,13 @@ def _compute_domain_metrics(
             "coverage_tail": tail_coverage,
             "mean_interval_width": mean_width,
             "std_interval_width": std_width,
-            "quantile_crossing_rate": 0.0,  # post-sort is always 0
+            # raw_crossing_rate is the PRE-sort (true) quantile-crossing rate -- the
+            # headline metric (the three quantile models are not jointly monotone).
+            # After np.sort monotonization the rate is 0 BY CONSTRUCTION, so we report
+            # that as monotonized_crossing_rate rather than as a measured
+            # quantile_crossing_rate (which would misleadingly read as 0% crossing).
             "raw_crossing_rate": d.get("raw_crossing_rate", 0.0),
+            "monotonized_crossing_rate": 0.0,
         }
 
         # Raw-scale metrics
@@ -411,6 +389,14 @@ def _compute_domain_metrics(
         central_coverage = float(np.mean(in_interval[central_mask])) if central_mask.sum() > 0 else float("nan")
         tail_coverage = float(np.mean(in_interval[tail_mask])) if tail_mask.sum() > 0 else float("nan")
 
+        # Headline crossing rate, aggregated as the mean of the per-domain pre-sort
+        # rates (all domains share the same N here). monotonized rate is 0 by design.
+        raw_rates = [
+            m["raw_crossing_rate"]
+            for m in metrics.values()
+            if isinstance(m, dict) and "raw_crossing_rate" in m
+        ]
+
         metrics["overall"] = {
             "n": int(len(all_true)),
             "pearson_r": _pearsonr_strict(
@@ -428,6 +414,8 @@ def _compute_domain_metrics(
             "coverage_tail": tail_coverage,
             "mean_interval_width": float(np.mean(interval_widths)),
             "std_interval_width": float(np.std(interval_widths)),
+            "raw_crossing_rate": float(np.mean(raw_rates)) if raw_rates else 0.0,
+            "monotonized_crossing_rate": 0.0,
         }
 
     return metrics
@@ -649,7 +637,7 @@ def _create_validation_plots(
     ax.fill_between([-0.5, len(labels) - 0.5], 0.88, 0.92,
                      alpha=0.15, color="red", label="+/-2% tolerance")
     ax.set_xlabel("Domain")
-    ax.set_ylabel("90% CI Coverage")
+    ax.set_ylabel("90% PI Coverage")
     ax.set_title(f"{prefix}Calibration: Observed vs Target Coverage")
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation=45, ha="right")
@@ -769,8 +757,8 @@ def main() -> int:
 
     # Load models
     log.info("Step 1: Loading models...")
-    domain_models = _load_models(model_dir)
-    missing = _check_models_complete(domain_models)
+    domain_models = load_domain_models(model_dir)
+    missing = missing_models(domain_models)
     if missing:
         log.error("Missing models: %s", ", ".join(missing))
         return 1
@@ -886,6 +874,13 @@ def main() -> int:
     log.info("Step 4: Evaluating at sparse 20-item...")
     t0 = time.time()
 
+    # NOTE (mask-selection variance): the sparse-20 headline is computed on a
+    # SINGLE fixed domain-balanced mask drawn from a deterministic RNG (seed 42).
+    # The bootstrap CI below (also seed 42) resamples respondents only, so it
+    # reflects respondent-sampling variance and NOT mask-selection variance
+    # (i.e. which 20 of the 50 items happen to be observed). Stage-07 training
+    # averages over many masks; this validation point does not. Do not change
+    # the seed or computation here without re-deriving the published headline.
     X_sparse = _apply_adaptive_sparsity_balanced(
         X_test.copy(), item_info,
         min_items_per_domain=4,

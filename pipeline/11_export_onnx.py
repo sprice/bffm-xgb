@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Export IPIP-BFFM adaptive XGBoost models to ONNX format.
+"""Export IPIP-BFFM sparse quantile XGBoost models to ONNX format.
 
 Converts 15 joblib models (5 domains × 3 quantiles) to ONNX, merges
 them into a single model graph, validates parity, generates config.json,
 and produces a HuggingFace-ready output/ directory.
 
 Usage:
-    python pipeline/11_export_onnx.py --data-dir data/processed/ext_est
-    python pipeline/11_export_onnx.py --data-dir data/processed/ext_est --model-dir models/reference
+    python pipeline/11_export_onnx.py --data-dir data/processed/canonical_v1
+    python pipeline/11_export_onnx.py --data-dir data/processed/canonical_v1 --model-dir models/reference
 """
 
 import sys
@@ -20,14 +20,34 @@ import argparse
 import json
 import logging
 import shutil
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import joblib
 import numpy as np
 
-from lib.constants import DOMAINS, DOMAIN_LABELS, ITEM_COLUMNS
+if TYPE_CHECKING:
+    import onnx
+
+from lib.constants import (
+    DEFAULT_STAGE07_CV_FOLDS,
+    DOMAIN_DISPLAY_LABELS,
+    DOMAIN_LABELS,
+    DOMAINS,
+    ITEM_COLUMNS,
+    ITEMS_PER_DOMAIN,
+    MODEL_STEM,
+    QUANTILE_NAME_LIST,
+    QUANTILES,
+)
 from lib.norms import load_norms
-from lib.provenance import add_provenance_args, build_provenance, relative_to_root, sanitize_paths, file_sha256, _resolve_norms_lock_path
+from lib.provenance import (
+    _resolve_norms_lock_path,
+    add_provenance_args,
+    build_provenance,
+    file_sha256,
+    relative_to_root,
+    sanitize_paths,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,14 +60,34 @@ log = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-QUANTILE_NAMES = ["q05", "q50", "q95"]
-QUANTILE_VALUES = [0.05, 0.5, 0.95]
 N_FEATURES = 50
 FEATURE_NAMES = list(ITEM_COLUMNS)
 PARITY_TOL = 1e-4
 # Small relative tolerance for XGBoost -> ONNX numeric drift on larger scores.
 PARITY_RTOL = 5e-5
 N_TEST_SAMPLES = 100
+
+
+def _deterministic_session(model_bytes: bytes):
+    """Create a single-threaded, sequential ONNX session.
+
+    The deployed runtimes (python/inference.py, typescript/inference.ts,
+    web/src/server/predictor.ts) all load single-threaded sessions so
+    predictions are a host-deterministic function of the input. The export-time
+    parity checks use the same configuration so they validate the same
+    numerical behavior the runtimes ship.
+    """
+    import onnxruntime as ort
+
+    opts = ort.SessionOptions()
+    opts.intra_op_num_threads = 1
+    opts.inter_op_num_threads = 1
+    opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    return ort.InferenceSession(
+        model_bytes, sess_options=opts, providers=["CPUExecutionProvider"]
+    )
+
+
 ARTIFACT_PROVENANCE_KEYS = (
     "git_hash",
     "data_snapshot_id",
@@ -68,9 +108,18 @@ def load_joblib_models(models_dir: Path) -> dict[str, object]:
     """Load all 15 joblib models, keyed like 'ext_q05'."""
     models = {}
     for domain in DOMAINS:
-        for q in QUANTILE_NAMES:
+        for q in QUANTILE_NAME_LIST:
             key = f"{domain}_{q}"
-            path = models_dir / f"adaptive_{key}.joblib"
+            path = models_dir / f"{MODEL_STEM}_{key}.joblib"
+            if not path.exists():
+                legacy = models_dir / f"adaptive_{key}.joblib"
+                if legacy.exists():
+                    log.warning(
+                        "Loading legacy-named model %s; re-export to migrate to %s_*.joblib",
+                        legacy.name,
+                        MODEL_STEM,
+                    )
+                    path = legacy
             if not path.exists():
                 log.error("Missing model file: %s", path)
                 sys.exit(1)
@@ -152,7 +201,7 @@ def _patch_onnxmltools_xgb3() -> None:
     log.info("Patched onnx.helper.make_attribute for bool-to-int coercion")
 
 
-def convert_to_onnx(models: dict) -> dict[str, object]:
+def convert_to_onnx(models: dict) -> dict[str, "onnx.ModelProto"]:
     """Convert each XGBoost model to ONNX."""
     try:
         import onnx
@@ -183,7 +232,7 @@ def convert_to_onnx(models: dict) -> dict[str, object]:
 # ---------------------------------------------------------------------------
 
 
-def merge_onnx_models(onnx_models: dict) -> object:
+def merge_onnx_models(onnx_models: dict[str, "onnx.ModelProto"]) -> "onnx.ModelProto":
     """Merge 15 individual ONNX models into a single graph with shared input.
 
     Constructs a single ONNX graph where:
@@ -194,7 +243,7 @@ def merge_onnx_models(onnx_models: dict) -> object:
     import onnx
     from onnx import TensorProto, helper
 
-    output_order = [f"{d}_{q}" for d in DOMAINS for q in QUANTILE_NAMES]
+    output_order = [f"{d}_{q}" for d in DOMAINS for q in QUANTILE_NAME_LIST]
 
     all_nodes: list = []
     all_initializers: list = []
@@ -293,14 +342,10 @@ def merge_onnx_models(onnx_models: dict) -> object:
 # ---------------------------------------------------------------------------
 
 
-def validate_parity(joblib_models: dict, onnx_models: dict) -> None:
+def validate_parity(
+    joblib_models: dict, onnx_models: dict[str, "onnx.ModelProto"]
+) -> None:
     """Run predictions through both backends and assert numerical parity."""
-    try:
-        import onnxruntime as ort
-    except ImportError:
-        log.error("onnxruntime not installed. Run: pip install onnxruntime")
-        sys.exit(1)
-
     rng = np.random.default_rng(42)
 
     # Generate test data: mix of full responses and sparse (with NaN)
@@ -323,7 +368,7 @@ def validate_parity(joblib_models: dict, onnx_models: dict) -> None:
 
         # ONNX prediction
         onnx_bytes = onnx_models[key].SerializeToString()
-        sess = ort.InferenceSession(onnx_bytes)
+        sess = _deterministic_session(onnx_bytes)
         input_name = sess.get_inputs()[0].name
         ort_pred = sess.run(None, {input_name: X_test})[0].flatten()
 
@@ -356,17 +401,11 @@ def validate_parity(joblib_models: dict, onnx_models: dict) -> None:
 
 
 def validate_merged_parity(
-    merged_model: object,
-    individual_models: dict,
+    merged_model: "onnx.ModelProto",
+    individual_models: dict[str, "onnx.ModelProto"],
 ) -> None:
     """Verify merged-model outputs are bit-for-bit identical to individual models."""
-    try:
-        import onnxruntime as ort
-    except ImportError:
-        log.error("onnxruntime not installed. Run: pip install onnxruntime")
-        sys.exit(1)
-
-    output_names = [f"{d}_{q}" for d in DOMAINS for q in QUANTILE_NAMES]
+    output_names = [f"{d}_{q}" for d in DOMAINS for q in QUANTILE_NAME_LIST]
 
     rng = np.random.default_rng(42)
     X_full = rng.uniform(1.0, 5.0, size=(N_TEST_SAMPLES // 2, N_FEATURES)).astype(
@@ -379,13 +418,13 @@ def validate_merged_parity(
     X_sparse[mask] = np.nan
     X_test = np.vstack([X_full, X_sparse])
 
-    merged_sess = ort.InferenceSession(merged_model.SerializeToString())
+    merged_sess = _deterministic_session(merged_model.SerializeToString())
     merged_raw = merged_sess.run(output_names, {"input": X_test})
     merged_dict = dict(zip(output_names, merged_raw))
 
     max_diff_overall = 0.0
     for key in output_names:
-        ind_sess = ort.InferenceSession(
+        ind_sess = _deterministic_session(
             individual_models[key].SerializeToString()
         )
         input_name = ind_sess.get_inputs()[0].name
@@ -534,9 +573,8 @@ def generate_config(
             "artifact-derived backfills will be skipped."
         )
 
-    # Load validation/simulation results for metrics
+    # Load validation results for metrics
     val_path = artifacts_dir / "validation_results.json"
-    sim_path = artifacts_dir / "simulation_results.json"
 
     # Backfill n_test from validation artifacts when training report lacks it.
     if (
@@ -566,7 +604,7 @@ def generate_config(
                 e,
             )
 
-    output_names = [f"{d}_{q}" for d in DOMAINS for q in QUANTILE_NAMES]
+    output_names = [f"{d}_{q}" for d in DOMAINS for q in QUANTILE_NAME_LIST]
 
     norms = {d: {"mean": norms_map[d]["mean"], "sd": norms_map[d]["sd"]} for d in DOMAINS}
 
@@ -579,7 +617,7 @@ def generate_config(
         "version": "1.0.0",
         "domains": list(DOMAINS),
         "domain_labels": dict(DOMAIN_LABELS),
-        "quantiles": QUANTILE_VALUES,
+        "quantiles": list(QUANTILES),
         "model_file": "model.onnx",
         "outputs": output_names,
         "scores_output": "scores",
@@ -594,7 +632,12 @@ def generate_config(
             "shape": [None, 1],
             "dtype": "float32",
             "scale": "raw_score",
+            # Raw scores are the per-item MEAN of a domain's items (1-5), not the
+            # 10-50 summed scale. value_range is the nominal/target range: the
+            # gradient-boosted regressors can predict slightly outside [1, 5].
+            "scale_basis": "per_item_mean_1_to_5",
             "value_range": [1, 5],
+            "value_range_is_nominal": True,
         },
         "norms": norms,
     }
@@ -626,7 +669,7 @@ def generate_config(
         or f"git:{git_hash}"
     )
     config["provenance"] = {
-        "source": report_prov.get("source", "ipip-bffm-adaptive-v1-reference"),
+        "source": report_prov.get("source", "ipip-bffm-sparse-quantile-v1-reference"),
         "training_script": training_script,
         "git_hash": git_hash,
         "preprocessing_version": preprocessing_version,
@@ -812,6 +855,20 @@ def _artifact_matches_signature(
     return True
 
 
+def _humanize_label(label: str) -> str:
+    """Split a camel-case domain label ('EmotionalStability') into words.
+
+    DOMAIN_LABELS stores compact labels (e.g. 'EmotionalStability'); prose wants
+    'Emotional Stability'. Insert a space before each interior capital letter.
+    """
+    out: list[str] = []
+    for i, ch in enumerate(label):
+        if i > 0 and ch.isupper() and not label[i - 1].isupper():
+            out.append(" ")
+        out.append(ch)
+    return "".join(out)
+
+
 def _format_md_table(headers: list[str], rows: list[list[str]]) -> str:
     """Format a Markdown table with padded, equal-width columns."""
     widths = [len(h) for h in headers]
@@ -896,15 +953,60 @@ def generate_readme(config: dict, artifacts_dir: Path, model_dir: Path, *, varia
             label=f"baseline {method}@K={k} pearson_r",
         )
 
-    perf_table = _format_md_table(
-        ["Strategy", "Items (K)", "Correlation (r)"],
-        [
-            ["Full assessment", "50", f"{_r_at(k50.get('full_50'), method='full_50', k=50):.3f}"],
-            ["Domain-balanced", "20", f"{_r_at(k20.get('domain_balanced'), method='domain_balanced', k=20):.3f}"],
-            ["Mini-IPIP mapping", "20", f"{_r_at(k20.get('mini_ipip'), method='mini_ipip', k=20):.3f}"],
-            ["Adaptive top-K", "20", f"{_r_at(k20.get('adaptive_topk'), method='adaptive_topk', k=20):.3f}"],
-        ],
+    # The Mini-IPIP *mapping* row scores the four-per-domain Mini-IPIP items by
+    # SIMPLE AVERAGING (the published Mini-IPIP scoring key); every other row in
+    # this table is an XGBoost prediction. Surface the matched XGBoost-scored
+    # Mini-IPIP-items row (ml_r for mini_ipip @ K=20) when available so the
+    # averaging-r and the ML-r are never conflated under one undifferentiated
+    # "Correlation (r)" axis. The XGBoost-items row is optional (absent in some
+    # ablation comparisons); the explicit "simple averaging" scoring tag and the
+    # footnote keep the distinction even when it is omitted.
+    mini_ipip_ml_r: float | None = None
+    for row in ml_vs_avg.get("comparisons", []):
+        if (
+            isinstance(row, dict)
+            and row.get("method") == "mini_ipip"
+            and int(row.get("n_items", -1)) == 20
+            and isinstance(row.get("ml_r"), (int, float))
+            and not isinstance(row.get("ml_r"), bool)
+        ):
+            candidate = float(row["ml_r"])
+            if np.isfinite(candidate):
+                mini_ipip_ml_r = candidate
+            break
+
+    perf_rows = [
+        ["Full assessment", "50", "XGBoost", f"{_r_at(k50.get('full_50'), method='full_50', k=50):.4f}"],
+        ["Domain-balanced", "20", "XGBoost", f"{_r_at(k20.get('domain_balanced'), method='domain_balanced', k=20):.3f}"],
+    ]
+    if mini_ipip_ml_r is not None:
+        perf_rows.append(["Mini-IPIP items", "20", "XGBoost", f"{mini_ipip_ml_r:.3f}"])
+    perf_rows.append(
+        ["Mini-IPIP mapping", "20", "simple averaging ¹", f"{_r_at(k20.get('mini_ipip'), method='mini_ipip', k=20):.3f}"]
     )
+    perf_rows.append(
+        ["Greedy top-K", "20", "XGBoost", f"{_r_at(k20.get('adaptive_topk'), method='adaptive_topk', k=20):.3f}"]
+    )
+    perf_table = _format_md_table(
+        ["Strategy", "Items (K)", "Scoring", "Correlation (r)"],
+        perf_rows,
+    )
+    # Footnote text adapts to whether the paired XGBoost-items row is present.
+    if mini_ipip_ml_r is not None:
+        mini_ipip_footnote = (
+            "> ¹ The **Mini-IPIP mapping** row scores the four-per-domain Mini-IPIP "
+            "items by **simple averaging** (the published Mini-IPIP scoring key), so "
+            "its *r* is not comparable on the same axis as the XGBoost rows. The "
+            "**Mini-IPIP items** row applies the XGBoost model to the *same* "
+            "four-per-domain items; the gap between the two is the contribution of "
+            "the learned scorer over simple averaging."
+        )
+    else:
+        mini_ipip_footnote = (
+            "> ¹ The **Mini-IPIP mapping** row scores the four-per-domain Mini-IPIP "
+            "items by **simple averaging** (the published Mini-IPIP scoring key), so "
+            "its *r* is not comparable on the same axis as the XGBoost rows above."
+        )
 
     validation_metrics = validation.get("metrics", {})
     validation_sparse = validation.get("sparse_20", {})
@@ -915,6 +1017,9 @@ def generate_readme(config: dict, artifacts_dir: Path, model_dir: Path, *, varia
         if isinstance(validation_metrics.get("overall"), dict) else None,
         label="validation full_50 coverage_90",
     )
+    # General partial-response coverage under random balanced 20-item masking
+    # (stage-08 validation). Reported alongside, but NOT paired with the headline
+    # accuracy, which comes from the fixed domain-balanced form (stage 09).
     sparse_cov = _require_metric(
         validation_sparse.get("metrics", {}).get("overall", {}).get("coverage_90")
         if isinstance(validation_sparse.get("metrics"), dict)
@@ -922,9 +1027,20 @@ def generate_readme(config: dict, artifacts_dir: Path, model_dir: Path, *, varia
         else None,
         label="validation sparse_20 coverage_90",
     )
+    # Headline coverage must come from the SAME evaluation as the headline accuracy:
+    # the fixed domain-balanced 20-item form (stage-09 baselines), not the random
+    # sparse_20 validation pass. This keeps the .927 r and its coverage paired.
+    domain_balanced_cov = _require_metric(
+        k20.get("domain_balanced", {}).get("coverage_90")
+        if isinstance(k20.get("domain_balanced"), dict)
+        else None,
+        label="baseline domain_balanced@K=20 coverage_90",
+    )
     coverage_line = (
-        f"90% CI coverage: {sparse_cov * 100:.1f}% (sparse 20-item), "
-        f"{full_cov * 100:.1f}% (full 50-item)."
+        f"90% prediction-interval coverage: {domain_balanced_cov * 100:.1f}% "
+        "(deployed domain-balanced 20-item form), "
+        f"{full_cov * 100:.1f}% (full 50-item). Under *random* balanced 20-item "
+        f"masking the model's general coverage is {sparse_cov * 100:.1f}%."
     )
 
     comparisons = ml_vs_avg.get("comparisons")
@@ -951,6 +1067,17 @@ def generate_readme(config: dict, artifacts_dir: Path, model_dir: Path, *, varia
         "ML advantage over simple averaging: "
         f"{delta_r:+.3f} r (domain-balanced K=20)."
     )
+
+    # CV fold count. This matches the stage-07 *default* (lib.constants); stage-07
+    # itself uses the effective value from config.training.cv_folds and only falls
+    # back to this constant when that key is absent (07_train.py:1462). The
+    # variant config.json this generator receives carries no training.cv_folds
+    # field, so the effective value is unavailable here -- if a future variant
+    # overrides training.cv_folds to a non-default value, this card must source
+    # the effective fold count from the stage-07 training report rather than the
+    # constant. For all current publication configs no override is set, so the
+    # default is correct.
+    cv_folds = DEFAULT_STAGE07_CV_FOLDS
 
     # Hyperparameters
     hp = config.get("hyperparameters", {})
@@ -989,25 +1116,23 @@ def generate_readme(config: dict, artifacts_dir: Path, model_dir: Path, *, varia
 
     norms = config["norms"] if "norms" in config else load_norms()
 
+    # Display labels + item ranges single-sourced from lib.constants so the card
+    # cannot drift from the canonical domain set (previously hardcoded rows that
+    # also diverged from DOMAIN_LABELS' compact internal forms). Byte-identical to
+    # the prior literal rows (locked by tests/test_model_card_consistency.py).
     domain_table = _format_md_table(
         ["Domain", "Code", "Items"],
         [
-            ["Extraversion", "`ext`", "ext1-ext10"],
-            ["Agreeableness", "`agr`", "agr1-agr10"],
-            ["Conscientiousness", "`csn`", "csn1-csn10"],
-            ["Emotional Stability", "`est`", "est1-est10"],
-            ["Intellect/Imagination", "`opn`", "opn1-opn10"],
+            [DOMAIN_DISPLAY_LABELS[d], f"`{d}`", f"{d}1-{d}{ITEMS_PER_DOMAIN}"]
+            for d in DOMAINS
         ],
     )
 
     norms_table = _format_md_table(
         ["Domain", "Mean", "SD"],
         [
-            ["Extraversion", f"{norms['ext']['mean']:.3f}", f"{norms['ext']['sd']:.3f}"],
-            ["Agreeableness", f"{norms['agr']['mean']:.3f}", f"{norms['agr']['sd']:.3f}"],
-            ["Conscientiousness", f"{norms['csn']['mean']:.3f}", f"{norms['csn']['sd']:.3f}"],
-            ["Emotional Stability", f"{norms['est']['mean']:.3f}", f"{norms['est']['sd']:.3f}"],
-            ["Intellect/Imagination", f"{norms['opn']['mean']:.3f}", f"{norms['opn']['sd']:.3f}"],
+            [DOMAIN_DISPLAY_LABELS[d], f"{norms[d]['mean']:.3f}", f"{norms[d]['sd']:.3f}"]
+            for d in DOMAINS
         ],
     )
 
@@ -1046,14 +1171,14 @@ Sparse-input XGBoost quantile regression models for the 50-item IPIP Big-Five Fa
 
 ## Model Description
 
-This package contains a **single merged ONNX model** with 15 outputs (5 personality domains × 3 quantiles) that predicts Big Five personality scores from item responses. The model is designed for **adaptive assessment** — it produces accurate predictions even when many items are missing (answered as NaN), enabling short-form assessments of 20 items or fewer.
+This package contains a **single merged ONNX model** with 15 outputs (5 personality domains × 3 quantiles) that predicts Big Five personality scores from item responses. The model performs **sparse-input scoring** — it produces accurate predictions even when many items are unanswered (NaN), enabling fixed short-form assessments such as the primary domain-balanced 20-item form. (Adaptive item *selection* was tested and underperforms the fixed balanced form; see the performance table.)
 
 {domain_table}
 
 Each domain has three quantile models:
-- **q05** -- 5th percentile (lower bound of 90% CI)
+- **q05** -- 5th percentile (lower bound of 90% prediction interval, PI)
 - **q50** -- median (point estimate)
-- **q95** -- 95th percentile (upper bound of 90% CI)
+- **q95** -- 95th percentile (upper bound of 90% prediction interval, PI)
 
 ## Input Specification
 
@@ -1064,9 +1189,11 @@ Each domain has three quantile models:
 
 ## Output Specification
 
-- **Shape:** `[batch_size, 1]`
-- **Scale:** Raw domain score (1-5 range)
-- **Percentile conversion:** Use the provided norms (z-score -> CDF)
+- **Shape:** `[batch_size, 1]` per quantile output; the merged `scores` tensor is `[batch_size, 15]` (5 domains × 3 quantiles, in `config.outputs` order).
+- **Scale:** Raw domain score on the **per-item-mean 1-5 scale** — the mean of the 10 item responses for the domain, **not** the 10-50 summed scale a 10-item sum would give. A domain mean of 3.0 is neutral; see the Norms table for population means/SDs.
+- **Nominal range:** `[1, 5]`. Because these are gradient-boosted regressors (not bounded transforms), the raw `q05`/`q50`/`q95` predictions can fall **outside** `[1, 5]` — typically near the extremes of a domain's score range, and more so for low-information sparse inputs. They are **not** clamped: treat `[1, 5]` as the nominal/target range, not a hard guarantee, if you consume the raw `scores` tensor.
+- **Percentile conversion:** Use the provided norms (z-score → CDF). The transform is monotonic and saturates near 0/100, so out-of-range raw values shift the reported percentile by well under one percentile point; the reference inference packages report percentiles, not raw scores.
+- **Quantile ordering:** The `q05`/`q50`/`q95` outputs are fit independently, so the three predictions are not guaranteed to be monotonically ordered; sort them before use (the reference inference packages already do this).
 
 ## Quick Start (Python)
 
@@ -1149,7 +1276,7 @@ session.release();
 - **Training data:** {training_data_line}
 - **Sparsity augmentation:** Training samples are randomly masked to simulate adaptive (partial) responses, teaching the model to handle missing items
 - **Hyperparameters:** n_estimators={n_est}, max_depth={max_d}, learning_rate={lr_str}
-- **Cross-validation:** 3-fold cross-validation robustness analysis with evaluation split before augmentation
+- **Cross-validation:** {cv_folds}-fold cross-validation robustness analysis with evaluation split before augmentation
 
 ## Performance
 
@@ -1157,13 +1284,17 @@ Evaluated on held-out test respondents:
 
 {perf_table}
 
+{mini_ipip_footnote}
+
+> The domain-balanced 20-item form is the pre-specified primary operating point and the deployed web form (not a post-hoc best-of-grid selection). The full-50 row recovers a target computed from the same 50 items, so *r* ≈ 1 reflects score recovery, not external validity.
+
 {coverage_line}
 
 {ml_advantage_line}
 
 ## Norms
 
-Population norms for raw-score -> percentile conversion (from OSPP dataset):
+Population norms for raw-score -> percentile conversion, computed on the OSPP training split only (n = {n_train_orig_str}; validation/test held out to prevent leakage):
 
 {norms_table}
 
@@ -1171,10 +1302,13 @@ Population norms for raw-score -> percentile conversion (from OSPP dataset):
 
 - Norms are derived from self-selected online respondents (OSPP); they may not represent the general population
 - Models are trained on English-language IPIP items only
+- No demographic-subgroup or measurement-invariance analysis has been performed; accuracy may vary by gender, age, or region
+- No external / out-of-distribution validation: every reported number is on a held-out split of the *same* OSPP dataset, so these are score-recovery (recovering the full-scale score from a subset of its own items), not external-trait, metrics
 - Standalone Python/TypeScript inference expects reverse-keyed items to be preprocessed before scoring; the web app applies that transform server-side
 - Exported calibration regimes are `full_50` and `sparse_20_balanced`; arbitrary sub-50 response patterns use the sparse regime as a fallback rather than a separately fit calibration curve
+- The deployed 20-item domain-balanced Emotional Stability subscale (est1, est6, est7, est8) is composed entirely of reverse-keyed items, so the short-form EST score is vulnerable to acquiescence (yea-saying) response bias; the other four domains mix keyed directions, and the full 50-item assessment is unaffected
 - Accuracy degrades with fewer items; 20 items is the recommended minimum for reliable scoring
-- Not intended for clinical diagnosis or high-stakes selection decisions
+- Not validated for clinical diagnosis or high-stakes selection
 
 ## Item Source
 
@@ -1192,11 +1326,66 @@ CC0 1.0 Universal -- Public Domain Dedication
 # ---------------------------------------------------------------------------
 
 
-def generate_repo_readme(variants: list[tuple[str, Path]]) -> str:
+def _repo_readme_coverage_line(artifacts_dir: Path | None, primary: str) -> str:
+    """Derive the empirical 90% coverage prose for the repo README.
+
+    Sources the three coverage approximations (domain-balanced 20-item,
+    full_50, sparse_20_balanced) from the PRIMARY variant's artifacts -- the
+    same files and JSON paths the per-variant model card reads in
+    ``generate_readme`` -- so a retrain that shifts these numbers updates the
+    repo README too instead of going stale. ``artifacts_dir`` is the parent
+    artifacts directory; per-variant artifacts live in ``variants/<name>/``.
+
+    Falls back to a non-numeric phrasing if the artifacts are missing or
+    malformed so the repo-readme scan mode never breaks on a partial tree.
+    """
+    fallback = (
+        "Empirical 90% prediction-interval coverage is validated for the "
+        "deployed domain-balanced 20-item form (held-out baseline evaluation), "
+        "the sparse_20_balanced runtime regime (validation under random "
+        "balanced 20-item masking), and the full_50 regime (validation)"
+    )
+    if artifacts_dir is None or primary == "unknown":
+        return fallback
+    variant_artifacts = artifacts_dir / "variants" / primary
+    baseline_path = variant_artifacts / "baseline_comparison_results.json"
+    validation_path = variant_artifacts / "validation_results.json"
+    try:
+        with open(baseline_path) as f:
+            baselines = json.load(f)
+        with open(validation_path) as f:
+            validation = json.load(f)
+        db_cov = baselines["overall"]["20"]["domain_balanced"]["coverage_90"]
+        full_cov = validation["metrics"]["overall"]["coverage_90"]
+        sparse_cov = validation["sparse_20"]["metrics"]["overall"]["coverage_90"]
+        covs = (db_cov, full_cov, sparse_cov)
+        if any(isinstance(c, bool) or not isinstance(c, (int, float)) for c in covs):
+            return fallback
+        if not all(np.isfinite(float(c)) for c in covs):
+            return fallback
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return fallback
+    return (
+        f"Empirical 90% prediction-interval coverage is approximately "
+        f"{float(db_cov) * 100:.1f}% for the deployed domain-balanced 20-item "
+        f"form (held-out baseline evaluation), approximately "
+        f"{float(sparse_cov) * 100:.1f}% for the sparse_20_balanced runtime "
+        f"regime (validation under random balanced 20-item masking), and "
+        f"approximately {float(full_cov) * 100:.1f}% for the full_50 regime "
+        f"(validation)"
+    )
+
+
+def generate_repo_readme(
+    variants: list[tuple[str, Path]], artifacts_dir: Path | None = None
+) -> str:
     """Generate a top-level README listing all variants.
 
     Args:
         variants: list of (variant_name, variant_path) tuples.
+        artifacts_dir: parent artifacts directory (per-variant artifacts live in
+            ``variants/<name>/``); used to derive the primary variant's coverage
+            numbers. When None, coverage prose falls back to a non-numeric form.
     """
     variant_names = [name for name, _ in variants if name]
     primary = "reference" if "reference" in variant_names else (variant_names[0] if variant_names else "unknown")
@@ -1208,6 +1397,42 @@ def generate_repo_readme(variants: list[tuple[str, Path]]) -> str:
         else:
             variant_row_data.append([f"`{name}`", "Research ablation variant"])
     variant_table = _format_md_table(["Variant", "Description"], variant_row_data)
+
+    # De-hardcode the model-architecture facts from lib.constants so the count and
+    # quantile names cannot drift from the actual exported graph.
+    n_domains = len(DOMAINS)
+    n_quantiles = len(QUANTILE_NAME_LIST)
+    n_models = n_domains * n_quantiles
+    quantile_list = ", ".join(QUANTILE_NAME_LIST)
+    # Human-readable domain names (camel-case labels split for prose).
+    domain_names = ", ".join(
+        _humanize_label(DOMAIN_LABELS[d]) for d in DOMAINS
+    )
+
+    # De-hardcode the training-split size from the primary variant's config.json
+    # (norms n_train_original). Fall back to a generic phrasing if unavailable so
+    # the repo-readme scan mode never breaks on a missing/partial config.
+    norms_n_str = ""
+    primary_path = next((p for name, p in variants if name == primary), None)
+    if primary_path is not None:
+        config_path = primary_path / "config.json"
+        if config_path.is_file():
+            try:
+                with open(config_path) as f:
+                    primary_config = json.load(f)
+                n_train_orig = (
+                    primary_config.get("provenance", {}).get("n_train_original")
+                    if isinstance(primary_config, dict)
+                    else None
+                )
+                if isinstance(n_train_orig, int) and n_train_orig > 0:
+                    norms_n_str = f" (n = {n_train_orig:,})"
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                norms_n_str = ""
+
+    # Derive the empirical-coverage prose from the primary variant's artifacts so
+    # the repo README tracks a retrain rather than going stale on hardcoded numbers.
+    coverage_sentence = _repo_readme_coverage_line(artifacts_dir, primary)
 
     lines = [
         "---",
@@ -1234,26 +1459,35 @@ def generate_repo_readme(variants: list[tuple[str, Path]]) -> str:
         "## What These Models Do",
         "",
         "Each model takes up to 50 item responses (Likert 1--5) and predicts Big Five "
-        "domain scores (Extraversion, Agreeableness, Conscientiousness, Emotional "
-        "Stability, Intellect). The exported calibration regimes are fit for full "
-        "50-item completion and the primary domain-balanced 20-item sparse regime.",
+        f"domain scores ({domain_names}). The exported calibration regimes are fit for "
+        "full 50-item completion and the primary domain-balanced 20-item sparse regime.",
         "",
         "**Key capability: sparse input.** The models produce accurate predictions even "
-        "when most items are unanswered (NaN). This allows adaptive and short-form "
+        "when most items are unanswered (NaN). This allows fixed short-form "
         "assessments (as few as 20 items) without retraining or switching models.",
         "",
         "## How It Works",
         "",
-        "- **15 models in one graph** -- 5 domains x 3 quantiles (q05, q50, q95), "
-        "merged into a single ONNX file",
-        "- **Sparsity augmentation** -- during training, complete responses are randomly "
-        "masked to simulate missing items, teaching the model to handle arbitrary "
-        "missing-item patterns",
+        f"- **{n_models} models in one graph** -- {n_domains} domains x {n_quantiles} "
+        f"quantiles ({quantile_list}), merged into a single ONNX file",
+        "- **Structured sparsity augmentation** -- training responses are masked into "
+        "*structured* partial-response patterns (not uniform random dropout): focused "
+        "buckets spanning 10-50 retained items (a 10-20-item target-assessment range, a "
+        "21-35-item transition range, and a 36-50-item near-complete range, each keeping "
+        "a minimum number of items per domain), explicit injection of the Mini-IPIP "
+        "4-per-domain 20-item pattern, and roughly 15% imbalanced patterns that allow "
+        "0-item domains so the model also sees skewed coverage. Within each bucket the "
+        "retained items are filled by information-rank-weighted sampling (items with "
+        "higher cross-domain information are more likely to be kept). The deployed "
+        "operating point is the domain-balanced 4-per-domain 20-item form",
         "- **Quantile regression** -- pinball loss at tau = 0.05, 0.50, 0.95 provides "
-        "median predictions with uncertainty bounds that are explicitly calibrated "
-        "for full_50 and sparse_20_balanced runtime regimes",
+        "median predictions with empirical 90% prediction intervals whose coverage is "
+        "validated for the full_50 and sparse_20_balanced runtime regimes (raw quantile "
+        "spreads; no post-hoc width adjustment is applied). " + coverage_sentence,
         "- **Norms-based percentiles** -- raw predictions are converted to population "
-        "percentiles using z-score norms derived from ~603k respondents",
+        f"percentiles using z-score norms fit on the training split only{norms_n_str}; "
+        "validation and test rows are held out so the norms do not leak "
+        "into the percentile targets",
         "",
         "## Variants",
         "",
@@ -1267,6 +1501,28 @@ def generate_repo_readme(variants: list[tuple[str, Path]]) -> str:
         "- `config.json` -- runtime configuration, feature names, and norms",
         "- `README.md` -- variant-specific model card with performance tables",
         "- `provenance.json` -- full audit trail (git hash, data snapshot, training config)",
+        "",
+        "## Intended Use",
+        "",
+        "Research and educational score-recovery of the 50-item IPIP-BFFM from "
+        "partial responses (as few as 20 items), and reproducible study of sparse "
+        "short-form scoring. Outputs are population percentiles with empirical 90% "
+        "prediction intervals.",
+        "",
+        "## Out of Scope",
+        "",
+        "Not validated for clinical diagnosis, employment or other high-stakes "
+        "selection, or any individual consequential decision. The models recover a "
+        "self-report questionnaire score, not an external personality trait.",
+        "",
+        "## Limitations",
+        "",
+        "- Norms come from self-selected, anonymous online respondents (OSPP) and may not represent any general population; English-language IPIP items only.",
+        "- No demographic-subgroup or measurement-invariance analysis has been performed; accuracy may vary by gender, age, or region.",
+        "- No external / out-of-distribution validation: every reported number is on a held-out split of the *same* OSPP dataset, so these are score-recovery (recovering the full-scale score from a subset of its own items), not external-trait, metrics. The full-50 *r* ~ 1 is a score-recovery ceiling, not trait validity.",
+        "- The deployed 20-item Emotional Stability subscale is composed entirely of reverse-keyed items, so it is more sensitive to acquiescence and careless responding; the full 50-item assessment is unaffected.",
+        "- Accuracy degrades with fewer items; 20 items is the recommended minimum for reliable scoring.",
+        "- See each variant's `README.md` for per-model performance and the repository `README.md` / `docs/research.md` for the full limitations discussion.",
         "",
         "## Source Code",
         "",
@@ -1307,6 +1563,11 @@ def main() -> int:
         help="Generate repo-level README.md from variant subdirectories in --output-dir, then exit.",
     )
     parser.add_argument(
+        "--readme-only",
+        action="store_true",
+        help="Regenerate only README.md from the existing config.json (no ONNX re-export).",
+    )
+    parser.add_argument(
         "--model-dir",
         type=Path,
         default=PACKAGE_ROOT / "models" / "reference",
@@ -1343,11 +1604,51 @@ def main() -> int:
         if not variants:
             log.error("No variant subdirectories found in %s", output_dir)
             return 1
-        readme = generate_repo_readme(variants)
+        repo_artifacts_dir = (
+            args.artifacts_dir
+            if args.artifacts_dir.is_absolute()
+            else PACKAGE_ROOT / args.artifacts_dir
+        )
+        readme = generate_repo_readme(variants, artifacts_dir=repo_artifacts_dir)
         readme_path = output_dir / "README.md"
         with open(readme_path, "w") as f:
             f.write(readme)
         log.info("Wrote repo-level README.md (%d variants) to %s", len(variants), readme_path)
+        return 0
+
+    # --- readme-only mode: regenerate README.md from existing config.json ---
+    if args.readme_only:
+        models_dir = args.model_dir
+        if not models_dir.is_absolute():
+            models_dir = PACKAGE_ROOT / models_dir
+        output_dir = args.output_dir
+        if not output_dir.is_absolute():
+            output_dir = PACKAGE_ROOT / output_dir
+        artifacts_dir = (
+            args.artifacts_dir
+            if args.artifacts_dir.is_absolute()
+            else PACKAGE_ROOT / args.artifacts_dir
+        )
+        config_path = output_dir / "config.json"
+        if not config_path.exists():
+            log.error(
+                "readme-only mode requires an existing %s; run a full export first.",
+                config_path,
+            )
+            return 1
+        try:
+            with open(config_path) as f:
+                config = json.load(f)
+            readme = generate_readme(
+                config, artifacts_dir, models_dir, variant_name=models_dir.name
+            )
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
+            log.error("README generation failed strict provenance checks: %s", e)
+            return 1
+        readme_path = output_dir / "README.md"
+        with open(readme_path, "w") as f:
+            f.write(readme)
+        log.info("Wrote README.md (readme-only) to %s", readme_path)
         return 0
 
     # --- normal export mode: require --data-dir ---

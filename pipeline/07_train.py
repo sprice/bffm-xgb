@@ -16,16 +16,16 @@ Usage:
     python pipeline/07_train.py --config configs/ablation_none.yaml
 """
 
-import sys
-import gc
-import json
-import hashlib
-import logging
-import time
 import argparse
+import gc
+import hashlib
+import json
+import logging
+import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
@@ -33,32 +33,37 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 import joblib
 import numpy as np
 import pandas as pd
+import xgboost as xgb
 from scipy import stats
 from sklearn.metrics import mean_absolute_error, mean_squared_error
-from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
-import xgboost as xgb
+from sklearn.model_selection import KFold, train_test_split
 
+from lib.config import load_config_with_base
 from lib.constants import (
-    DOMAINS,
-    DOMAIN_LABELS,
-    ITEM_COLUMNS,
-    ITEMS_PER_DOMAIN,
-    QUANTILES,
-    QUANTILE_NAMES,
-    DEFAULT_PARAMS,
+    CALIBRATION_POLICY,
     DEFAULT_EARLY_STOPPING_ROUNDS,
-    DEFAULT_STAGE07_CV_FOLDS,
     DEFAULT_LOCAL_CV_PARALLEL_FOLDS,
+    DEFAULT_PARAMS,
+    DEFAULT_STAGE07_CV_FOLDS,
+    DOMAIN_LABELS,
+    DOMAINS,
+    ITEM_COLUMNS,
+    LEGACY_MODEL_STEM,
+    MODEL_STEM,
+    QUANTILE_NAMES,
+    QUANTILES,
 )
-from lib.scoring import raw_score_to_percentile
-from lib.provenance import build_provenance, add_provenance_args, relative_to_root
-from lib.item_info import load_item_info_strict, file_sha256, load_training_report
+from lib.item_info import file_sha256, load_item_info_strict, load_training_report
 from lib.mini_ipip import load_mini_ipip_mapping
 from lib.parallelism import coerce_positive_int, resolve_default_xgb_n_jobs
+from lib.provenance import add_provenance_args, build_provenance, relative_to_root
 from lib.provenance_checks import (
     build_split_signature as _build_split_signature,
+)
+from lib.provenance_checks import (
     verify_split_metadata_hash_lock,
 )
+from lib.scoring import raw_score_to_percentile
 from lib.sparsity import apply_sparsity_single
 
 logging.basicConfig(
@@ -156,20 +161,6 @@ def _load_mini_ipip_mapping(artifacts_dir: Path) -> dict[str, list[str]]:
     """Load Mini-IPIP item mapping from artifacts (fail closed)."""
     mapping_path = artifacts_dir / "mini_ipip_mapping.json"
     return load_mini_ipip_mapping(mapping_path)
-
-
-def _extract_split_strata(df: pd.DataFrame) -> Optional[pd.Series]:
-    """Return row-aligned split strata after the same target validity filtering."""
-    if "split_stratum" not in df.columns:
-        return None
-
-    target_cols = [f"{d}_score" for d in DOMAINS if f"{d}_score" in df.columns]
-    pct_cols = [f"{d}_percentile" for d in DOMAINS if f"{d}_percentile" in df.columns]
-    if not target_cols or not pct_cols:
-        return None
-
-    valid_mask = df[target_cols].notna().all(axis=1) & df[pct_cols].notna().all(axis=1)
-    return df.loc[valid_mask, "split_stratum"].reset_index(drop=True)
 
 
 def _stable_json_sha256(payload: Any) -> str:
@@ -280,6 +271,22 @@ def _verify_locked_params_hash_lock(
             allow_none=True,
         )
 
+        # Hyperparameter VALUES must also match the tune-time witness
+        # (tuned_params.original.json), so editing tuned_params.json without
+        # re-running `make tune` fails loudly instead of silently training a
+        # different model. No-op when the sidecar is absent (first reference
+        # train, or a checkout shipping only tuned_params.json).
+        expected_hp = _normalize_sha256_hex_strict(
+            params_source.get("original_hyperparameters_sha256"),
+            label="tuned_params.original.hyperparameters_sha256",
+            allow_none=True,
+        )
+        actual_hp = _normalize_sha256_hex_strict(
+            params_source.get("hyperparameters_sha256"),
+            label="hyperparameters_sha256",
+            allow_none=True,
+        )
+
         mismatches: list[str] = []
         if expected_train != actual_train:
             mismatches.append("train_sha256 mismatch")
@@ -289,6 +296,11 @@ def _verify_locked_params_hash_lock(
             mismatches.append("item_info_sha256 mismatch")
         if expected_split is not None and expected_split != actual_split:
             mismatches.append("split_signature mismatch")
+        if expected_hp is not None and actual_hp is not None and expected_hp != actual_hp:
+            mismatches.append(
+                "hyperparameters_sha256 mismatch (locked params edited after "
+                "`make tune`; the .original.json sidecar disagrees)"
+            )
 
         if mismatches:
             details = ", ".join(mismatches)
@@ -375,8 +387,8 @@ def _apply_sparsity_single(
     X: pd.DataFrame,
     item_info: dict,
     config: dict,
-    mini_ipip_items: Optional[dict[str, list[str]]] = None,
-    rng: Optional[np.random.Generator] = None,
+    mini_ipip_items: dict[str, list[str]] | None = None,
+    rng: np.random.Generator | None = None,
 ) -> pd.DataFrame:
     """Dispatch wrapper: apply the appropriate sparsity method to X based on config."""
     sparsity_cfg = config.get("sparsity", {})
@@ -401,7 +413,7 @@ def _apply_multipass_sparsity(
     config: dict,
     n_passes: int = 3,
     base_seed: int = 42,
-    mini_ipip_items: Optional[dict[str, list[str]]] = None,
+    mini_ipip_items: dict[str, list[str]] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Apply sparsity augmentation with multiple passes.
 
@@ -438,7 +450,7 @@ def _create_xgb_model(
     quantile: float,
     params: dict,
     n_jobs: int = 1,
-    early_stopping_rounds: Optional[int] = None,
+    early_stopping_rounds: int | None = None,
     gpu: bool = False,
 ) -> xgb.XGBRegressor:
     """Create XGBoost quantile regression model."""
@@ -471,8 +483,8 @@ def _train_single_domain(
     y_train: pd.DataFrame,
     params: dict,
     n_jobs: int = 1,
-    X_eval: Optional[pd.DataFrame] = None,
-    y_eval: Optional[pd.DataFrame] = None,
+    X_eval: pd.DataFrame | None = None,
+    y_eval: pd.DataFrame | None = None,
     gpu: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     """Train q05/q50/q95 models for a single domain. Thread-safe."""
@@ -494,6 +506,7 @@ def _train_single_domain(
         )
 
         if use_early_stopping:
+            assert y_eval is not None  # guaranteed by use_early_stopping definition
             y_domain_eval = y_eval[score_col]
             model.fit(
                 X_train, y_domain,
@@ -518,8 +531,8 @@ def _train_domain_models(
     y_train: pd.DataFrame,
     params: dict,
     n_jobs: int = 1,
-    X_eval: Optional[pd.DataFrame] = None,
-    y_eval: Optional[pd.DataFrame] = None,
+    X_eval: pd.DataFrame | None = None,
+    y_eval: pd.DataFrame | None = None,
     parallel_domains: int = 1,
     gpu: bool = False,
 ) -> dict[str, dict[str, Any]]:
@@ -605,7 +618,7 @@ def _evaluate_domain_models(
     domain_models: dict[str, dict[str, Any]],
     X_test: pd.DataFrame,
     y_test: pd.DataFrame,
-    calibration_params: Optional[dict[str, dict[str, float]]] = None,
+    calibration_params: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, dict[str, float]]:
     """Evaluate models on test set (percentile space)."""
     metrics: dict[str, dict[str, float]] = {}
@@ -699,19 +712,32 @@ def _evaluate_domain_models(
     return metrics
 
 
+def scale_for_coverage(coverage: float) -> float:
+    """Scale a 90% PI toward nominal coverage per the single-sourced policy.
+
+    Single source of truth: ``lib.constants.CALIBRATION_POLICY``. Below
+    ``coverage_low`` the interval is widened toward ``target_coverage`` (the
+    ``coverage_floor`` clamps the denominator so a tiny observed coverage can't
+    explode the scale); above ``coverage_high`` it is narrowed; in band it is
+    left unscaled. Value-identical to the prior inline literals.
+    """
+    low = CALIBRATION_POLICY["coverage_low"]
+    high = CALIBRATION_POLICY["coverage_high"]
+    target = CALIBRATION_POLICY["target_coverage"]
+    floor = CALIBRATION_POLICY["coverage_floor"]
+    if coverage < low:
+        return target / max(coverage, floor)
+    if coverage > high:
+        return target / coverage
+    return 1.0
+
+
 def _compute_calibration_params(
     domain_models: dict[str, dict[str, Any]],
     X_val: pd.DataFrame,
     y_val: pd.DataFrame,
 ) -> dict[str, dict[str, float]]:
     """Compute calibration parameters (observed coverage + scale factor) per domain."""
-    def _scale_for_coverage(coverage: float) -> float:
-        if coverage < 0.85:
-            return 0.90 / max(coverage, 0.5)
-        if coverage > 0.95:
-            return 0.90 / coverage
-        return 1.0
-
     calibration: dict[str, dict[str, float]] = {}
 
     missing_pct_cols = [f"{d}_percentile" for d in DOMAINS if f"{d}_percentile" not in y_val.columns]
@@ -738,7 +764,7 @@ def _compute_calibration_params(
         q_lower_pred, q50_pred, q_upper_pred = stacked[0], stacked[1], stacked[2]
 
         coverage = float(np.mean((y_true >= q_lower_pred) & (y_true <= q_upper_pred)))
-        scale = _scale_for_coverage(coverage)
+        scale = scale_for_coverage(coverage)
 
         calibration[domain] = {
             "observed_coverage": coverage,
@@ -764,12 +790,7 @@ def _calibration_from_metrics(
         coverage = float(coverage_raw)
         if not np.isfinite(coverage):
             continue
-        if coverage < 0.85:
-            scale = 0.90 / max(coverage, 0.5)
-        elif coverage > 0.95:
-            scale = 0.90 / coverage
-        else:
-            scale = 1.0
+        scale = scale_for_coverage(coverage)
         calibration[domain] = {
             "observed_coverage": coverage,
             "scale_factor": float(scale),
@@ -794,7 +815,7 @@ def _run_cv_fold(
     config: dict,
     params: dict,
     n_jobs: int,
-    mini_ipip_items: Optional[dict[str, list[str]]],
+    mini_ipip_items: dict[str, list[str]] | None,
     parallel_domains: int,
     random_state: int,
     augment_sparsity: bool,
@@ -812,8 +833,8 @@ def _run_cv_fold(
     y_pct_test_fold = y_pct.iloc[test_idx].copy()
 
     # Split early-stopping eval set BEFORE augmentation.
-    X_eval_es: Optional[pd.DataFrame] = None
-    y_eval_es: Optional[pd.DataFrame] = None
+    X_eval_es: pd.DataFrame | None = None
+    y_eval_es: pd.DataFrame | None = None
     X_fit_pre = X_train_fold
     y_fit_pre = y_train_fold
 
@@ -879,8 +900,7 @@ def _run_cross_validation_robustness(
     params: dict,
     n_folds: int = DEFAULT_STAGE07_CV_FOLDS,
     n_jobs: int = 1,
-    mini_ipip_items: Optional[dict[str, list[str]]] = None,
-    strata: Optional[pd.Series] = None,
+    mini_ipip_items: dict[str, list[str]] | None = None,
     parallel_domains: int = 1,
     parallel_folds: int = 1,
     gpu: bool = False,
@@ -894,35 +914,8 @@ def _run_cross_validation_robustness(
     n_augmentation_passes = sparsity_cfg.get("n_augmentation_passes", 1)
     random_state = config.get("training", {}).get("random_state", 42)
 
-    split_iter: Any
-    if strata is not None:
-        strata_values = np.asarray(strata)
-        if len(strata_values) != len(X):
-            raise ValueError(
-                "Strata length mismatch for cross-validation: "
-                f"len(strata)={len(strata_values)}, len(X)={len(X)}"
-            )
-        unique, counts = np.unique(strata_values, return_counts=True)
-        if len(unique) < 2:
-            raise ValueError(
-                "Cross-validation stratification requires at least 2 strata, "
-                f"found {len(unique)}."
-            )
-        min_count = int(np.min(counts))
-        if min_count < n_folds:
-            raise ValueError(
-                "Cross-validation stratification requires each stratum to appear at least "
-                f"n_folds times (n_folds={n_folds}, min_count={min_count})."
-            )
-        outer_cv = StratifiedKFold(
-            n_splits=n_folds,
-            shuffle=True,
-            random_state=random_state,
-        )
-        split_iter = outer_cv.split(X, strata_values)
-    else:
-        outer_cv = KFold(n_splits=n_folds, shuffle=True, random_state=random_state)
-        split_iter = outer_cv.split(X)
+    outer_cv = KFold(n_splits=n_folds, shuffle=True, random_state=random_state)
+    split_iter = outer_cv.split(X)
 
     split_plan = list(split_iter)
     requested_parallel_folds = max(parallel_folds, 1)
@@ -1131,7 +1124,7 @@ def _validate_model_outputs(
     return results
 
 
-def _threshold_for_domain(value: Any, domain: str) -> Optional[float]:
+def _threshold_for_domain(value: Any, domain: str) -> float | None:
     """Resolve scalar-or-dict threshold configs for a domain."""
     if value is None:
         return None
@@ -1276,6 +1269,19 @@ def main() -> int:
         default=False,
         help="Use GPU acceleration (device='cuda')",
     )
+    parser.add_argument(
+        "--no-gate",
+        action="store_true",
+        default=False,
+        help=(
+            "Run the quality-gate checks and record their outcome in "
+            "training_report.json, but do NOT abort on failure: save the "
+            "models/calibration/report even if a threshold is missed. Use for the "
+            "first run on a new split so a near-miss does not discard the full "
+            "training compute; inspect validation_metrics and decide manually "
+            "before publishing."
+        ),
+    )
     add_provenance_args(parser)
     args = parser.parse_args()
 
@@ -1287,14 +1293,8 @@ def main() -> int:
         log.error("Config file not found: %s", config_path)
         return 1
 
-    try:
-        import yaml
-    except ImportError:
-        log.error("PyYAML not installed. Install with: pip install pyyaml")
-        return 1
-
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
+    # Merges configs/_base.yaml (shared defaults) underneath the variant.
+    config = load_config_with_base(config_path)
 
     config_name = config.get("name", config_path.stem)
     output_dir = PACKAGE_ROOT / config.get("output_dir", f"models/{config_name}")
@@ -1332,6 +1332,11 @@ def main() -> int:
             ", ".join(sorted(valid_lock_policies)),
         )
         return 1
+
+    # Publication mode: when set (in the published configs), a missing held-out
+    # test split or split_metadata is a hard error instead of a warning, so a
+    # publication run cannot silently produce a model with no provenance lock.
+    require_test_split = bool(config.get("require_test_split", False))
 
     reference_model_dir_raw = hp_cfg.get("reference_model_dir")
     reference_model_dir: Path | None = None
@@ -1429,6 +1434,11 @@ def main() -> int:
                     with open(original_path) as f:
                         original_payload = json.load(f)
                     original_params = original_payload.get("hyperparameters", {})
+                    # Witness of what `make tune` actually produced; the strict
+                    # lock compares this against the loaded params (A5.1).
+                    params_source["original_hyperparameters_sha256"] = _stable_json_sha256(
+                        original_params
+                    )
                     overrides = {}
                     for key in sorted(set(params) | set(original_params)):
                         if params.get(key) != original_params.get(key):
@@ -1600,8 +1610,8 @@ def main() -> int:
 
     train_sha256 = file_sha256(train_path)
     val_sha256 = file_sha256(val_path)
-    test_sha256: Optional[str] = None
-    split_signature: Optional[str] = None
+    test_sha256: str | None = None
+    split_signature: str | None = None
     if test_path.exists():
         test_sha256 = file_sha256(test_path)
         split_signature = _build_split_signature(
@@ -1609,13 +1619,21 @@ def main() -> int:
             val_sha256=val_sha256,
             test_sha256=test_sha256,
         )
+    elif require_test_split:
+        log.error(
+            "test.parquet not found in %s but require_test_split is set "
+            "(publication mode). Run stage 04 to produce the held-out test split.",
+            data_dir,
+        )
+        return 1
     else:
         log.warning(
             "test.parquet not found in %s; split signature will be unavailable in training report.",
             data_dir,
         )
 
-    split_metadata_sha256: Optional[str] = None
+    split_metadata_sha256: str | None = None
+    test_rows_meta: int | None = None
     if split_metadata_path.exists():
         try:
             split_metadata_sha256 = file_sha256(split_metadata_path)
@@ -1625,6 +1643,13 @@ def main() -> int:
                 val_sha256=val_sha256,
                 test_sha256=test_sha256,
             )
+            # Authoritative per-respondent test count (A5.7) so the exporter need
+            # not backfill it from a pooled validation N. Metadata-only read --
+            # never touches test.parquet, so the leakage invariant holds.
+            with open(split_metadata_path) as f:
+                _split_md = json.load(f)
+            _test_rows = _split_md.get("test_rows")
+            test_rows_meta = _test_rows if isinstance(_test_rows, int) else None
         except (OSError, json.JSONDecodeError, ValueError, FileNotFoundError) as e:
             log.error("Invalid split metadata at %s: %s", split_metadata_path, e)
             return 1
@@ -1640,6 +1665,13 @@ def main() -> int:
             "  Split metadata verified (train/val/test hashes match %s)",
             split_metadata_path,
         )
+    elif require_test_split:
+        log.error(
+            "split_metadata.json not found in %s but require_test_split is set "
+            "(publication mode). Run stage 04 to produce split_metadata.json.",
+            data_dir,
+        )
+        return 1
     else:
         log.warning(
             "split_metadata.json not found in %s; proceeding without stage-04 hash lock.",
@@ -1654,8 +1686,6 @@ def main() -> int:
     try:
         X_train, y_train, y_train_pct = _prepare_features_targets(train_df)
         X_val, y_val, y_val_pct = _prepare_features_targets(val_df)
-        train_strata = _extract_split_strata(train_df)
-        val_strata = _extract_split_strata(val_df)
     except (ValueError, KeyError) as e:
         log.error("Invalid train/val data schema for training: %s", e)
         return 1
@@ -1663,7 +1693,7 @@ def main() -> int:
     # Load item info for sparsity augmentation and sparse validation gates
     item_info: dict = {}
     item_info_path = data_dir / "item_info.json"
-    item_info_sha256: Optional[str] = None
+    item_info_sha256: str | None = None
     sparse_gate_cfg = validation_cfg.get("sparse_20", {})
     sparse_gate_enabled = bool(sparse_gate_cfg.get("enabled", False))
     requires_item_info = bool(sparsity_cfg.get("enabled", False) or sparse_gate_enabled)
@@ -1700,7 +1730,7 @@ def main() -> int:
         return 1
 
     # Load Mini-IPIP mapping
-    mini_ipip_items: Optional[dict[str, list[str]]] = None
+    mini_ipip_items: dict[str, list[str]] | None = None
     include_mini_ipip = bool(sparsity_cfg.get("include_mini_ipip", True))
     if sparsity_cfg.get("enabled", False) and include_mini_ipip:
         try:
@@ -1721,21 +1751,6 @@ def main() -> int:
         X_trainval = pd.concat([X_train, X_val]).reset_index(drop=True)
         y_trainval = pd.concat([y_train, y_val]).reset_index(drop=True)
         y_trainval_pct = pd.concat([y_train_pct, y_val_pct]).reset_index(drop=True)
-        strata_trainval: Optional[pd.Series] = None
-        if train_strata is not None and val_strata is not None:
-            strata_trainval = pd.concat([train_strata, val_strata]).reset_index(drop=True)
-            log.info(
-                "  Using stratified cross-validation via split_stratum (%d strata)",
-                int(strata_trainval.nunique()),
-            )
-        elif train_strata is None and val_strata is None:
-            log.warning("  split_stratum unavailable; falling back to unstratified cross-validation.")
-        else:
-            log.error(
-                "split_stratum presence mismatch between train/val; "
-                "cannot safely run cross-validation. Re-run stage 04 prepare."
-            )
-            return 1
 
         cv_results = _run_cross_validation_robustness(
             X_trainval, y_trainval, y_trainval_pct,
@@ -1743,7 +1758,6 @@ def main() -> int:
             n_folds=cv_folds,
             n_jobs=xgb_n_jobs,
             mini_ipip_items=mini_ipip_items,
-            strata=strata_trainval,
             parallel_domains=args.parallel_domains,
             parallel_folds=cv_parallel_folds,
             gpu=args.gpu,
@@ -1764,8 +1778,8 @@ def main() -> int:
         log.info("  Applying sparsity augmentation...")
 
         # Split early-stopping eval set BEFORE augmentation
-        X_eval_es: Optional[pd.DataFrame] = None
-        y_eval_es: Optional[pd.DataFrame] = None
+        X_eval_es: pd.DataFrame | None = None
+        y_eval_es: pd.DataFrame | None = None
         X_fit_pre = X_train
         y_fit_pre = y_train
 
@@ -1895,7 +1909,7 @@ def main() -> int:
     min_coverage_90 = validation_cfg.get("min_coverage_90")
     gate_failed = False
 
-    def _valid_float(value: Any) -> Optional[float]:
+    def _valid_float(value: Any) -> float | None:
         if not isinstance(value, (int, float, np.integer, np.floating)):
             return None
         f = float(value)
@@ -2011,8 +2025,15 @@ def main() -> int:
                     gate_failed = True
 
     if gate_failed:
-        log.error("Quality gates not met — aborting before saving models.")
-        return 1
+        if args.no_gate:
+            log.warning(
+                "Quality gates NOT met, but --no-gate is set: saving "
+                "models/calibration/report anyway. Inspect validation_metrics in "
+                "training_report.json and decide manually before publishing."
+            )
+        else:
+            log.error("Quality gates not met — aborting before saving models.")
+            return 1
 
     # Compute calibration parameters
     log.info("Step 6: Computing calibration parameters...")
@@ -2036,9 +2057,18 @@ def main() -> int:
     log.info("Step 7: Saving models to %s...", output_dir)
     for domain, models in domain_models.items():
         for q_name, model in models.items():
-            model_path = output_dir / f"adaptive_{domain}_{q_name}.joblib"
+            model_path = output_dir / f"{MODEL_STEM}_{domain}_{q_name}.joblib"
             joblib.dump(model, model_path)
             log.info("  Saved %s", model_path.name)
+            # Remove any orphaned legacy-stem file so a re-train over an old
+            # bundle doesn't leave both stems present. Loaders prefer the new
+            # stem, so a stale legacy file would otherwise linger permanently
+            # shadowed (and a mixed-stem dir from an interrupted run could pass
+            # the completeness check via the fallback).
+            legacy_path = output_dir / f"{LEGACY_MODEL_STEM}_{domain}_{q_name}.joblib"
+            if legacy_path.exists():
+                legacy_path.unlink()
+                log.info("  Removed orphaned legacy %s", legacy_path.name)
 
     # Save calibration params (explicit sparse/full regimes + legacy alias)
     full_calibration_path = output_dir / "calibration_params_full_50.json"
@@ -2075,6 +2105,11 @@ def main() -> int:
             "cv_folds": cv_folds,
             "cv_parallel_folds": cv_parallel_folds,
             "gpu": args.gpu,
+            # _create_xgb_model does not set tree_method, so XGBoost uses its
+            # default ("hist") on both CPU and the device="cuda" GPU path; record
+            # that truthfully rather than a params key the estimator never reads.
+            "tree_method": "hist",
+            "device": "cuda" if args.gpu else "cpu",
             "hyperparameters_source_mode": params_source.get("mode"),
             "hyperparameters_sha256": params_source.get("hyperparameters_sha256"),
             "hyperparameters_source_sha256": params_source.get("file_sha256"),
@@ -2111,6 +2146,7 @@ def main() -> int:
             "train_sha256": train_sha256,
             "val_sha256": val_sha256,
             "test_sha256": test_sha256,
+            "test_rows": test_rows_meta,
             "split_signature": split_signature,
             "split_metadata_sha256": split_metadata_sha256,
             "item_info_path": relative_to_root(item_info_path) if item_info_path.exists() else None,
@@ -2133,6 +2169,16 @@ def main() -> int:
         "validation_metrics": val_metrics,
         "validation_metrics_sparse_20": sparse_val_metrics,
         "validation_metrics_sparse_20_runs": sparse_val_runs,
+        # Records the quality-gate outcome alongside the metrics it was computed
+        # from. "passed" reflects whether every configured threshold was met;
+        # "enforced" is False whenever --no-gate was passed (gate computed but not
+        # enforced). Combine the two to distinguish a clean run (True/True), a clean
+        # run invoked with --no-gate (True/False), and a saved-despite-failure
+        # bundle (False/False).
+        "quality_gates": {
+            "passed": not gate_failed,
+            "enforced": not args.no_gate,
+        },
         "calibration_params": (
             calibration_params_sparse_20_balanced
             if calibration_params_sparse_20_balanced

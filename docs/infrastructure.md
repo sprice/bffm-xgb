@@ -48,10 +48,18 @@ make remote-reference
 so expensive outputs are synced locally before final teardown.
 
 `make remote-reference` follows the same remote CPU path but only builds the
-reference data/model path after load/norms: `prepare-default`,
-`correlations-default`, `train 1`, `research-eval-reference`,
-`export-reference`, `export-repo-readme`, and `figures`. It skips `notes`
-because notes generation still requires all four variants.
+reference data/model path after load/norms: `prepare`, `correlations`, `tune`,
+`train 1`, `research-eval-reference`,
+`export-reference`, `export-repo-readme`, `notes`, and `figures`. Note that
+`tune` is **not** skipped on the reference-only path: `run-pipeline.sh
+--reference-only` runs the full Optuna tune unconditionally before
+`train` (the `--reference-only` flag only scopes train/eval/export to the
+reference variant, it does not bypass tuning; the tuning budget is recorded
+in [GPU Training Details](#gpu-training-details)). It now runs
+`notes` scoped to the reference variant (`make notes REFERENCE_ONLY=1`),
+producing a single-variant `NOTES.md` + `research_summary.json` that disclose
+the ablation variants were not run (generated on the remote; regenerate locally
+with `make notes REFERENCE_ONLY=1` against the pulled reference bundle if needed).
 
 `make remote-push` excludes `data/` by design. Use `make remote-push-data`
 when you intentionally want to seed the remote box with your local `data/`
@@ -67,9 +75,20 @@ Or in two phases with a pause to review tuned hyperparameters:
 ```bash
 make infra-cpu-up
 make remote-all-1          # download through tune, pulls tuned_params.json
-# (optional) edit artifacts/tuned_params.json
+# (optional) change hyperparameters — see note below
 make remote-all-2          # train through figures, pulls results, tears down
 ```
+
+> **Editing hyperparameters before `remote-all-2`:** the published reference
+> config (`configs/reference.yaml`, `lock_policy: strict_data_hash`) now rejects an
+> in-place edit of `artifacts/tuned_params.json` once `make tune` has written the
+> `tuned_params.original.json` witness — the strict lock fails closed on a
+> hyperparameter-value mismatch so a published model can't silently diverge from
+> what was tuned. To intentionally change hyperparameters, either re-run `make tune`
+> (regenerating both the params and the `.original.json` witness) or pass them
+> explicitly via `make train 1 PARAMS=<file>` (the `--params` path is exempt from
+> the strict value lock). Ablation configs (`lock_policy: reference_model_hash`) are
+> unaffected.
 
 ### Targets
 
@@ -84,7 +103,7 @@ make remote-all-2          # train through figures, pulls results, tears down
 
 ## Option B: GPU Tune/Train + CPU Eval (two instances)
 
-Best when tune/train is the bottleneck. GPU accelerates XGBoost training significantly (5-10x), then a CPU instance handles the CPU-bound eval steps (bootstrap, simulation).
+Best when tune/train is the bottleneck. GPU typically accelerates XGBoost (hist) training by several times (not benchmarked on this project), then a CPU instance handles the CPU-bound eval steps (bootstrap, simulation).
 
 ```bash
 # Phase 1: GPU instance — tune + train
@@ -102,7 +121,7 @@ Runs on the GPU instance (`g5.xlarge` with Deep Learning AMI).
 
 **Steps performed on the remote instance:**
 1. `make remote-push` — upload source code + artifacts
-2. `make remote-setup` — create venv, install `requirements.txt`
+2. `make remote-setup` — install dependencies via `uv sync` (uv is installed system-wide by the instance's cloud-init). On this GPU path the cloud-init installs `python3-venv` on the Deep Learning AMI's existing Python; `uv sync` still downloads the project interpreter pinned in `.python-version` (3.14) for the project venv. (This cloud-init path is untested on a fresh AWS instance — verify `uv sync` succeeds before relying on a paid run.)
 3. Pipeline stages (via `run-pipeline.sh --end-stage train --gpu`):
    - `download` — fetch IPIP-BFFM data
    - `load` — load into SQLite
@@ -111,7 +130,7 @@ Runs on the GPU instance (`g5.xlarge` with Deep Learning AMI).
    - `prepare` — prepare train/val/test splits
    - `correlations` — compute correlations
    - `tune` — Optuna hyperparameter search (GPU-accelerated)
-   - `train` — train all 4 model variants (GPU-accelerated)
+   - `train` — train all 3 model variants (GPU-accelerated)
 
 **After remote completion:**
 - Pulls `models/`, `artifacts/tuned_params.json`, `artifacts/tuned_params.original.json`, `artifacts/ipip_bffm_norms.json`
@@ -124,7 +143,7 @@ Runs on the CPU instance (`c7a.24xlarge` with Amazon Linux 2023).
 
 **Steps performed on the remote instance:**
 1. `make remote-push` — upload source code + models + artifacts (from Phase 1 pull)
-2. `make remote-setup` — create venv, install `requirements.txt`
+2. `make remote-setup` — install dependencies via `uv sync` (uv is installed system-wide by the instance's cloud-init). `uv sync` also downloads the project interpreter pinned in `.python-version` (3.14); the system python the cloud-init installs is only for OS tooling, not the project venv. (This cloud-init path is untested on a fresh AWS instance — verify `uv sync` succeeds before relying on a paid run.)
 3. Data pipeline (via `make` directly):
    - `make download load norms norms-check prepare correlations`
 4. Eval + export pipeline (via `make` directly):
@@ -171,6 +190,14 @@ CPU training (default, unchanged):
 
 - `make tune N_JOBS=96`
 - `make train N_JOBS=96 PARALLEL_DOMAINS=5`
+
+The `96`/`5` values above are illustrative CLI examples for a 96-vCPU box, not properties of the published run. The recorded config of the published reference bundle is:
+
+<!-- BEGIN GENERATED: training-config -->
+- **Optuna tuning budget:** 200 trials.
+- **Cross-validation:** 3-fold.
+- **Recorded XGBoost thread count (published bundle):** `xgb_n_jobs = 10` (CLI override) — reproduce byte-for-byte with `make train N_JOBS=10`.
+<!-- END GENERATED: training-config -->
 
 ---
 

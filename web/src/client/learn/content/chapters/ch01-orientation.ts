@@ -54,9 +54,16 @@ export const chapter01Orientation: Chapter = {
           },
           {
             value: repoFacts.baselineK20.domainBalancedR.toFixed(4),
-            label: "domain-balanced 20-item baseline r",
+            label: "domain-balanced 20-item recovery r (XGBoost)",
           },
         ])}
+        ${callout(
+          "note",
+          "Read the full-50 r as a ceiling",
+          paragraph(
+            `The full-50 validation r ≈ 1 is a score-recovery ceiling, not external-trait validity: the target is a deterministic transform (domain mean -> percentile) of those same 50 items, so r ≈ 1 is expected. The real operating-point accuracy is the domain-balanced 20-item form at r ≈ ${repoFacts.baselineK20.domainBalancedR.toFixed(2)}.`,
+          ),
+        )}
         ${callout(
           "why",
           "The central claim",

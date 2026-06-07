@@ -1,72 +1,8 @@
-export const repoFacts = {
-  totalValidRespondents: 603322,
-  trainRows: 422324,
-  valRows: 90499,
-  testRows: 90499,
-  firstItemId: "ext3",
-  firstItemText: "I feel comfortable around people.",
-  firstItemCrossDomainInfo: 1.5482,
-  splitScheme: "ext-est",
-  altSplitScheme: "ext-est-opn",
-  baselineK20: {
-    domainBalancedR: 0.9267,
-    domainBalancedMae: 8.18,
-    miniIpipStandaloneR: 0.9064,
-    adaptiveTopKR: 0.82,
-    constrainedAdaptiveR: 0.9052,
-  },
-  mlVsAveragingK20: {
-    domainBalanced: {
-      mlR: 0.9267,
-      avgR: 0.9102,
-      deltaR: 0.0165,
-    },
-    miniIpip: {
-      mlR: 0.9172,
-      avgR: 0.9064,
-      deltaR: 0.0108,
-    },
-  },
-  validation: {
-    full50R: 0.9995,
-    full50Mae: 0.62,
-    full50Coverage: 0.9333,
-    sparse20R: 0.9095,
-    sparse20Mae: 9.0,
-    sparse20Coverage: 0.9018,
-  },
-  simulation: {
-    overallR: 0.9236,
-    overallMae: 8.33,
-    overallCoverage: 0.8966,
-    meanItemsPerDomain: 4,
-    meanItemsTotal: 20,
-  },
-  norms: {
-    ext: { mean: 2.9138, sd: 0.9112 },
-    agr: { mean: 3.7589, sd: 0.7363 },
-    csn: { mean: 3.3426, sd: 0.7391 },
-    est: { mean: 2.9187, sd: 0.8607 },
-    opn: { mean: 3.9389, sd: 0.6183 },
-  },
-  interItemRBar: {
-    ext: 0.4690,
-    agr: 0.3564,
-    csn: 0.3148,
-    est: 0.4078,
-    opn: 0.2869,
-  },
-  currentLockedParams: {
-    n_estimators: 6884,
-    max_depth: 5,
-    learning_rate: 0.010019388376694232,
-    reg_alpha: 4.430034672198069,
-    reg_lambda: 2.1350513811608853,
-    subsample: 0.7211182938397382,
-    colsample_bytree: 0.5903992966597149,
-    min_child_weight: 8,
-  },
-};
+// repoFacts is GENERATED from the reference source-of-truth artifacts by
+// scripts/generate_doc_data.py (MECHANISM 1). Do not hand-edit the values --
+// edit the generator/artifacts and run `make gen-docs`. Re-exported here so the
+// chapters keep importing it from "../data".
+export { repoFacts } from "./repo-facts.generated";
 
 export const officialDocs = {
   python: "https://docs.python.org/3/tutorial/index.html",

@@ -16,12 +16,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import os
+import platform
 import subprocess
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Any
-
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 NORMS_PATH_ENV = "IPIP_BFFM_NORMS_PATH"
@@ -190,6 +190,52 @@ def add_provenance_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+_PROVENANCE_PACKAGES = (
+    "xgboost",
+    "numpy",
+    "scipy",
+    "scikit-learn",
+    "pandas",
+    "onnx",
+    "onnxmltools",
+    "onnxruntime",
+    # The tuner (stage 06 -> tuned_params.json) and the figure renderer
+    # (stage 12) were previously un-versioned in provenance; record them so the
+    # toolchain behind every artifact is fully auditable.
+    "optuna",
+    "matplotlib",
+)
+
+
+def _safe_version(distribution: str) -> str | None:
+    """Return an installed distribution's version, or None if it cannot be read.
+
+    A corrupted/unreadable dist-info must record None rather than aborting every
+    pipeline stage that builds provenance, so any metadata error maps to None.
+    """
+    try:
+        return importlib_metadata.version(distribution)
+    except importlib_metadata.PackageNotFoundError:
+        return None
+    except Exception:
+        return None
+
+
+def _build_environment() -> dict[str, Any]:
+    """Record the runtime environment (Python + key library versions + platform).
+
+    Bitwise reproduction of the XGBoost->ONNX pipeline depends on these versions;
+    capturing them makes the toolchain behind each artifact auditable. A missing
+    package records None rather than raising.
+    """
+    return {
+        "python_version": platform.python_version(),
+        "python_implementation": platform.python_implementation(),
+        "platform": platform.platform(),
+        "libraries": {name: _safe_version(name) for name in _PROVENANCE_PACKAGES},
+    }
+
+
 def build_provenance(
     script: str,
     *,
@@ -246,6 +292,8 @@ def build_provenance(
 
     if bootstrap is not None:
         prov["bootstrap"] = bootstrap
+
+    prov["environment"] = _build_environment()
 
     if extra:
         prov.update(extra)

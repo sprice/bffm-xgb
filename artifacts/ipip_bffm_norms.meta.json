@@ -1,0 +1,188 @@
+{
+  "provenance": {
+    "data_snapshot_id": "norms_sha256:a8c7c1a0dac762bc47b5a36094ffb101696fcda45aae6a8c4f46c14fb2502bf5",
+    "preprocessing_version": "2c59dcc34f0989ba8d647714ced9e54c9e9e12fc",
+    "script": "03_compute_norms.py",
+    "git_hash": "2c59dcc34f0989ba8d647714ced9e54c9e9e12fc",
+    "environment": {
+      "python_version": "3.14.3",
+      "python_implementation": "CPython",
+      "platform": "macOS-26.4.1-arm64-arm-64bit-Mach-O",
+      "libraries": {
+        "xgboost": "3.1.3",
+        "numpy": "2.4.2",
+        "scipy": "1.17.0",
+        "scikit-learn": "1.8.0",
+        "pandas": "3.0.0",
+        "onnx": "1.20.0",
+        "onnxmltools": "1.14.0",
+        "onnxruntime": "1.24.1",
+        "optuna": "4.3.0",
+        "matplotlib": "3.10.8"
+      }
+    },
+    "db_path": "data/processed/ipip_bffm.db",
+    "table": "responses",
+    "check_mode": false,
+    "mini_ipip_mapping": "artifacts/mini_ipip_mapping.json",
+    "norms_lock_path": "artifacts/ipip_bffm_norms.json",
+    "norms_lock_sha256": "a8c7c1a0dac762bc47b5a36094ffb101696fcda45aae6a8c4f46c14fb2502bf5"
+  },
+  "source": {
+    "dataset": "IPIP-FFM (openpsychometrics.org)",
+    "table": "responses",
+    "scope": "training split of canonical_v1 (plain random 70/15/15, seed 42) from the stage 02 SQLite; held-out val/test rows are excluded so norms do not leak into the percentile targets",
+    "db_path": "data/processed/ipip_bffm.db",
+    "n_respondents": 422326,
+    "mini_ipip_mapping": {
+      "path": "artifacts/mini_ipip_mapping.json",
+      "sha256": "b709a7a5e297a03c6f4d3c2f2067f8bc80d4d2dba59cf81c4cd3593526996450"
+    }
+  },
+  "computed": {
+    "ext": {
+      "mean": 2.9146164337502305,
+      "sd": 0.911158974670893,
+      "n": 422326
+    },
+    "agr": {
+      "mean": 3.7589838181878457,
+      "sd": 0.7365659197651669,
+      "n": 422326
+    },
+    "csn": {
+      "mean": 3.342639098705739,
+      "sd": 0.7390359186597035,
+      "n": 422326
+    },
+    "est": {
+      "mean": 2.918995752096721,
+      "sd": 0.8610764182500696,
+      "n": 422326
+    },
+    "opn": {
+      "mean": 3.9387115640524146,
+      "sd": 0.6182717542790234,
+      "n": 422326
+    }
+  },
+  "computed_mini_ipip": {
+    "ext": {
+      "mean": 2.8061083144300847,
+      "sd": 1.0287421649343655,
+      "n": 422326
+    },
+    "agr": {
+      "mean": 3.800206475566269,
+      "sd": 0.8957281650735923,
+      "n": 422326
+    },
+    "csn": {
+      "mean": 3.200326288222842,
+      "sd": 0.9028569990640011,
+      "n": 422326
+    },
+    "est": {
+      "mean": 3.0646804837968773,
+      "sd": 0.9097757449383987,
+      "n": 422326
+    },
+    "opn": {
+      "mean": 4.05336102915757,
+      "sd": 0.7667937193483743,
+      "n": 422326
+    }
+  },
+  "expected": {
+    "ext": {
+      "mean": 2.9146164337502305,
+      "sd": 0.911158974670893
+    },
+    "agr": {
+      "mean": 3.7589838181878457,
+      "sd": 0.7365659197651669
+    },
+    "csn": {
+      "mean": 3.342639098705739,
+      "sd": 0.7390359186597035
+    },
+    "est": {
+      "mean": 2.918995752096721,
+      "sd": 0.8610764182500696
+    },
+    "opn": {
+      "mean": 3.9387115640524146,
+      "sd": 0.6182717542790234
+    }
+  },
+  "expected_mini_ipip": {
+    "ext": {
+      "mean": 2.8061083144300847,
+      "sd": 1.0287421649343655
+    },
+    "agr": {
+      "mean": 3.800206475566269,
+      "sd": 0.8957281650735923
+    },
+    "csn": {
+      "mean": 3.200326288222842,
+      "sd": 0.9028569990640011
+    },
+    "est": {
+      "mean": 3.0646804837968773,
+      "sd": 0.9097757449383987
+    },
+    "opn": {
+      "mean": 4.05336102915757,
+      "sd": 0.7667937193483743
+    }
+  },
+  "abs_diff": {
+    "ext": {
+      "mean_abs_diff": 0.0,
+      "sd_abs_diff": 0.0
+    },
+    "agr": {
+      "mean_abs_diff": 0.0,
+      "sd_abs_diff": 0.0
+    },
+    "csn": {
+      "mean_abs_diff": 0.0,
+      "sd_abs_diff": 0.0
+    },
+    "est": {
+      "mean_abs_diff": 0.0,
+      "sd_abs_diff": 0.0
+    },
+    "opn": {
+      "mean_abs_diff": 0.0,
+      "sd_abs_diff": 0.0
+    }
+  },
+  "abs_diff_mini_ipip": {
+    "ext": {
+      "mean_abs_diff": 0.0,
+      "sd_abs_diff": 0.0
+    },
+    "agr": {
+      "mean_abs_diff": 0.0,
+      "sd_abs_diff": 0.0
+    },
+    "csn": {
+      "mean_abs_diff": 0.0,
+      "sd_abs_diff": 0.0
+    },
+    "est": {
+      "mean_abs_diff": 0.0,
+      "sd_abs_diff": 0.0
+    },
+    "opn": {
+      "mean_abs_diff": 0.0,
+      "sd_abs_diff": 0.0
+    }
+  },
+  "max_abs_diff": 0.0,
+  "tolerance": 1e-09,
+  "check_passed": true,
+  "lock_file": "artifacts/ipip_bffm_norms.json"
+}

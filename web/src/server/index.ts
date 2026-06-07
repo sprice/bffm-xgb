@@ -4,11 +4,12 @@ import { bodyLimit } from "hono/body-limit";
 import { getMimeType } from "hono/utils/mime";
 import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import { getPredictor, isPredictorReady } from "./predictor.js";
 import { isNavigationRequest } from "./route-guards.js";
 import { reverseScore } from "./reverse-score.js";
 
-const app = new Hono();
+export const app = new Hono();
 const appRoot = resolve(import.meta.dirname, "..", "..");
 const clientDistDir = resolve(appRoot, "dist", "client");
 const isBuiltServer = import.meta.dirname.includes(`${sep}dist${sep}server`);
@@ -179,18 +180,27 @@ if (isBuiltServer) {
   });
 }
 
-const port = Number(process.env.PORT) || 7860;
+// Bootstrap only when run as the entrypoint (node dist/server/index.js or
+// `tsx src/server/index.ts`), NOT when imported by a test, so importing `app`
+// does not bind a port or trigger the model load.
+const isMain =
+  Boolean(process.argv[1]) &&
+  import.meta.url === pathToFileURL(process.argv[1]).href;
 
-// Start server immediately so HF Spaces sees the port bound before its startup timeout.
-// The model loads in the background; /api/predict returns 503 until ready.
-serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`Server running on http://localhost:${info.port}`);
-});
+if (isMain) {
+  const port = Number(process.env.PORT) || 7860;
 
-console.log("Loading ONNX model...");
-getPredictor()
-  .then(() => console.log("Model loaded successfully."))
-  .catch((err) => {
-    console.error("Failed to load model:", err);
-    process.exit(1);
+  // Start server immediately so HF Spaces sees the port bound before its startup
+  // timeout. The model loads in the background; /api/predict returns 503 until ready.
+  serve({ fetch: app.fetch, port }, (info) => {
+    console.log(`Server running on http://localhost:${info.port}`);
   });
+
+  console.log("Loading ONNX model...");
+  getPredictor()
+    .then(() => console.log("Model loaded successfully."))
+    .catch((err) => {
+      console.error("Failed to load model:", err);
+      process.exit(1);
+    });
+}

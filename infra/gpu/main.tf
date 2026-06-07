@@ -150,7 +150,10 @@ resource "aws_spot_instance_request" "pipeline" {
 set -euo pipefail
 
 apt-get update -y
-apt-get install -y python3-venv tmux htop
+apt-get install -y python3-venv tmux htop curl
+
+# Install uv system-wide (project setup runs `uv sync`; see Makefile setup-python).
+curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
 
 mkdir -p /home/ubuntu/bffm-xgb
 chown ubuntu:ubuntu /home/ubuntu/bffm-xgb
@@ -190,7 +193,10 @@ resource "aws_instance" "pipeline" {
 set -euo pipefail
 
 apt-get update -y
-apt-get install -y python3-venv tmux htop
+apt-get install -y python3-venv tmux htop curl
+
+# Install uv system-wide (project setup runs `uv sync`; see Makefile setup-python).
+curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
 
 mkdir -p /home/ubuntu/bffm-xgb
 chown ubuntu:ubuntu /home/ubuntu/bffm-xgb

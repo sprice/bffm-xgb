@@ -67,10 +67,10 @@ export const chapter08Tuning: Chapter = {
           `The tuning objective is ${abbr("deployment-aligned", "Designed to reward performance in the real use case the model will face after shipping.")}. It primarily rewards sparse-20 performance while still penalizing bad full-50 behavior.`,
         )}
         ${codeBlock(
-          `objective = 0.80 * mean_r_sparse20
-         + 0.20 * mean_r_full
-         - 2.0 * max(0, 0.85 - min_r_sparse20)
-         - 1.0 * max(0, 0.95 - mean_r_full)`,
+          `objective = ${repoFacts.tuningObjective.sparse20Weight.toFixed(2)} * mean_r_sparse20
+         + ${repoFacts.tuningObjective.full50Weight.toFixed(2)} * mean_r_full
+         - ${repoFacts.tuningObjective.sparse20PenaltyWeight.toFixed(1)} * max(0, ${repoFacts.tuningObjective.sparse20PenaltyFloor.toFixed(2)} - min_r_sparse20)
+         - ${repoFacts.tuningObjective.full50PenaltyWeight.toFixed(1)} * max(0, ${repoFacts.tuningObjective.full50PenaltyFloor.toFixed(2)} - mean_r_full)`,
           "text",
         )}
         ${paragraph(

@@ -52,12 +52,13 @@ export function AssessmentPage({
         </h3>
 
         <p className="text-base text-text-muted leading-relaxed">
-          No account and no personal data collected. When you finish, your
-          answers are sent to the server for scoring and immediately discarded;
+          No account needed, and your assessment answers are never stored. When
+          you finish, your answers are sent to the server for scoring and immediately discarded;
           nothing is saved on our end. In-progress answers live in your browser
           so you can pick up where you left off. We use cookie-free,
-          privacy-friendly analytics to count visits and understand general
-          usage. No personal information is tracked or stored.
+          privacy-friendly analytics (Umami) to count visits; your IP address
+          and approximate location are used only to produce aggregate visit and
+          geographic statistics, and are not stored by us.
         </p>
       </div>
     </div>

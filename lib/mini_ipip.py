@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .constants import DOMAINS, DOMAIN_LABELS, ITEM_COLUMNS
+from .constants import DOMAIN_LABELS, DOMAINS, ITEM_COLUMNS
 
 DEFAULT_MAPPING_FILENAME = "mini_ipip_mapping.json"
 
