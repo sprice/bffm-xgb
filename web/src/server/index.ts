@@ -93,6 +93,12 @@ app.post("/api/predict", bodyLimit({ maxSize: 4 * 1024 }), async (c) => {
 
 // Analytics proxy – forward to Umami Cloud, passing Cloudflare geo headers
 app.post("/a", bodyLimit({ maxSize: 4 * 1024 }), async (c) => {
+  const umamiEndpoint = process.env.UMAMI_ENDPOINT;
+  const websiteId = process.env.UMAMI_WEBSITE_ID;
+  if (!umamiEndpoint || !websiteId) {
+    return c.body(null, 204);
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "User-Agent": c.req.header("User-Agent") || "Mozilla/5.0",
@@ -103,12 +109,6 @@ app.post("/a", bodyLimit({ maxSize: 4 * 1024 }), async (c) => {
     c.req.header("CF-Connecting-IP") ||
     c.req.header("X-Forwarded-For")?.split(",")[0]?.trim();
   if (ip) headers["X-Forwarded-For"] = ip;
-
-  // Forward Cloudflare geo headers so Umami can skip its own geo lookup
-  for (const h of ["CF-IPCountry", "CF-RegionCode", "CF-IPCity"]) {
-    const v = c.req.header(h);
-    if (v) headers[h] = v;
-  }
 
   // Parse and validate the analytics payload
   let payload: unknown;
@@ -128,7 +128,10 @@ app.post("/a", bodyLimit({ maxSize: 4 * 1024 }), async (c) => {
 
   const p = payload as Record<string, unknown>;
 
-  if (typeof p.type !== "string" || (p.type !== "event" && p.type !== "identify")) {
+  if (
+    typeof p.type !== "string" ||
+    (p.type !== "event" && p.type !== "identify" && p.type !== "performance")
+  ) {
     return c.body(null, 400);
   }
 
@@ -145,10 +148,12 @@ app.post("/a", bodyLimit({ maxSize: 4 * 1024 }), async (c) => {
   }
 
   // Overwrite the website ID so callers cannot spoof it
-  inner.website = "4472fc9a-56fc-408a-bfdb-22431094eb10";
+  inner.website = websiteId;
+  // Self-hosted Umami reads payload.ip directly: real geo, session, IGNORE_IP.
+  if (ip) inner.ip = ip;
 
   try {
-    const res = await fetch("https://cloud.umami.is/api/send", {
+    const res = await fetch(umamiEndpoint, {
       method: "POST",
       headers,
       body: JSON.stringify({ type: p.type, payload: inner }),

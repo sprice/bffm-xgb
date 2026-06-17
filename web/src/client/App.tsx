@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { trackPageview } from "./lib/analytics";
+import { setupPerformance, trackPageview } from "./lib/analytics";
 import { AppHeader } from "./components/AppHeader";
 import { defaultLearnPath } from "./learn/routes";
 import { HomePage } from "./pages/HomePage";
@@ -39,6 +39,9 @@ const LearnPage = lazy(() =>
 
 export function App() {
   const location = useLocation();
+  useEffect(() => {
+    setupPerformance();
+  }, []);
   useEffect(() => {
     window.scrollTo(0, 0);
     trackPageview(location.pathname);
